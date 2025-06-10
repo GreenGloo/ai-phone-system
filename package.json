@@ -2,19 +2,19 @@
   "name": "ai-phone-system",
   "version": "1.0.0",
   "description": "AI Phone Receptionist for Service Businesses",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
-  "start": "node app.js",
-    "dev": "nodemon index.js"
+    "start": "node app.js",
+    "dev": "nodemon app.js"
   },
- "dependencies": {
-  "express": "^4.18.2",
-  "twilio": "^4.19.0",
-  "openai": "^4.20.1",
-  "ws": "^8.14.2",
-  "cors": "^2.8.5",
-  "dotenv": "^16.3.1"
-}
+  "dependencies": {
+    "express": "^4.18.2",
+    "twilio": "^4.19.0",
+    "openai": "^4.20.1",
+    "ws": "^8.14.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
   "engines": {
     "node": ">=18.0.0"
   },
