@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CallCatcher Calendar</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .notification-badge {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .appointment-card {
+            transition: all 0.3s ease;
+        }
+        
+        .appointment-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div id="app" class="max-w-7xl mx-auto p-4">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900">CallCatcher Calendar</h1>
+                    <p class="text-gray-600">AI-powered appointment management</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="relative">
+                        <span class="text-2xl cursor-pointer" onclick="refreshNotifications()">🔔</span>
+                        <span id="notification-badge" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center notification-badge hidden">0</span>
+                    </div>
+                    <button onclick="refreshData()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                        Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+            <div class="bg-white rounded-lg p-6 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">📞</span>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-900" id="total-appointments">0</p>
+                        <p class="text-gray-600">Total Appointments</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg p-6 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">📅</span>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-900" id="today-appointments">0</p>
+                        <p class="text-gray-600">Today's Appointments</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg p-6 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">💰</span>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-900" id="today-revenue">$0</p>
+                        <p class="text-gray-600">Today's Revenue</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg p-6 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">🤖</span>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-900" id="ai-bookings">0</p>
+                        <p class="text-gray-600">AI Bookings</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Today's Appointments -->
+            <div class="lg:col-span-2">
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h2 class="text-xl font-bold text-gray-900 mb-4">Today's Appointments</h2>
+                    <div id="appointments-list" class="space-y-4">
+                        <div class="text-center py-8 text-gray-500">
+                            Loading appointments...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="space-y-6">
+                <!-- Available Slots -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Available Today</h3>
+                    <div id="available-slots" class="grid grid-cols-2 gap-2">
+                        <div class="text-center py-4 text-gray-500 col-span-2">
+                            Loading slots...
+                        </div>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-500 text-center">
+                        AI offers these times to callers
+                    </div>
+                </div>
+
+                <!-- Live Notifications -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Live Activity</h3>
+                    <div id="notifications-list" class="space-y-3">
+                        <div class="text-center py-4 text-gray-500">
+                            No new notifications
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Phone System</h3>
+                    <div class="space-y-3">
+                        <div class="text-sm text-gray-600">
+                            <strong>Phone Number:</strong><br>
+                            <span class="text-lg font-mono">(844) 540-1735</span>
+                        </div>
+                        <div class="text-sm text-gray-600">
+                            <strong>Status:</strong> <span class="text-green-600">● Active</span>
+                        </div>
+                        <button onclick="testCall()" class="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700">
+                            Test Call System
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let appointments = [];
+        let notifications = [];
+        let stats = {};
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshData();
+            // Auto-refresh every 30 seconds
+            setInterval(refreshData, 30000);
+        });
+
+        // Refresh all data
+        async function refreshData() {
+            try {
+                await Promise.all([
+                    loadAppointments(),
+                    loadAvailableSlots(),
+                    loadNotifications(),
+                    loadStats()
+                ]);
+                console.log('Data refreshed successfully');
+            } catch (error) {
+                console.error('Error refreshing data:', error);
+            }
+        }
+
+        // Load appointments
+        async function loadAppointments() {
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                const response = await fetch(`/api/appointments?date=${today}`);
+                appointments = await response.json();
+                renderAppointments();
+            } catch (error) {
+                console.error('Error loading appointments:', error);
+                document.getElementById('appointments-list').innerHTML = '<div class="text-center py-8 text-red-500">Error loading appointments</div>';
+            }
+        }
+
+        // Load available slots
+        async function loadAvailableSlots() {
+            try {
+                const response = await fetch('/api/available-slots');
+                const slots = await response.json();
+                renderAvailableSlots(slots);
+            } catch (error) {
+                console.error('Error loading slots:', error);
+            }
+        }
+
+        // Load notifications
+        async function loadNotifications() {
+            try {
+                const response = await fetch('/api/notifications');
+                notifications = await response.json();
+                renderNotifications();
+                updateNotificationBadge();
+            } catch (error) {
+                console.error('Error loading notifications:', error);
+            }
+        }
+
+        // Load stats
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                stats = await response.json();
+                renderStats();
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Render appointments
+        function renderAppointments() {
+            const container = document.getElementById('appointments-list');
+            
+            if (appointments.length === 0) {
+                container.innerHTML = '<div class="text-center py-8 text-gray-500">No appointments scheduled for today</div>';
+                return;
+            }
+
+            container.innerHTML = appointments.map(apt => {
+                const startTime = new Date(apt.startTime);
+                const timeString = startTime.toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                });
+
+                return `
+                    <div class="appointment-card border rounded-lg p-4 hover:bg-gray-50">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="text-lg font-semibold">${timeString}</span>
+                                    <span class="px-2 py-1 rounded-full text-xs font-medium ${apt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">
+                                        ${apt.status}
+                                    </span>
+                                    <span class="px-2 py-1 rounded-full text-xs font-medium ${apt.service === 'emergency' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}">
+                                        ${apt.service}
+                                    </span>
+                                </div>
+                                <div class="text-lg font-medium text-gray-900 mb-1">
+                                    👤 ${apt.customerName}
+                                </div>
+                                <div class="text-sm text-gray-600 mb-1">
+                                    📞 ${apt.customerPhone}
+                                </div>
+                                <div class="text-sm text-gray-800 mb-2">
+                                    <strong>Issue:</strong> ${apt.issue || 'Not specified'}
+                                </div>
+                                <div class="flex items-center gap-4 text-xs text-gray-500">
+                                    <span class="flex items-center gap-1">
+                                        💰 $${apt.estimatedRevenue}
+                                    </span>
+                                    <span>📱 ${apt.bookedVia}</span>
+                                    <span>⏱️ ${apt.duration} min</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Render available slots
+        function renderAvailableSlots(slots) {
+            const container = document.getElementById('available-slots');
+            
+            if (slots.length === 0) {
+                container.innerHTML = '<div class="text-center py-4 text-gray-500 col-span-2">No slots available</div>';
+                return;
+            }
+
+            container.innerHTML = slots.slice(0, 8).map(slot => `
+                <div class="text-center py-2 px-3 bg-green-50 text-green-700 rounded border border-green-200 text-sm">
+                    ${slot.display}
+                </div>
+            `).join('');
+        }
+
+        // Render notifications
+        function renderNotifications() {
+            const container = document.getElementById('notifications-list');
+            
+            if (notifications.length === 0) {
+                container.innerHTML = '<div class="text-center py-4 text-gray-500">No new notifications</div>';
+                return;
+            }
+
+            container.innerHTML = notifications.slice(0, 5).map(notif => `
+                <div class="p-3 rounded border-l-4 ${notif.type === 'new_booking' ? 'border-blue-500 bg-blue-50' : 'border-orange-500 bg-orange-50'}">
+                    <div class="text-sm font-medium text-gray-900">
+                        ${notif.message}
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">
+                        ${notif.time}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Render stats
+        function renderStats() {
+            document.getElementById('total-appointments').textContent = stats.totalAppointments || 0;
+            document.getElementById('today-appointments').textContent = stats.todayAppointments || 0;
+            document.getElementById('today-revenue').textContent = `$${stats.todayRevenue || 0}`;
+            document.getElementById('ai-bookings').textContent = stats.aiBookings || 0;
+        }
+
+        // Update notification badge
+        function updateNotificationBadge() {
+            const badge = document.getElementById('notification-badge');
+            const unreadCount = notifications.filter(n => !n.read).length;
+            
+            if (unreadCount > 0) {
+                badge.textContent = unreadCount;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        // Refresh notifications
+        function refreshNotifications() {
+            loadNotifications();
+        }
+
+        // Test call functionality
+        function testCall() {
+            alert(`📞 Test your AI system:\n\nCall: (844) 540-1735\n\nSay: "I need a plumber for my kitchen sink"\n\nThe AI will offer available appointment times and book the appointment automatically!`);
+        }
+
+        // Auto-refresh when tab becomes visible
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                refreshData();
+            }
+        });
+    </script>
+</body>
+</html>
