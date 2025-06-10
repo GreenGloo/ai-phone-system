@@ -7,6 +7,36 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <style>
+        .calendar-day {
+            min-height: 100px;
+            transition: all 0.2s ease;
+        }
+        
+        .calendar-day:hover {
+            background-color: #f8fafc;
+        }
+        
+        .calendar-day.selected {
+            background-color: #dbeafe;
+            border-color: #3b82f6;
+        }
+        
+        .calendar-day.today {
+            background-color: #fef3c7;
+            border-color: #f59e0b;
+        }
+        
+        .appointment-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 4px;
+        }
+        
+        .emergency { background-color: #ef4444; }
+        .regular { background-color: #3b82f6; }
+        
         .notification-badge {
             animation: pulse 2s infinite;
         }
@@ -14,15 +44,6 @@
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
-        }
-        
-        .appointment-card {
-            transition: all 0.3s ease;
-        }
-        
-        .appointment-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
         }
     </style>
 </head>
@@ -40,6 +61,9 @@
                         <span class="text-2xl cursor-pointer" onclick="refreshNotifications()">🔔</span>
                         <span id="notification-badge" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center notification-badge hidden">0</span>
                     </div>
+                    <button onclick="goToToday()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
+                        Today
+                    </button>
                     <button onclick="refreshData()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
                         Refresh
                     </button>
@@ -62,8 +86,8 @@
                 <div class="flex items-center gap-3">
                     <span class="text-2xl">📅</span>
                     <div>
-                        <p class="text-2xl font-bold text-gray-900" id="today-appointments">0</p>
-                        <p class="text-gray-600">Today's Appointments</p>
+                        <p class="text-2xl font-bold text-gray-900" id="selected-day-appointments">0</p>
+                        <p class="text-gray-600" id="selected-day-label">Selected Day</p>
                     </div>
                 </div>
             </div>
@@ -71,8 +95,8 @@
                 <div class="flex items-center gap-3">
                     <span class="text-2xl">💰</span>
                     <div>
-                        <p class="text-2xl font-bold text-gray-900" id="today-revenue">$0</p>
-                        <p class="text-gray-600">Today's Revenue</p>
+                        <p class="text-2xl font-bold text-gray-900" id="selected-day-revenue">$0</p>
+                        <p class="text-gray-600">Selected Day Revenue</p>
                     </div>
                 </div>
             </div>
@@ -87,27 +111,62 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Today's Appointments -->
-            <div class="lg:col-span-2">
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <!-- Calendar View -->
+            <div class="lg:col-span-3">
                 <div class="bg-white rounded-lg shadow-sm p-6">
-                    <h2 class="text-xl font-bold text-gray-900 mb-4">Today's Appointments</h2>
-                    <div id="appointments-list" class="space-y-4">
-                        <div class="text-center py-8 text-gray-500">
-                            Loading appointments...
+                    <!-- Calendar Header -->
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-2xl font-bold text-gray-900" id="calendar-month-year">
+                            June 2025
+                        </h2>
+                        <div class="flex gap-2">
+                            <button onclick="previousMonth()" class="px-4 py-2 border rounded hover:bg-gray-50 font-medium">
+                                ← Previous
+                            </button>
+                            <button onclick="nextMonth()" class="px-4 py-2 border rounded hover:bg-gray-50 font-medium">
+                                Next →
+                            </button>
                         </div>
+                    </div>
+
+                    <!-- Calendar Grid -->
+                    <div class="grid grid-cols-7 gap-1 mb-2">
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Sun</div>
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Mon</div>
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Tue</div>
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Wed</div>
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Thu</div>
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Fri</div>
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Sat</div>
+                    </div>
+
+                    <div id="calendar-grid" class="grid grid-cols-7 gap-1">
+                        <!-- Calendar days will be inserted here -->
                     </div>
                 </div>
             </div>
 
             <!-- Sidebar -->
             <div class="space-y-6">
-                <!-- Available Slots -->
+                <!-- Selected Day Details -->
                 <div class="bg-white rounded-lg shadow-sm p-6">
-                    <h3 class="text-lg font-bold text-gray-900 mb-4">Available Today</h3>
-                    <div id="available-slots" class="grid grid-cols-2 gap-2">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4" id="selected-date-header">
+                        Today's Schedule
+                    </h3>
+                    <div id="selected-day-appointments-list" class="space-y-3">
+                        <div class="text-center py-4 text-gray-500">
+                            Select a date to view appointments
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Available Slots for Selected Day -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Available Slots</h3>
+                    <div id="selected-day-available-slots" class="grid grid-cols-2 gap-2">
                         <div class="text-center py-4 text-gray-500 col-span-2">
-                            Loading slots...
+                            Select a date to view availability
                         </div>
                     </div>
                     <div class="mt-3 text-xs text-gray-500 text-center">
@@ -125,7 +184,7 @@
                     </div>
                 </div>
 
-                <!-- Quick Actions -->
+                <!-- Phone System Info -->
                 <div class="bg-white rounded-lg shadow-sm p-6">
                     <h3 class="text-lg font-bold text-gray-900 mb-4">Phone System</h3>
                     <div class="space-y-3">
@@ -147,53 +206,280 @@
 
     <script>
         // Global state
+        let currentDate = new Date();
+        let selectedDate = new Date();
         let appointments = [];
         let notifications = [];
         let stats = {};
 
         // Initialize app
         document.addEventListener('DOMContentLoaded', function() {
+            selectedDate = new Date(); // Start with today selected
             refreshData();
+            renderCalendar();
             // Auto-refresh every 30 seconds
-            setInterval(refreshData, 30000);
+            setInterval(() => {
+                refreshData();
+                renderCalendar();
+            }, 30000);
         });
+
+        // Calendar navigation
+        function previousMonth() {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar();
+        }
+
+        function nextMonth() {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar();
+        }
+
+        function goToToday() {
+            currentDate = new Date();
+            selectedDate = new Date();
+            renderCalendar();
+            loadSelectedDayData();
+        }
+
+        // Render calendar
+        function renderCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            
+            // Update month/year header
+            document.getElementById('calendar-month-year').textContent = 
+                currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+            // Calculate calendar days
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            const startDate = new Date(firstDay);
+            startDate.setDate(startDate.getDate() - firstDay.getDay()); // Start from Sunday
+
+            const calendarGrid = document.getElementById('calendar-grid');
+            calendarGrid.innerHTML = '';
+
+            // Generate 6 weeks of calendar
+            for (let week = 0; week < 6; week++) {
+                for (let day = 0; day < 7; day++) {
+                    const date = new Date(startDate);
+                    date.setDate(startDate.getDate() + (week * 7) + day);
+                    
+                    const dayElement = createDayElement(date, month);
+                    calendarGrid.appendChild(dayElement);
+                }
+            }
+        }
+
+        // Create calendar day element
+        function createDayElement(date, currentMonth) {
+            const dayDiv = document.createElement('div');
+            const isCurrentMonth = date.getMonth() === currentMonth;
+            const isToday = date.toDateString() === new Date().toDateString();
+            const isSelected = date.toDateString() === selectedDate.toDateString();
+            
+            // Get appointments for this day
+            const dayAppointments = getDayAppointments(date);
+            const dayRevenue = dayAppointments.reduce((sum, apt) => sum + (apt.estimatedRevenue || 0), 0);
+
+            dayDiv.className = `calendar-day border border-gray-200 rounded p-2 cursor-pointer ${
+                isCurrentMonth ? 'bg-white' : 'bg-gray-50 text-gray-400'
+            } ${isToday ? 'today border-2' : ''} ${isSelected ? 'selected border-2' : ''}`;
+            
+            dayDiv.onclick = () => selectDate(date);
+
+            // Day number
+            const dayNumber = document.createElement('div');
+            dayNumber.className = 'font-semibold text-sm mb-1';
+            dayNumber.textContent = date.getDate();
+            dayDiv.appendChild(dayNumber);
+
+            // Appointments indicators
+            if (dayAppointments.length > 0) {
+                const appointmentsDiv = document.createElement('div');
+                appointmentsDiv.className = 'space-y-1';
+
+                // Show appointment dots
+                dayAppointments.slice(0, 3).forEach(apt => {
+                    const aptDiv = document.createElement('div');
+                    aptDiv.className = 'text-xs flex items-center';
+                    
+                    const dot = document.createElement('span');
+                    dot.className = `appointment-dot ${apt.service || 'regular'}`;
+                    
+                    const time = new Date(apt.startTime).toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                    });
+                    
+                    aptDiv.appendChild(dot);
+                    aptDiv.appendChild(document.createTextNode(time));
+                    appointmentsDiv.appendChild(aptDiv);
+                });
+
+                // Show more indicator
+                if (dayAppointments.length > 3) {
+                    const moreDiv = document.createElement('div');
+                    moreDiv.className = 'text-xs text-gray-500';
+                    moreDiv.textContent = `+${dayAppointments.length - 3} more`;
+                    appointmentsDiv.appendChild(moreDiv);
+                }
+
+                dayDiv.appendChild(appointmentsDiv);
+
+                // Revenue indicator
+                if (dayRevenue > 0) {
+                    const revenueDiv = document.createElement('div');
+                    revenueDiv.className = 'text-xs font-medium text-green-600 mt-1';
+                    revenueDiv.textContent = `$${dayRevenue}`;
+                    dayDiv.appendChild(revenueDiv);
+                }
+            }
+
+            return dayDiv;
+        }
+
+        // Select a date
+        function selectDate(date) {
+            selectedDate = new Date(date);
+            renderCalendar(); // Re-render to show selection
+            loadSelectedDayData();
+        }
+
+        // Load data for selected day
+        function loadSelectedDayData() {
+            const dateStr = selectedDate.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                month: 'long', 
+                day: 'numeric',
+                year: 'numeric'
+            });
+            
+            document.getElementById('selected-date-header').textContent = dateStr;
+            document.getElementById('selected-day-label').textContent = 
+                selectedDate.toDateString() === new Date().toDateString() ? "Today's Appointments" : "Selected Day";
+
+            // Load appointments for selected day
+            const dayAppointments = getDayAppointments(selectedDate);
+            renderSelectedDayAppointments(dayAppointments);
+
+            // Load available slots for selected day
+            loadAvailableSlotsForDate(selectedDate);
+
+            // Update stats for selected day
+            const dayRevenue = dayAppointments.reduce((sum, apt) => sum + (apt.estimatedRevenue || 0), 0);
+            document.getElementById('selected-day-appointments').textContent = dayAppointments.length;
+            document.getElementById('selected-day-revenue').textContent = `$${dayRevenue}`;
+        }
+
+        // Get appointments for a specific day
+        function getDayAppointments(date) {
+            return appointments.filter(apt => {
+                const aptDate = new Date(apt.startTime);
+                return aptDate.toDateString() === date.toDateString();
+            }).sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+        }
+
+        // Render selected day appointments
+        function renderSelectedDayAppointments(dayAppointments) {
+            const container = document.getElementById('selected-day-appointments-list');
+            
+            if (dayAppointments.length === 0) {
+                container.innerHTML = '<div class="text-center py-4 text-gray-500">No appointments scheduled</div>';
+                return;
+            }
+
+            container.innerHTML = dayAppointments.map(apt => {
+                const startTime = new Date(apt.startTime);
+                const timeString = startTime.toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                });
+
+                return `
+                    <div class="border rounded-lg p-3 hover:bg-gray-50">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="font-semibold">${timeString}</span>
+                            <span class="px-2 py-1 rounded-full text-xs font-medium ${apt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">
+                                ${apt.status}
+                            </span>
+                            <span class="px-2 py-1 rounded-full text-xs font-medium ${apt.service === 'emergency' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}">
+                                ${apt.service}
+                            </span>
+                        </div>
+                        <div class="text-sm font-medium text-gray-900 mb-1">
+                            👤 ${apt.customerName}
+                        </div>
+                        <div class="text-sm text-gray-600 mb-1">
+                            📞 ${apt.customerPhone}
+                        </div>
+                        <div class="text-sm text-gray-800 mb-2">
+                            <strong>Issue:</strong> ${apt.issue || 'Not specified'}
+                        </div>
+                        <div class="flex items-center gap-4 text-xs text-gray-500">
+                            <span>💰 $${apt.estimatedRevenue}</span>
+                            <span>📱 ${apt.bookedVia}</span>
+                            <span>⏱️ ${apt.duration} min</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Load available slots for selected date
+        async function loadAvailableSlotsForDate(date) {
+            try {
+                const dateParam = date.toISOString().split('T')[0];
+                const response = await fetch(`/api/available-slots?date=${dateParam}`);
+                const slots = await response.json();
+                renderSelectedDayAvailableSlots(slots);
+            } catch (error) {
+                console.error('Error loading available slots:', error);
+            }
+        }
+
+        // Render available slots for selected day
+        function renderSelectedDayAvailableSlots(slots) {
+            const container = document.getElementById('selected-day-available-slots');
+            
+            if (slots.length === 0) {
+                container.innerHTML = '<div class="text-center py-4 text-gray-500 col-span-2">No slots available</div>';
+                return;
+            }
+
+            container.innerHTML = slots.slice(0, 8).map(slot => `
+                <div class="text-center py-2 px-3 bg-green-50 text-green-700 rounded border border-green-200 text-sm">
+                    ${slot.display}
+                </div>
+            `).join('');
+        }
 
         // Refresh all data
         async function refreshData() {
             try {
                 await Promise.all([
-                    loadAppointments(),
-                    loadAvailableSlots(),
+                    loadAllAppointments(),
                     loadNotifications(),
                     loadStats()
                 ]);
+                loadSelectedDayData(); // Refresh selected day data
                 console.log('Data refreshed successfully');
             } catch (error) {
                 console.error('Error refreshing data:', error);
             }
         }
 
-        // Load appointments
-        async function loadAppointments() {
+        // Load all appointments
+        async function loadAllAppointments() {
             try {
-                const today = new Date().toISOString().split('T')[0];
-                const response = await fetch(`/api/appointments?date=${today}`);
+                const response = await fetch('/api/appointments');
                 appointments = await response.json();
-                renderAppointments();
             } catch (error) {
                 console.error('Error loading appointments:', error);
-                document.getElementById('appointments-list').innerHTML = '<div class="text-center py-8 text-red-500">Error loading appointments</div>';
-            }
-        }
-
-        // Load available slots
-        async function loadAvailableSlots() {
-            try {
-                const response = await fetch('/api/available-slots');
-                const slots = await response.json();
-                renderAvailableSlots(slots);
-            } catch (error) {
-                console.error('Error loading slots:', error);
+                appointments = [];
             }
         }
 
@@ -220,75 +506,6 @@
             }
         }
 
-        // Render appointments
-        function renderAppointments() {
-            const container = document.getElementById('appointments-list');
-            
-            if (appointments.length === 0) {
-                container.innerHTML = '<div class="text-center py-8 text-gray-500">No appointments scheduled for today</div>';
-                return;
-            }
-
-            container.innerHTML = appointments.map(apt => {
-                const startTime = new Date(apt.startTime);
-                const timeString = startTime.toLocaleTimeString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true
-                });
-
-                return `
-                    <div class="appointment-card border rounded-lg p-4 hover:bg-gray-50">
-                        <div class="flex items-start justify-between">
-                            <div class="flex-1">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <span class="text-lg font-semibold">${timeString}</span>
-                                    <span class="px-2 py-1 rounded-full text-xs font-medium ${apt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">
-                                        ${apt.status}
-                                    </span>
-                                    <span class="px-2 py-1 rounded-full text-xs font-medium ${apt.service === 'emergency' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}">
-                                        ${apt.service}
-                                    </span>
-                                </div>
-                                <div class="text-lg font-medium text-gray-900 mb-1">
-                                    👤 ${apt.customerName}
-                                </div>
-                                <div class="text-sm text-gray-600 mb-1">
-                                    📞 ${apt.customerPhone}
-                                </div>
-                                <div class="text-sm text-gray-800 mb-2">
-                                    <strong>Issue:</strong> ${apt.issue || 'Not specified'}
-                                </div>
-                                <div class="flex items-center gap-4 text-xs text-gray-500">
-                                    <span class="flex items-center gap-1">
-                                        💰 $${apt.estimatedRevenue}
-                                    </span>
-                                    <span>📱 ${apt.bookedVia}</span>
-                                    <span>⏱️ ${apt.duration} min</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        // Render available slots
-        function renderAvailableSlots(slots) {
-            const container = document.getElementById('available-slots');
-            
-            if (slots.length === 0) {
-                container.innerHTML = '<div class="text-center py-4 text-gray-500 col-span-2">No slots available</div>';
-                return;
-            }
-
-            container.innerHTML = slots.slice(0, 8).map(slot => `
-                <div class="text-center py-2 px-3 bg-green-50 text-green-700 rounded border border-green-200 text-sm">
-                    ${slot.display}
-                </div>
-            `).join('');
-        }
-
         // Render notifications
         function renderNotifications() {
             const container = document.getElementById('notifications-list');
@@ -313,8 +530,6 @@
         // Render stats
         function renderStats() {
             document.getElementById('total-appointments').textContent = stats.totalAppointments || 0;
-            document.getElementById('today-appointments').textContent = stats.todayAppointments || 0;
-            document.getElementById('today-revenue').textContent = `$${stats.todayRevenue || 0}`;
             document.getElementById('ai-bookings').textContent = stats.aiBookings || 0;
         }
 
@@ -345,6 +560,7 @@
         document.addEventListener('visibilitychange', function() {
             if (!document.hidden) {
                 refreshData();
+                renderCalendar();
             }
         });
     </script>
