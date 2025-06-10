@@ -1,7 +1,11 @@
 require('dotenv').config();
 const express = require('express');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { Pool } = require('pg');
 const twilio = require('twilio');
 const OpenAI = require('openai');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const cors = require('cors');
 const path = require('path');
 
@@ -11,851 +15,645 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 app.use(express.static('public'));
 
+// Database connection
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+});
+
 // Initialize services
 const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// In-memory database
-const appointments = new Map();
-const callLogs = new Map();
-const notifications = [];
+// JWT secret
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
-// Enhanced service configuration with durations and travel time
-const serviceTypes = {
-  'emergency': { name: 'Emergency Service', duration: 60, rate: 150, travelBuffer: 30 },
-  'drain-cleaning': { name: 'Drain Cleaning', duration: 90, rate: 120, travelBuffer: 30 },
-  'water-heater': { name: 'Water Heater', duration: 180, rate: 100, travelBuffer: 45 },
-  'pipe-repair': { name: 'Pipe Repair', duration: 120, rate: 110, travelBuffer: 30 },
-  'fixture-install': { name: 'Fixture Install', duration: 90, rate: 95, travelBuffer: 30 },
-  'consultation': { name: 'Consultation', duration: 45, rate: 75, travelBuffer: 15 },
-  'regular': { name: 'Regular Service', duration: 90, rate: 100, travelBuffer: 30 }
-};
-
-// Business configuration
-const businessConfig = {
-  businessName: "CallCatcher Demo",
-  ownerName: "Business Owner",
-  ownerPhone: process.env.OWNER_PHONE || "+15551234567",
-  businessHours: { start: 8, end: 18 },
-  services: {
-    emergency: { rate: 150, duration: 60 },
-    regular: { rate: 100, duration: 90 }
+// Default service types for new businesses
+const defaultServiceTypes = [
+  {
+    name: 'Emergency Service',
+    service_key: 'emergency',
+    description: 'Burst pipes, no water, flooding, gas leaks',
+    duration_minutes: 60,
+    base_rate: 150.00,
+    emergency_multiplier: 1.0,
+    travel_buffer_minutes: 30,
+    is_emergency: true
+  },
+  {
+    name: 'Drain Cleaning',
+    service_key: 'drain-cleaning',
+    description: 'Clogged drains, slow drainage, backups',
+    duration_minutes: 90,
+    base_rate: 120.00,
+    emergency_multiplier: 1.5,
+    travel_buffer_minutes: 30,
+    is_emergency: false
+  },
+  {
+    name: 'Water Heater Service',
+    service_key: 'water-heater',
+    description: 'Installation, repair, maintenance',
+    duration_minutes: 180,
+    base_rate: 100.00,
+    emergency_multiplier: 1.5,
+    travel_buffer_minutes: 45,
+    is_emergency: false
+  },
+  {
+    name: 'Pipe Repair',
+    service_key: 'pipe-repair',
+    description: 'Leaks, pipe replacement, fittings',
+    duration_minutes: 120,
+    base_rate: 110.00,
+    emergency_multiplier: 1.5,
+    travel_buffer_minutes: 30,
+    is_emergency: false
+  },
+  {
+    name: 'Fixture Installation',
+    service_key: 'fixture-install',
+    description: 'Toilets, faucets, sinks, showers',
+    duration_minutes: 90,
+    base_rate: 95.00,
+    emergency_multiplier: 1.5,
+    travel_buffer_minutes: 30,
+    is_emergency: false
+  },
+  {
+    name: 'Consultation',
+    service_key: 'consultation',
+    description: 'Estimates, inspection, planning',
+    duration_minutes: 45,
+    base_rate: 75.00,
+    emergency_multiplier: 1.0,
+    travel_buffer_minutes: 15,
+    is_emergency: false
   }
-};
+];
 
-// Enhanced Calendar Manager with travel time
-class EnhancedCalendarManager {
-  getAvailableSlots(date, requestedDuration = 60) {
-    const dayAppointments = this.getDayAppointments(date);
-    const slots = [];
-    
-    for (let hour = businessConfig.businessHours.start; hour < businessConfig.businessHours.end; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        const slotStart = new Date(date);
-        slotStart.setHours(hour, minute, 0, 0);
-        
-        // Add travel buffer to requested duration
-        const totalDuration = requestedDuration + 30; // 30 min travel buffer
-        const slotEnd = new Date(slotStart);
-        slotEnd.setMinutes(slotEnd.getMinutes() + totalDuration);
-        
-        // Check if slot conflicts with existing appointments (including their travel buffers)
-        const hasConflict = dayAppointments.some(apt => {
-          const aptStart = new Date(apt.startTime);
-          const aptEnd = new Date(apt.endTime);
-          
-          // Add travel buffer to existing appointments
-          const serviceType = serviceTypes[apt.serviceType] || { travelBuffer: 30 };
-          aptStart.setMinutes(aptStart.getMinutes() - serviceType.travelBuffer);
-          aptEnd.setMinutes(aptEnd.getMinutes() + serviceType.travelBuffer);
-          
-          return (slotStart < aptEnd && slotEnd > aptStart);
-        });
-        
-        if (!hasConflict && slotEnd.getHours() <= businessConfig.businessHours.end) {
-          slots.push({
-            start: slotStart,
-            end: slotEnd,
-            display: slotStart.toLocaleTimeString('en-US', {
-              hour: 'numeric',
-              minute: '2-digit',
-              hour12: true
-            })
-          });
-        }
-      }
-    }
-    
-    return slots.slice(0, 8);
-  }
+// Middleware to verify JWT and extract user
+const authenticateToken = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
 
-  getDayAppointments(date) {
-    const dayStart = new Date(date);
-    dayStart.setHours(0, 0, 0, 0);
-    
-    const dayEnd = new Date(date);
-    dayEnd.setHours(23, 59, 59, 999);
-    
-    return Array.from(appointments.values()).filter(apt => {
-      const aptDate = new Date(apt.startTime);
-      return aptDate >= dayStart && aptDate <= dayEnd;
-    });
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
   }
 
-  bookAppointment(customerInfo, appointmentTime, serviceType, callId) {
-    const appointmentId = 'apt_' + Date.now();
-    const serviceConfig = serviceTypes[serviceType] || serviceTypes['regular'];
-    const duration = serviceConfig.duration;
-    const rate = serviceConfig.rate;
-    
-    const startTime = new Date(appointmentTime);
-    const endTime = new Date(startTime.getTime() + duration * 60000);
-    
-    const appointment = {
-      id: appointmentId,
-      customerName: customerInfo.name,
-      customerPhone: customerInfo.phone,
-      customerEmail: customerInfo.email || null,
-      address: customerInfo.address || '',
-      service: serviceConfig.name,
-      serviceType: serviceType,
-      issue: customerInfo.issue || '',
-      startTime: startTime.toISOString(),
-      endTime: endTime.toISOString(),
-      duration: duration,
-      estimatedRevenue: rate,
-      status: 'scheduled',
-      bookedVia: 'AI Phone',
-      callId: callId,
-      createdAt: new Date().toISOString(),
-      completed: false,
-      communicationHistory: ''
-    };
-    
-    appointments.set(appointmentId, appointment);
-    
-    this.addNotification({
-      type: 'new_booking',
-      message: `New ${serviceType} appointment: ${customerInfo.name}`,
-      appointmentId: appointmentId
-    });
-    
-    console.log('✅ Appointment booked:', appointment);
-    return appointment;
-  }
-
-  getNextEmergencySlot() {
-    const now = new Date();
-    let checkTime = new Date(Math.ceil(now.getTime() / (30 * 60 * 1000)) * (30 * 60 * 1000));
-    
-    const slotEnd = new Date(checkTime.getTime() + 60 * 60 * 1000);
-    
-    return {
-      start: checkTime,
-      end: slotEnd,
-      display: checkTime.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      })
-    };
-  }
-
-  addNotification(notification) {
-    notifications.unshift({
-      id: 'notif_' + Date.now(),
-      ...notification,
-      timestamp: new Date().toISOString(),
-      read: false,
-      time: 'Just now'
-    });
-    
-    // Keep only last 50 notifications
-    if (notifications.length > 50) {
-      notifications.splice(50);
-    }
-  }
-}
-
-const calendar = new EnhancedCalendarManager();
-
-// AI prompt
-const createCalendarAwarePrompt = (availableSlots, isEmergency = false) => `
-You are Sarah, the AI receptionist for ${businessConfig.businessName}.
-
-CRITICAL: ALWAYS offer specific appointment times when customers need service.
-
-AVAILABLE TIMES TODAY: ${availableSlots?.map(slot => slot.display).slice(0, 4).join(', ') || '9:00 AM, 2:00 PM, 5:00 PM'}
-
-BOOKING PROCESS (FOLLOW EXACTLY):
-1. Ask if emergency or regular service
-2. For ANY service request, immediately offer 2-3 specific times from available slots
-3. Get customer name and phone number
-4. When they pick a time, say "Perfect! Let me book that for you right now."
-
-SAMPLE CONVERSATIONS:
-
-Regular Service:
-Customer: "I need a plumber for my sink"
-You: "I can help with that regular service call. I have appointments available today at ${availableSlots?.[0]?.display || '2:00 PM'}, ${availableSlots?.[1]?.display || '3:30 PM'}, or ${availableSlots?.[2]?.display || '5:00 PM'}. Which time works for you?"
-
-Emergency Service:
-Customer: "Emergency! My pipe burst!"
-You: "That's an emergency - I can get you in ${availableSlots?.[0]?.display || 'within the hour'} for $${businessConfig.services.emergency.rate}/hour. Can I book that time for you?"
-
-NEVER say "someone will call you back" - YOU handle all scheduling.
-ALWAYS offer specific times immediately when they need service.
-ALWAYS get name and phone before confirming the booking.
-`;
-
-// Serve frontend pages
-app.get('/calendar', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.get('/book', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'book.html'));
-});
-
-app.get('/schedule', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'schedule.html'));
-});
-
-// Handle incoming calls
-app.post('/voice/incoming', async (req, res) => {
-  console.log('📞 Incoming call:', req.body);
-  
-  const { CallSid, From, To } = req.body;
-  
-  const today = new Date();
-  const availableSlots = calendar.getAvailableSlots(today);
-  
-  const callLog = {
-    id: CallSid,
-    from: From,
-    to: To,
-    startTime: new Date(),
-    status: 'in-progress',
-    conversation: [],
-    customerInfo: {},
-    availableSlots
-  };
-  callLogs.set(CallSid, callLog);
-
-  const twiml = new twilio.twiml.VoiceResponse();
-  
-  const greeting = `Hello, ${businessConfig.businessName}, this is Sarah. I can schedule your appointment right away. How can I help you today?`;
-  
-  twiml.say({
-    voice: 'Polly.Joanna-Neural',
-    language: 'en-US'
-  }, greeting);
-  
-  twiml.gather({
-    input: 'speech',
-    timeout: 5,
-    speechTimeout: 'auto',
-    action: '/voice/process',
-    method: 'POST'
-  });
-  
-  twiml.say('I didn\'t catch that. Let me have someone call you back.');
-  twiml.hangup();
-
-  res.type('text/xml').send(twiml.toString());
-});
-
-// Process customer speech
-app.post('/voice/process', async (req, res) => {
-  const { CallSid, SpeechResult } = req.body;
-  const callLog = callLogs.get(CallSid);
-  
-  console.log(`🗣️ Customer: ${SpeechResult}`);
-  
-  if (!callLog) {
-    return res.status(404).send('Call not found');
-  }
-  
-  callLog.conversation.push({ role: 'user', content: SpeechResult });
-  
   try {
-    await extractCustomerInfo(SpeechResult, callLog);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const result = await pool.query('SELECT * FROM users WHERE id = $1', [decoded.userId]);
     
-    const isEmergency = await detectEmergency(callLog.conversation);
-    
-    let availableSlots;
-    if (isEmergency) {
-      const emergencySlot = calendar.getNextEmergencySlot();
-      availableSlots = [emergencySlot];
-    } else {
-      availableSlots = callLog.availableSlots;
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid token' });
     }
+
+    req.user = result.rows[0];
+    next();
+  } catch (error) {
+    return res.status(403).json({ error: 'Invalid token' });
+  }
+};
+
+// Middleware to get business context
+const getBusinessContext = async (req, res, next) => {
+  try {
+    const businessId = req.params.businessId || req.body.businessId || req.query.businessId;
     
-    const aiResponse = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        { role: 'system', content: createCalendarAwarePrompt(availableSlots, isEmergency) },
-        ...callLog.conversation
-      ],
-      max_tokens: 200,
-      temperature: 0.7
-    });
+    if (!businessId) {
+      return res.status(400).json({ error: 'Business ID required' });
+    }
+
+    const result = await pool.query(
+      'SELECT * FROM businesses WHERE id = $1 AND user_id = $2',
+      [businessId, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+
+    req.business = result.rows[0];
+    next();
+  } catch (error) {
+    console.error('Error getting business context:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+};
+
+// Serve static pages
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+
+app.get('/onboarding', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'onboarding.html'));
+});
+
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+// Authentication endpoints
+app.post('/api/signup', async (req, res) => {
+  try {
+    const { businessName, ownerName, email, phone, businessType, plan = 'professional' } = req.body;
     
-    const responseText = aiResponse.choices[0].message.content;
-    callLog.conversation.push({ role: 'assistant', content: responseText });
-    
-    console.log(`🤖 Sarah: ${responseText}`);
-    
-    const bookingIntent = await detectBookingIntent(callLog.conversation);
-    
-    if (bookingIntent.shouldBook && callLog.customerInfo.name && callLog.customerInfo.phone) {
-      const serviceType = isEmergency ? 'emergency' : 'regular';
-      const appointmentTime = findBookingTime(bookingIntent.timeSlot, availableSlots);
-      
-      if (appointmentTime) {
-        const appointment = calendar.bookAppointment(
-          callLog.customerInfo,
-          appointmentTime,
-          serviceType,
-          CallSid
-        );
-        
-        await sendAppointmentConfirmations(callLog, appointment);
-        
-        const confirmationText = `Excellent! I've booked your ${serviceType} appointment for ${new Date(appointment.startTime).toLocaleString()}. You'll receive a text confirmation. We'll see you then!`;
-        
-        const twiml = new twilio.twiml.VoiceResponse();
-        twiml.say({
-          voice: 'Polly.Joanna-Neural',
-          language: 'en-US'
-        }, confirmationText);
-        twiml.hangup();
-        
-        return res.type('text/xml').send(twiml.toString());
+    // Validate input
+    if (!businessName || !ownerName || !email || !phone || !businessType) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Check if user already exists
+    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+
+    // Hash password (temporary password for demo)
+    const tempPassword = Math.random().toString(36).slice(-8);
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+    // Create user
+    const [firstName, ...lastNameParts] = ownerName.split(' ');
+    const lastName = lastNameParts.join(' ') || '';
+
+    const userResult = await pool.query(
+      `INSERT INTO users (email, password_hash, first_name, last_name, phone) 
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [email, passwordHash, firstName, lastName, phone]
+    );
+
+    const userId = userResult.rows[0].id;
+
+    // Create Stripe customer
+    const stripeCustomer = await stripe.customers.create({
+      email: email,
+      name: ownerName,
+      phone: phone,
+      metadata: {
+        business_name: businessName,
+        business_type: businessType
       }
+    });
+
+    // Get Twilio phone number (simplified - in production, let user choose)
+    const availableNumbers = await twilioClient.availablePhoneNumbers('US')
+      .local
+      .list({ limit: 1 });
+
+    let phoneNumber = null;
+    if (availableNumbers.length > 0) {
+      const purchasedNumber = await twilioClient.incomingPhoneNumbers.create({
+        phoneNumber: availableNumbers[0].phoneNumber
+      });
+      phoneNumber = purchasedNumber.phoneNumber;
     }
-    
+
+    // Create business
+    const businessResult = await pool.query(
+      `INSERT INTO businesses (user_id, name, business_type, phone_number) 
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [userId, businessName, businessType, phoneNumber]
+    );
+
+    const businessId = businessResult.rows[0].id;
+
+    // Create default service types
+    for (const serviceType of defaultServiceTypes) {
+      await pool.query(
+        `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          businessId,
+          serviceType.name,
+          serviceType.service_key,
+          serviceType.description,
+          serviceType.duration_minutes,
+          serviceType.base_rate,
+          serviceType.emergency_multiplier,
+          serviceType.travel_buffer_minutes,
+          serviceType.is_emergency
+        ]
+      );
+    }
+
+    // Create subscription with trial
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + 14); // 14-day trial
+
+    await pool.query(
+      `INSERT INTO subscriptions (business_id, stripe_customer_id, plan, status, trial_ends_at, monthly_call_limit)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [businessId, stripeCustomer.id, plan, 'trialing', trialEnd, plan === 'starter' ? 100 : plan === 'professional' ? 500 : 9999]
+    );
+
+    // Generate JWT token
+    const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: '30d' });
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: userId,
+        email,
+        firstName,
+        lastName
+      },
+      business: {
+        id: businessId,
+        name: businessName,
+        phoneNumber,
+        plan
+      },
+      tempPassword // In production, send via email
+    });
+
+  } catch (error) {
+    console.error('Signup error:', error);
+    res.status(500).json({ error: 'Failed to create account' });
+  }
+});
+
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Get user
+    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (userResult.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const user = userResult.rows[0];
+
+    // Check password
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Update last login
+    await pool.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
+
+    // Get user's businesses
+    const businessesResult = await pool.query(
+      'SELECT id, name, business_type, phone_number, status FROM businesses WHERE user_id = $1',
+      [user.id]
+    );
+
+    // Generate token
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name
+      },
+      businesses: businessesResult.rows
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Business management endpoints
+app.get('/api/businesses', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT b.*, s.plan, s.status as subscription_status, s.trial_ends_at 
+       FROM businesses b 
+       LEFT JOIN subscriptions s ON b.id = s.business_id 
+       WHERE b.user_id = $1`,
+      [req.user.id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching businesses:', error);
+    res.status(500).json({ error: 'Failed to fetch businesses' });
+  }
+});
+
+app.get('/api/businesses/:businessId/service-types', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM service_types WHERE business_id = $1 AND is_active = true ORDER BY display_order, name',
+      [req.business.id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching service types:', error);
+    res.status(500).json({ error: 'Failed to fetch service types' });
+  }
+});
+
+// Voice endpoint with business context
+app.post('/voice/incoming/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { CallSid, From, To } = req.body;
+
+    console.log(`📞 Incoming call for business ${businessId}: ${From} → ${To}`);
+
+    // Get business details
+    const businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
+    if (businessResult.rows.length === 0) {
+      console.error('Business not found:', businessId);
+      return res.status(404).send('Business not found');
+    }
+
+    const business = businessResult.rows[0];
+
+    // Check subscription status
+    const subscriptionResult = await pool.query(
+      'SELECT * FROM subscriptions WHERE business_id = $1 ORDER BY created_at DESC LIMIT 1',
+      [businessId]
+    );
+
+    if (subscriptionResult.rows.length === 0 || subscriptionResult.rows[0].status === 'cancelled') {
+      const twiml = new twilio.twiml.VoiceResponse();
+      twiml.say('This service is currently unavailable. Please try again later.');
+      return res.type('text/xml').send(twiml.toString());
+    }
+
+    // Get service types for this business
+    const serviceTypesResult = await pool.query(
+      'SELECT * FROM service_types WHERE business_id = $1 AND is_active = true',
+      [businessId]
+    );
+
+    const serviceTypes = serviceTypesResult.rows;
+
+    // Log the call
+    await pool.query(
+      `INSERT INTO call_logs (business_id, call_sid, from_number, to_number, call_status)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [businessId, CallSid, From, To, 'in-progress']
+    );
+
+    // Create AI greeting
     const twiml = new twilio.twiml.VoiceResponse();
+    const greeting = `Hello, ${business.name}, this is Sarah. I can schedule your appointment right away. How can I help you today?`;
+
     twiml.say({
-      voice: 'Polly.Joanna-Neural',
+      voice: business.ai_voice_id || 'Polly.Joanna-Neural',
       language: 'en-US'
-    }, responseText);
-    
+    }, greeting);
+
     twiml.gather({
       input: 'speech',
       timeout: 5,
       speechTimeout: 'auto',
-      action: '/voice/process',
+      action: `/voice/process/${businessId}`,
       method: 'POST'
     });
-    
-    res.type('text/xml').send(twiml.toString());
-    
-  } catch (error) {
-    console.error('Error:', error);
-    const twiml = new twilio.twiml.VoiceResponse();
-    twiml.say('I apologize, I\'m having technical difficulties. Someone will call you back shortly.');
+
+    twiml.say('I didn\'t catch that. Let me have someone call you back.');
     twiml.hangup();
+
+    res.type('text/xml').send(twiml.toString());
+
+  } catch (error) {
+    console.error('Voice incoming error:', error);
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.say('Sorry, there was a technical issue. Please try calling back.');
     res.type('text/xml').send(twiml.toString());
   }
 });
 
-// Manual booking API endpoint
-app.post('/api/book-appointment', async (req, res) => {
-  try {
-    const { customerInfo, service, appointmentTime, bookedVia = 'Website' } = req.body;
-    
-    // Validate service type
-    const serviceConfig = serviceTypes[service.type];
-    if (!serviceConfig) {
-      return res.status(400).json({ success: false, error: 'Invalid service type' });
-    }
-    
-    // Create appointment
-    const appointment = calendar.bookAppointment(
-      customerInfo,
-      new Date(appointmentTime),
-      service.type,
-      'manual_' + Date.now()
-    );
-    
-    // Update appointment with enhanced data
-    appointment.bookedVia = bookedVia;
-    
-    // Update in storage
-    appointments.set(appointment.id, appointment);
-    
-    // Send confirmations
-    await sendManualBookingConfirmations(customerInfo, appointment);
-    
-    res.json({ success: true, appointment });
-    
-  } catch (error) {
-    console.error('Manual booking error:', error);
-    res.status(500).json({ success: false, error: 'Failed to book appointment' });
+// Enhanced calendar manager with database
+class DatabaseCalendarManager {
+  constructor(businessId) {
+    this.businessId = businessId;
   }
-});
 
-// Send running late notification to all remaining customers
-app.post('/api/send-running-late', async (req, res) => {
-  try {
-    const { delayMinutes, reason } = req.body;
-    const today = new Date();
-    const now = new Date();
-    
-    // Get remaining appointments for today
-    const remainingAppointments = Array.from(appointments.values()).filter(apt => {
-      const aptDate = new Date(apt.startTime);
-      return aptDate.toDateString() === today.toDateString() && 
-             aptDate > now && 
-             !apt.completed;
-    });
-    
-    let customerCount = 0;
-    
-    for (const apt of remainingAppointments) {
-      const originalTime = new Date(apt.startTime);
-      const newTime = new Date(originalTime.getTime() + delayMinutes * 60 * 1000);
-      const windowStart = new Date(newTime.getTime() - 30 * 60 * 1000);
-      const windowEnd = new Date(newTime.getTime() + 30 * 60 * 1000);
-      
-      const timeWindow = `${windowStart.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}-${windowEnd.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}`;
-      
-      let message = `Hi ${apt.customerName}! This is ${businessConfig.businessName}. I'm running about ${delayMinutes} minutes behind schedule today.`;
-      
-      if (reason) {
-        message += ` ${reason}.`;
+  async getAvailableSlots(date, requestedDuration = 60) {
+    try {
+      // Get business hours
+      const businessResult = await pool.query(
+        'SELECT business_hours FROM businesses WHERE id = $1',
+        [this.businessId]
+      );
+
+      if (businessResult.rows.length === 0) {
+        return [];
       }
-      
-      message += ` Your new appointment window is ${timeWindow}. Thanks for your patience!`;
-      
-      try {
-        await twilioClient.messages.create({
-          body: message,
-          from: process.env.TWILIO_PHONE_NUMBER,
-          to: apt.customerPhone
-        });
-        
-        // Update appointment time
-        apt.startTime = newTime.toISOString();
-        apt.endTime = new Date(newTime.getTime() + apt.duration * 60 * 1000).toISOString();
-        apt.communicationHistory = `Notified of ${delayMinutes}min delay`;
-        
-        customerCount++;
-      } catch (error) {
-        console.error(`Error sending to ${apt.customerPhone}:`, error);
+
+      const businessHours = businessResult.rows[0].business_hours;
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'monday' });
+      const dayHours = businessHours[dayName];
+
+      if (!dayHours || !dayHours.enabled) {
+        return [];
       }
-    }
-    
-    calendar.addNotification({
-      type: 'delay_notification',
-      message: `Sent delay notification to ${customerCount} customers (${delayMinutes} min delay)`
-    });
-    
-    res.json({ success: true, customerCount });
-    
-  } catch (error) {
-    console.error('Running late error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
-// Send early arrival request to specific customer
-app.post('/api/send-early-arrival', async (req, res) => {
-  try {
-    const { appointmentId, earlyMinutes } = req.body;
-    const appointment = appointments.get(appointmentId);
-    
-    if (!appointment) {
-      return res.status(404).json({ success: false, error: 'Appointment not found' });
-    }
-    
-    const originalTime = new Date(appointment.startTime);
-    const earlyTime = new Date(originalTime.getTime() - earlyMinutes * 60 * 1000);
-    
-    const message = `Hi ${appointment.customerName}! This is ${businessConfig.businessName}. I'm ahead of schedule and could arrive ${earlyMinutes} minutes early (around ${earlyTime.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}) if that works for you. Reply YES if that's okay, or I'll stick to the original time window. Thanks!`;
-    
-    await twilioClient.messages.create({
-      body: message,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: appointment.customerPhone
-    });
-    
-    appointment.communicationHistory = `Asked about ${earlyMinutes}min early arrival`;
-    
-    calendar.addNotification({
-      type: 'early_request',
-      message: `Asked ${appointment.customerName} about early arrival`
-    });
-    
-    res.json({ success: true });
-    
-  } catch (error) {
-    console.error('Early arrival error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+      const [startHour, startMinute] = dayHours.start.split(':').map(Number);
+      const [endHour, endMinute] = dayHours.end.split(':').map(Number);
 
-// Send quick status messages (arrived, en route, etc.)
-app.post('/api/send-quick-message', async (req, res) => {
-  try {
-    const { appointmentId, messageType } = req.body;
-    const appointment = appointments.get(appointmentId);
-    
-    if (!appointment) {
-      return res.status(404).json({ success: false, error: 'Appointment not found' });
-    }
-    
-    let message;
-    
-    switch (messageType) {
-      case 'arrived':
-        message = `Hi ${appointment.customerName}! This is ${businessConfig.businessName}. I've arrived and will be with you shortly. Thanks!`;
-        appointment.status = 'arrived';
-        break;
-      case 'enroute':
-        message = `Hi ${appointment.customerName}! This is ${businessConfig.businessName}. I'm on my way and should be there in about 30 minutes. See you soon!`;
-        appointment.status = 'enroute';
-        break;
-      default:
-        return res.status(400).json({ success: false, error: 'Invalid message type' });
-    }
-    
-    await twilioClient.messages.create({
-      body: message,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: appointment.customerPhone
-    });
-    
-    appointment.communicationHistory = `Sent ${messageType} message`;
-    
-    res.json({ success: true });
-    
-  } catch (error) {
-    console.error('Quick message error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
+      // Get existing appointments for the day
+      const dayStart = new Date(date);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(date);
+      dayEnd.setHours(23, 59, 59, 999);
 
-// Send custom message to selected customers
-app.post('/api/send-custom-message', async (req, res) => {
-  try {
-    const { recipients, message } = req.body;
-    const today = new Date();
-    const now = new Date();
-    
-    let targetAppointments = [];
-    
-    switch (recipients) {
-      case 'all':
-        targetAppointments = Array.from(appointments.values()).filter(apt => {
-          const aptDate = new Date(apt.startTime);
-          return aptDate.toDateString() === today.toDateString();
-        });
-        break;
-      case 'remaining':
-        targetAppointments = Array.from(appointments.values()).filter(apt => {
-          const aptDate = new Date(apt.startTime);
-          return aptDate.toDateString() === today.toDateString() && 
-                 aptDate > now && 
-                 !apt.completed;
-        });
-        break;
-      case 'next':
-        const nextApt = Array.from(appointments.values())
-          .filter(apt => {
-            const aptDate = new Date(apt.startTime);
-            return aptDate.toDateString() === today.toDateString() && 
-                   aptDate > now && 
-                   !apt.completed;
-          })
-          .sort((a, b) => new Date(a.startTime) - new Date(b.startTime))[0];
-        if (nextApt) targetAppointments = [nextApt];
-        break;
-    }
-    
-    let customerCount = 0;
-    
-    for (const apt of targetAppointments) {
-      try {
-        const personalizedMessage = message.replace(/\{name\}/g, apt.customerName);
-        
-        await twilioClient.messages.create({
-          body: `Hi ${apt.customerName}! This is ${businessConfig.businessName}. ${personalizedMessage}`,
-          from: process.env.TWILIO_PHONE_NUMBER,
-          to: apt.customerPhone
-        });
-        
-        apt.communicationHistory = `Custom message sent`;
-        customerCount++;
-      } catch (error) {
-        console.error(`Error sending to ${apt.customerPhone}:`, error);
+      const appointmentsResult = await pool.query(
+        `SELECT start_time, end_time, duration_minutes 
+         FROM appointments 
+         WHERE business_id = $1 AND start_time >= $2 AND start_time <= $3 AND status != 'cancelled'`,
+        [this.businessId, dayStart.toISOString(), dayEnd.toISOString()]
+      );
+
+      const existingAppointments = appointmentsResult.rows;
+      const slots = [];
+
+      // Generate potential slots
+      for (let hour = startHour; hour < endHour; hour++) {
+        for (let minute = 0; minute < 60; minute += 30) {
+          const slotStart = new Date(date);
+          slotStart.setHours(hour, minute, 0, 0);
+
+          // Add travel buffer
+          const totalDuration = requestedDuration + 30;
+          const slotEnd = new Date(slotStart.getTime() + totalDuration * 60000);
+
+          // Check if slot is within business hours
+          if (slotEnd.getHours() > endHour || 
+              (slotEnd.getHours() === endHour && slotEnd.getMinutes() > endMinute)) {
+            continue;
+          }
+
+          // Check conflicts with existing appointments
+          const hasConflict = existingAppointments.some(apt => {
+            const aptStart = new Date(apt.start_time);
+            const aptEnd = new Date(apt.end_time);
+            
+            // Add buffers
+            aptStart.setMinutes(aptStart.getMinutes() - 30);
+            aptEnd.setMinutes(aptEnd.getMinutes() + 30);
+            
+            return (slotStart < aptEnd && slotEnd > aptStart);
+          });
+
+          if (!hasConflict) {
+            slots.push({
+              start: slotStart,
+              end: slotEnd,
+              display: slotStart.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+              })
+            });
+          }
+        }
       }
+
+      return slots.slice(0, 8);
+    } catch (error) {
+      console.error('Error getting available slots:', error);
+      return [];
     }
-    
-    calendar.addNotification({
-      type: 'custom_message',
-      message: `Sent custom message to ${customerCount} customers`
-    });
-    
-    res.json({ success: true, customerCount });
-    
-  } catch (error) {
-    console.error('Custom message error:', error);
-    res.status(500).json({ success: false, error: error.message });
   }
-});
 
-// Send direct message to specific customer
-app.post('/api/send-direct-message', async (req, res) => {
-  try {
-    const { appointmentId, message } = req.body;
-    const appointment = appointments.get(appointmentId);
-    
-    if (!appointment) {
-      return res.status(404).json({ success: false, error: 'Appointment not found' });
+  async bookAppointment(customerInfo, appointmentTime, serviceTypeId, callSid) {
+    try {
+      // Get service type details
+      const serviceResult = await pool.query(
+        'SELECT * FROM service_types WHERE id = $1 AND business_id = $2',
+        [serviceTypeId, this.businessId]
+      );
+
+      if (serviceResult.rows.length === 0) {
+        throw new Error('Service type not found');
+      }
+
+      const serviceType = serviceResult.rows[0];
+      const startTime = new Date(appointmentTime);
+      const endTime = new Date(startTime.getTime() + serviceType.duration_minutes * 60000);
+
+      // Insert appointment
+      const result = await pool.query(
+        `INSERT INTO appointments (
+          business_id, customer_name, customer_phone, customer_email, customer_address,
+          service_type_id, service_name, issue_description, start_time, end_time,
+          duration_minutes, estimated_revenue, call_sid, booking_source
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        RETURNING *`,
+        [
+          this.businessId,
+          customerInfo.name,
+          customerInfo.phone,
+          customerInfo.email || null,
+          customerInfo.address || null,
+          serviceTypeId,
+          serviceType.name,
+          customerInfo.issue || '',
+          startTime.toISOString(),
+          endTime.toISOString(),
+          serviceType.duration_minutes,
+          serviceType.base_rate,
+          callSid,
+          'ai_phone'
+        ]
+      );
+
+      // Create notification
+      await pool.query(
+        `INSERT INTO notifications (business_id, type, title, message, data)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          this.businessId,
+          'new_booking',
+          'New Appointment Booked',
+          `${customerInfo.name} booked ${serviceType.name} for ${startTime.toLocaleString()}`,
+          JSON.stringify({ appointmentId: result.rows[0].id })
+        ]
+      );
+
+      console.log('✅ Appointment booked in database:', result.rows[0]);
+      return result.rows[0];
+
+    } catch (error) {
+      console.error('Error booking appointment:', error);
+      throw error;
     }
-    
-    await twilioClient.messages.create({
-      body: `Hi ${appointment.customerName}! This is ${businessConfig.businessName}. ${message}`,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: appointment.customerPhone
-    });
-    
-    appointment.communicationHistory = `Direct message sent`;
-    
-    res.json({ success: true });
-    
-  } catch (error) {
-    console.error('Direct message error:', error);
-    res.status(500).json({ success: false, error: error.message });
   }
-});
+}
 
-// Mark appointment as completed
-app.post('/api/complete-appointment', async (req, res) => {
+// API endpoints for appointments
+app.get('/api/businesses/:businessId/appointments', authenticateToken, getBusinessContext, async (req, res) => {
   try {
-    const { appointmentId } = req.body;
-    const appointment = appointments.get(appointmentId);
-    
-    if (!appointment) {
-      return res.status(404).json({ success: false, error: 'Appointment not found' });
+    const { date } = req.query;
+    let query = `
+      SELECT a.*, st.name as service_type_name, st.base_rate
+      FROM appointments a
+      LEFT JOIN service_types st ON a.service_type_id = st.id
+      WHERE a.business_id = $1
+    `;
+    const params = [req.business.id];
+
+    if (date) {
+      const targetDate = new Date(date);
+      const dayStart = new Date(targetDate);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(targetDate);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      query += ` AND a.start_time >= $2 AND a.start_time <= $3`;
+      params.push(dayStart.toISOString(), dayEnd.toISOString());
     }
-    
-    appointment.completed = true;
-    appointment.completedAt = new Date().toISOString();
-    appointment.status = 'completed';
-    
-    calendar.addNotification({
-      type: 'appointment_completed',
-      message: `Completed appointment with ${appointment.customerName}`
-    });
-    
-    res.json({ success: true });
-    
+
+    query += ` ORDER BY a.start_time DESC LIMIT 50`;
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+
   } catch (error) {
-    console.error('Complete appointment error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Error fetching appointments:', error);
+    res.status(500).json({ error: 'Failed to fetch appointments' });
   }
 });
 
-// Helper functions
-async function extractCustomerInfo(input, callLog) {
+app.get('/api/businesses/:businessId/available-slots', authenticateToken, getBusinessContext, async (req, res) => {
   try {
-    const prompt = `Extract info from: "${input}"\nReturn JSON: {"name": "", "phone": "", "issue": ""}`;
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 100
-    });
-    
-    const extracted = JSON.parse(response.choices[0].message.content);
-    Object.assign(callLog.customerInfo, extracted);
+    const { date, duration } = req.query;
+    const targetDate = date ? new Date(date) : new Date();
+    const requestedDuration = duration ? parseInt(duration) : 60;
+
+    const calendar = new DatabaseCalendarManager(req.business.id);
+    const slots = await calendar.getAvailableSlots(targetDate, requestedDuration);
+
+    res.json(slots);
   } catch (error) {
-    console.error('Extraction error:', error);
-  }
-}
-
-async function detectEmergency(conversation) {
-  try {
-    const prompt = `Is this an emergency? ${conversation.map(m => m.content).join(' ')}\nReturn only "true" or "false"`;
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo", 
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 5
-    });
-    return response.choices[0].message.content.includes('true');
-  } catch (error) {
-    return false;
-  }
-}
-
-async function detectBookingIntent(conversation) {
-  try {
-    const prompt = `Analyze for booking intent: ${conversation.map(m => m.content).join(' ')}\nReturn JSON: {"shouldBook": boolean, "timeSlot": "time mentioned"}`;
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 50
-    });
-    return JSON.parse(response.choices[0].message.content);
-  } catch (error) {
-    return { shouldBook: false, timeSlot: null };
-  }
-}
-
-function findBookingTime(timeSlot, availableSlots) {
-  if (!timeSlot || !availableSlots.length) return null;
-  
-  const slot = availableSlots.find(s => 
-    s.display.toLowerCase().includes(timeSlot.toLowerCase()) ||
-    timeSlot.toLowerCase().includes(s.display.toLowerCase())
-  );
-  
-  return slot?.start || availableSlots[0]?.start;
-}
-
-async function sendAppointmentConfirmations(callLog, appointment) {
-  try {
-    const appointmentTime = new Date(appointment.startTime);
-    const windowStart = new Date(appointmentTime.getTime() - 30 * 60 * 1000);
-    const windowEnd = new Date(appointmentTime.getTime() + 30 * 60 * 1000);
-    const timeWindow = `${windowStart.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}-${windowEnd.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}`;
-    
-    const customerMessage = `📅 APPOINTMENT CONFIRMED\n\n${businessConfig.businessName}\nService: ${appointment.service}\nTime Window: ${timeWindow}\n${new Date(appointment.startTime).toDateString()}\n\nWe'll call 30 minutes before arrival!`;
-    
-    if (callLog.customerInfo.phone) {
-      await twilioClient.messages.create({
-        body: customerMessage,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: callLog.customerInfo.phone
-      });
-    }
-    
-    const ownerMessage = `🔧 NEW APPOINTMENT\n\nCustomer: ${appointment.customerName}\nPhone: ${appointment.customerPhone}\nTime: ${new Date(appointment.startTime).toLocaleString()}\nService: ${appointment.service}\nIssue: ${appointment.issue}`;
-    
-    await twilioClient.messages.create({
-      body: ownerMessage,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: businessConfig.ownerPhone
-    });
-    
-  } catch (error) {
-    console.error('SMS error:', error);
-  }
-}
-
-async function sendManualBookingConfirmations(customerInfo, appointment) {
-  try {
-    const appointmentTime = new Date(appointment.startTime);
-    const windowStart = new Date(appointmentTime.getTime() - 30 * 60 * 1000);
-    const windowEnd = new Date(appointmentTime.getTime() + 30 * 60 * 1000);
-    const timeWindow = `${windowStart.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}-${windowEnd.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}`;
-    
-    // Customer SMS
-    if (customerInfo.phone) {
-      const customerMessage = `📅 APPOINTMENT CONFIRMED
-
-${businessConfig.businessName}
-Service: ${appointment.service}
-Time Window: ${timeWindow}
-${appointmentTime.toDateString()}
-Address: ${customerInfo.address}
-
-We'll call 30 minutes before arrival. Thank you!`;
-
-      await twilioClient.messages.create({
-        body: customerMessage,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: customerInfo.phone
-      });
-    }
-    
-    // Owner notification
-    const ownerMessage = `🔧 NEW WEBSITE BOOKING
-
-Customer: ${customerInfo.name}
-Phone: ${customerInfo.phone}
-Service: ${appointment.service}
-Time: ${appointmentTime.toLocaleString()}
-Address: ${customerInfo.address}
-Issue: ${customerInfo.issue}
-
-Estimated: $${appointment.estimatedRevenue}`;
-
-    await twilioClient.messages.create({
-      body: ownerMessage,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: businessConfig.ownerPhone
-    });
-    
-  } catch (error) {
-    console.error('Manual booking SMS error:', error);
-  }
-}
-
-// API Endpoints
-app.get('/api/appointments', (req, res) => {
-  const { date } = req.query;
-  if (date) {
-    const targetDate = new Date(date);
-    const dayAppointments = calendar.getDayAppointments(targetDate);
-    res.json(dayAppointments);
-  } else {
-    res.json(Array.from(appointments.values()));
+    console.error('Error getting available slots:', error);
+    res.status(500).json({ error: 'Failed to get available slots' });
   }
 });
 
-app.get('/api/available-slots', (req, res) => {
-  const { date, duration } = req.query;
-  const targetDate = date ? new Date(date) : new Date();
-  const requestedDuration = duration ? parseInt(duration) : 60;
-  const slots = calendar.getAvailableSlots(targetDate, requestedDuration);
-  res.json(slots);
-});
-
-app.get('/api/notifications', (req, res) => {
-  res.json(notifications.slice(0, 20));
-});
-
-app.get('/api/stats', (req, res) => {
-  const today = new Date();
-  const todayAppointments = calendar.getDayAppointments(today);
-  const totalRevenue = todayAppointments.reduce((sum, apt) => sum + apt.estimatedRevenue, 0);
-  
+// Health check endpoint
+app.get('/health', (req, res) => {
   res.json({
-    todayAppointments: todayAppointments.length,
-    todayRevenue: totalRevenue,
-    totalAppointments: appointments.size,
-    aiBookings: Array.from(appointments.values()).filter(apt => apt.bookedVia === 'AI Phone').length
-  });
-});
-
-app.get('/', (req, res) => {
-  res.json({
-    message: 'AI Phone System with Calendar & Communication Running!',
-    status: 'active',
-    features: ['Real appointment booking', 'Customer communication', 'Schedule management'],
-    pages: {
-      calendar: '/calendar',
-      booking: '/book', 
-      schedule: '/schedule'
-    },
-    endpoints: {
-      incoming: '/voice/incoming',
-      appointments: '/api/appointments',
-      availableSlots: '/api/available-slots',
-      notifications: '/api/notifications',
-      stats: '/api/stats'
-    }
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    version: '2.0.0',
+    features: ['multi-tenant', 'database', 'authentication', 'billing']
   });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 AI Phone System with Communication running on port ${PORT}`);
-  console.log(`📅 Calendar: /calendar`);
-  console.log(`📝 Booking: /book`);
-  console.log(`📋 Schedule: /schedule`);
-  console.log(`📞 Phone: (844) 540-1735`);
+  console.log(`🚀 CallCatcher SaaS running on port ${PORT}`);
+  console.log(`🏠 Landing page: /`);
+  console.log(`📋 Onboarding: /onboarding`);
+  console.log(`📊 Dashboard: /dashboard`);
+  console.log(`💾 Database: ${process.env.DATABASE_URL ? 'Connected' : 'Not configured'}`);
 });
