@@ -3,11 +3,13 @@ const express = require('express');
 const twilio = require('twilio');
 const OpenAI = require('openai');
 const cors = require('cors');
+const path = require('path');
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
+app.use(express.static('public'));
 
 // Initialize services
 const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
@@ -150,28 +152,35 @@ const calendar = new CalendarManager();
 const createCalendarAwarePrompt = (availableSlots, isEmergency = false) => `
 You are Sarah, the AI receptionist for ${businessConfig.businessName}.
 
-APPOINTMENT SCHEDULING:
-${isEmergency ? 
-  `EMERGENCY SERVICE: I can get you in ${availableSlots?.[0]?.display || 'within the hour'} for $${businessConfig.services.emergency.rate}/hour.` :
-  `Available appointments today: ${availableSlots?.map(slot => slot.display).slice(0, 3).join(', ') || 'checking availability...'}`
-}
+CRITICAL: ALWAYS offer specific appointment times when customers need service.
 
-BOOKING PROCESS:
-1. Determine if emergency or regular service
-2. Get customer name and phone number  
-3. Brief issue description
-4. Offer 2-3 specific time slots
-5. When customer chooses, say "Perfect! Let me book that for you right now."
-6. Confirm appointment details
+AVAILABLE TIMES TODAY: ${availableSlots?.map(slot => slot.display).slice(0, 4).join(', ') || '9:00 AM, 2:00 PM, 5:00 PM'}
 
-EMERGENCY CRITERIA:
-- Water damage, flooding, burst pipes
-- No heat in winter, no AC in extreme heat
-- Gas leaks or electrical safety issues
-- Sewage backup
+BOOKING PROCESS (FOLLOW EXACTLY):
+1. Ask if emergency or regular service
+2. For ANY service request, immediately offer 2-3 specific times from available slots
+3. Get customer name and phone number
+4. When they pick a time, say "Perfect! Let me book that for you right now."
 
-Always sound confident about booking. You handle scheduling directly.
+SAMPLE CONVERSATIONS:
+
+Regular Service:
+Customer: "I need a plumber for my sink"
+You: "I can help with that regular service call. I have appointments available today at ${availableSlots?.[0]?.display || '2:00 PM'}, ${availableSlots?.[1]?.display || '3:30 PM'}, or ${availableSlots?.[2]?.display || '5:00 PM'}. Which time works for you?"
+
+Emergency Service:
+Customer: "Emergency! My pipe burst!"
+You: "That's an emergency - I can get you in ${availableSlots?.[0]?.display || 'within the hour'} for $${businessConfig.services.emergency.rate}/hour. Can I book that time for you?"
+
+NEVER say "someone will call you back" - YOU handle all scheduling.
+ALWAYS offer specific times immediately when they need service.
+ALWAYS get name and phone before confirming the booking.
 `;
+
+// Serve calendar frontend
+app.get('/calendar', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Handle incoming calls
 app.post('/voice/incoming', async (req, res) => {
@@ -431,9 +440,10 @@ app.get('/api/stats', (req, res) => {
 
 app.get('/', (req, res) => {
   res.json({
-    message: 'AI Phone System with Calendar Database Running!',
+    message: 'AI Phone System with Calendar Frontend Running!',
     status: 'active',
-    features: ['Real appointment booking', 'Calendar database', 'SMS confirmations'],
+    features: ['Real appointment booking', 'Calendar dashboard', 'SMS confirmations'],
+    calendar: '/calendar',
     endpoints: {
       incoming: '/voice/incoming',
       appointments: '/api/appointments',
@@ -447,6 +457,7 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 AI Phone System with Calendar running on port ${PORT}`);
-  console.log(`📅 Calendar database ready`);
+  console.log(`📅 Calendar dashboard: /calendar`);
   console.log(`📞 Phone: (844) 540-1735`);
+  console.log(`💻 Dashboard: https://nodejs-production-5e30.up.railway.app/calendar`);
 });
