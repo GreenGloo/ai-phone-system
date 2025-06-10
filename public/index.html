@@ -3,253 +3,202 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Schedule Management - CallCatcher</title>
+    <title>CallCatcher Calendar</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <style>
-        .appointment-card {
-            transition: all 0.3s ease;
+        .calendar-day {
+            min-height: 100px;
+            transition: all 0.2s ease;
         }
         
-        .appointment-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        .calendar-day:hover {
+            background-color: #f8fafc;
         }
         
-        .appointment-card.current {
-            border-color: #3b82f6;
+        .calendar-day.selected {
             background-color: #dbeafe;
+            border-color: #3b82f6;
         }
         
-        .appointment-card.completed {
-            background-color: #f0fdf4;
-            border-color: #22c55e;
+        .calendar-day.today {
+            background-color: #fef3c7;
+            border-color: #f59e0b;
         }
         
-        .appointment-card.delayed {
-            background-color: #fef2f2;
-            border-color: #ef4444;
-        }
-        
-        .status-dot {
-            width: 8px;
-            height: 8px;
+        .appointment-dot {
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
             display: inline-block;
+            margin-right: 4px;
         }
         
-        .status-scheduled { background-color: #3b82f6; }
-        .status-en-route { background-color: #f59e0b; }
-        .status-arrived { background-color: #10b981; }
-        .status-completed { background-color: #6b7280; }
-        .status-delayed { background-color: #ef4444; }
+        .emergency { background-color: #ef4444; }
+        .regular { background-color: #3b82f6; }
+        
+        .notification-badge {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
-    <div class="max-w-7xl mx-auto p-4">
+    <div id="app" class="max-w-7xl mx-auto p-4">
         <!-- Header -->
         <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
             <div class="flex items-center justify-between">
                 <div>
-                    <h1 class="text-3xl font-bold text-gray-900">Schedule Management</h1>
-                    <p class="text-gray-600">Manage your daily schedule and communicate with customers</p>
+                    <h1 class="text-3xl font-bold text-gray-900">CallCatcher Calendar</h1>
+                    <p class="text-gray-600">AI-powered appointment management</p>
                 </div>
                 <div class="flex items-center gap-4">
-                    <div class="text-sm text-gray-600">
-                        <span class="font-medium">Current Time:</span>
-                        <span id="current-time" class="font-mono">--:--</span>
+                    <div class="relative">
+                        <span class="text-2xl cursor-pointer" onclick="refreshNotifications()">🔔</span>
+                        <span id="notification-badge" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center notification-badge hidden">0</span>
                     </div>
-                    <button onclick="refreshSchedule()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                    <button onclick="goToToday()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
+                        Today
+                    </button>
+                    <button onclick="refreshData()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
                         Refresh
                     </button>
-                    <a href="/calendar" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700">
-                        Calendar View
-                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Row -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+            <div class="bg-white rounded-lg p-6 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">📞</span>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-900" id="total-appointments">0</p>
+                        <p class="text-gray-600">Total Appointments</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg p-6 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">📅</span>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-900" id="selected-day-appointments">0</p>
+                        <p class="text-gray-600" id="selected-day-label">Selected Day</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg p-6 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">💰</span>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-900" id="selected-day-revenue">$0</p>
+                        <p class="text-gray-600">Selected Day Revenue</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg p-6 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">🤖</span>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-900" id="ai-bookings">0</p>
+                        <p class="text-gray-600">AI Bookings</p>
+                    </div>
                 </div>
             </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <!-- Schedule Timeline -->
+            <!-- Calendar View -->
             <div class="lg:col-span-3">
                 <div class="bg-white rounded-lg shadow-sm p-6">
+                    <!-- Calendar Header -->
                     <div class="flex items-center justify-between mb-6">
-                        <h2 class="text-xl font-bold text-gray-900">Today's Schedule</h2>
+                        <h2 class="text-2xl font-bold text-gray-900" id="calendar-month-year">
+                            June 2025
+                        </h2>
                         <div class="flex gap-2">
-                            <button onclick="markCurrentCompleted()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm">
-                                ✓ Complete Current
+                            <button onclick="previousMonth()" class="px-4 py-2 border rounded hover:bg-gray-50 font-medium">
+                                ← Previous
                             </button>
-                            <button onclick="showRunningLateModal()" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 text-sm">
-                                🕐 Running Late
+                            <button onclick="nextMonth()" class="px-4 py-2 border rounded hover:bg-gray-50 font-medium">
+                                Next →
                             </button>
                         </div>
                     </div>
-                    
-                    <div id="schedule-timeline" class="space-y-4">
-                        <!-- Schedule items will be populated here -->
+
+                    <!-- Calendar Grid -->
+                    <div class="grid grid-cols-7 gap-1 mb-2">
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Sun</div>
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Mon</div>
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Tue</div>
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Wed</div>
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Thu</div>
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Fri</div>
+                        <div class="p-3 text-center text-sm font-semibold text-gray-700 bg-gray-100 rounded">Sat</div>
+                    </div>
+
+                    <div id="calendar-grid" class="grid grid-cols-7 gap-1">
+                        <!-- Calendar days will be inserted here -->
                     </div>
                 </div>
             </div>
 
-            <!-- Quick Actions & Status -->
+            <!-- Sidebar -->
             <div class="space-y-6">
-                <!-- Current Status -->
+                <!-- Selected Day Details -->
                 <div class="bg-white rounded-lg shadow-sm p-6">
-                    <h3 class="text-lg font-bold text-gray-900 mb-4">Current Status</h3>
+                    <h3 class="text-lg font-bold text-gray-900 mb-4" id="selected-date-header">
+                        Today's Schedule
+                    </h3>
+                    <div id="selected-day-appointments-list" class="space-y-3">
+                        <div class="text-center py-4 text-gray-500">
+                            Select a date to view appointments
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Available Slots for Selected Day -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Available Slots</h3>
+                    <div id="selected-day-available-slots" class="grid grid-cols-2 gap-2">
+                        <div class="text-center py-4 text-gray-500 col-span-2">
+                            Select a date to view availability
+                        </div>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-500 text-center">
+                        AI offers these times to callers
+                    </div>
+                </div>
+
+                <!-- Live Notifications -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Live Activity</h3>
+                    <div id="notifications-list" class="space-y-3">
+                        <div class="text-center py-4 text-gray-500">
+                            No new notifications
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Phone System Info -->
+                <div class="bg-white rounded-lg shadow-sm p-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Phone System</h3>
                     <div class="space-y-3">
-                        <div class="flex items-center justify-between">
-                            <span class="text-gray-600">Next Appointment:</span>
-                            <span id="next-appointment" class="font-medium">Loading...</span>
+                        <div class="text-sm text-gray-600">
+                            <strong>Phone Number:</strong><br>
+                            <span class="text-lg font-mono">(844) 540-1735</span>
                         </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-gray-600">Time Until Next:</span>
-                            <span id="time-until-next" class="font-medium">--</span>
+                        <div class="text-sm text-gray-600">
+                            <strong>Status:</strong> <span class="text-green-600">● Active</span>
                         </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-gray-600">Schedule Status:</span>
-                            <span id="schedule-status" class="font-medium text-green-600">On Time</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Quick Actions -->
-                <div class="bg-white rounded-lg shadow-sm p-6">
-                    <h3 class="text-lg font-bold text-gray-900 mb-4">Quick Actions</h3>
-                    <div class="space-y-3">
-                        <button onclick="sendArrivedMessage()" class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 text-sm">
-                            📍 I've Arrived
-                        </button>
-                        <button onclick="sendEnRouteMessage()" class="w-full bg-yellow-600 text-white py-2 px-4 rounded hover:bg-yellow-700 text-sm">
-                            🚗 En Route (30 min)
-                        </button>
-                        <button onclick="sendCustomMessage()" class="w-full bg-gray-600 text-white py-2 px-4 rounded hover:bg-gray-700 text-sm">
-                            💬 Custom Message
-                        </button>
-                        <button onclick="showEarlyArrivalModal()" class="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 text-sm">
-                            ⏰ Ask About Early Arrival
+                        <button onclick="testCall()" class="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700">
+                            Test Call System
                         </button>
                     </div>
-                </div>
-
-                <!-- Communication Log -->
-                <div class="bg-white rounded-lg shadow-sm p-6">
-                    <h3 class="text-lg font-bold text-gray-900 mb-4">Recent Messages</h3>
-                    <div id="communication-log" class="space-y-2 max-h-64 overflow-y-auto">
-                        <div class="text-center py-4 text-gray-500 text-sm">
-                            No recent messages
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Running Late Modal -->
-    <div id="running-late-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white rounded-lg p-6 max-w-md w-full">
-            <h3 class="text-xl font-bold text-gray-900 mb-4">Notify Customers - Running Late</h3>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">How many minutes late?</label>
-                    <select id="late-minutes" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                        <option value="15">15 minutes</option>
-                        <option value="30">30 minutes</option>
-                        <option value="45">45 minutes</option>
-                        <option value="60">1 hour</option>
-                        <option value="90">1.5 hours</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Reason (optional)</label>
-                    <select id="late-reason" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                        <option value="">Select reason...</option>
-                        <option value="Previous job taking longer">Previous job taking longer</option>
-                        <option value="Traffic delays">Traffic delays</option>
-                        <option value="Equipment issue">Equipment issue</option>
-                        <option value="Emergency call">Emergency call came up</option>
-                        <option value="Supply run needed">Need to pick up supplies</option>
-                    </select>
-                </div>
-                <div class="bg-gray-50 p-3 rounded">
-                    <h4 class="font-medium mb-2">Message Preview:</h4>
-                    <p id="late-message-preview" class="text-sm text-gray-600">
-                        Hi! This is Smith Plumbing. I'm running about 30 minutes behind schedule today. Your appointment window is now 2:30-3:00 PM. Thanks for your patience!
-                    </p>
-                </div>
-                <div class="flex gap-3">
-                    <button onclick="sendRunningLateMessage()" class="flex-1 bg-red-600 text-white py-2 px-4 rounded hover:bg-red-700">
-                        Send to All Customers
-                    </button>
-                    <button onclick="closeRunningLateModal()" class="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50">
-                        Cancel
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Early Arrival Modal -->
-    <div id="early-arrival-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white rounded-lg p-6 max-w-md w-full">
-            <h3 class="text-xl font-bold text-gray-900 mb-4">Ask About Early Arrival</h3>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Select Customer:</label>
-                    <select id="early-customer" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                        <option value="">Select next customer...</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">How much earlier?</label>
-                    <select id="early-minutes" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                        <option value="15">15 minutes early</option>
-                        <option value="30">30 minutes early</option>
-                        <option value="45">45 minutes early</option>
-                        <option value="60">1 hour early</option>
-                    </select>
-                </div>
-                <div class="bg-gray-50 p-3 rounded">
-                    <h4 class="font-medium mb-2">Message Preview:</h4>
-                    <p id="early-message-preview" class="text-sm text-gray-600">
-                        Hi John! This is Smith Plumbing. I'm ahead of schedule and could arrive 30 minutes early (around 1:30 PM) if that works for you. Reply YES if that's okay, or I'll stick to the original 2:00 PM window. Thanks!
-                    </p>
-                </div>
-                <div class="flex gap-3">
-                    <button onclick="sendEarlyArrivalMessage()" class="flex-1 bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700">
-                        Send Message
-                    </button>
-                    <button onclick="closeEarlyArrivalModal()" class="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50">
-                        Cancel
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Custom Message Modal -->
-    <div id="custom-message-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white rounded-lg p-6 max-w-md w-full">
-            <h3 class="text-xl font-bold text-gray-900 mb-4">Send Custom Message</h3>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Select Recipients:</label>
-                    <select id="custom-recipients" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
-                        <option value="all">All today's customers</option>
-                        <option value="remaining">Remaining customers only</option>
-                        <option value="next">Next customer only</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Message:</label>
-                    <textarea id="custom-message-text" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Type your message..."></textarea>
-                    <div class="text-xs text-gray-500 mt-1">160 characters max for SMS</div>
-                </div>
-                <div class="flex gap-3">
-                    <button onclick="sendCustomMessageToCustomers()" class="flex-1 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
-                        Send Message
-                    </button>
-                    <button onclick="closeCustomMessageModal()" class="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50">
-                        Cancel
-                    </button>
                 </div>
             </div>
         </div>
@@ -257,453 +206,363 @@
 
     <script>
         // Global state
-        let todayAppointments = [];
-        let currentAppointmentIndex = 0;
-        let communicationLog = [];
+        let currentDate = new Date();
+        let selectedDate = new Date();
+        let appointments = [];
+        let notifications = [];
+        let stats = {};
 
-        // Initialize
+        // Initialize app
         document.addEventListener('DOMContentLoaded', function() {
-            refreshSchedule();
-            updateCurrentTime();
-            setInterval(updateCurrentTime, 60000); // Update every minute
-            setInterval(refreshSchedule, 30000); // Refresh every 30 seconds
+            selectedDate = new Date(); // Start with today selected
+            refreshData();
+            renderCalendar();
+            // Auto-refresh every 30 seconds
+            setInterval(() => {
+                refreshData();
+                renderCalendar();
+            }, 30000);
         });
 
-        // Update current time
-        function updateCurrentTime() {
-            const now = new Date();
-            document.getElementById('current-time').textContent = now.toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true
-            });
+        // Calendar navigation
+        function previousMonth() {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar();
         }
 
-        // Refresh schedule
-        async function refreshSchedule() {
-            try {
-                const today = new Date().toISOString().split('T')[0];
-                const response = await fetch(`/api/appointments?date=${today}`);
-                todayAppointments = await response.json();
-                
-                // Sort by start time
-                todayAppointments.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
-                
-                renderScheduleTimeline();
-                updateStatusPanel();
-                updateEarlyArrivalOptions();
-                
-            } catch (error) {
-                console.error('Error refreshing schedule:', error);
+        function nextMonth() {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar();
+        }
+
+        function goToToday() {
+            currentDate = new Date();
+            selectedDate = new Date();
+            renderCalendar();
+            loadSelectedDayData();
+        }
+
+        // Render calendar
+        function renderCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            
+            // Update month/year header
+            document.getElementById('calendar-month-year').textContent = 
+                currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+            // Calculate calendar days
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            const startDate = new Date(firstDay);
+            startDate.setDate(startDate.getDate() - firstDay.getDay()); // Start from Sunday
+
+            const calendarGrid = document.getElementById('calendar-grid');
+            calendarGrid.innerHTML = '';
+
+            // Generate 6 weeks of calendar
+            for (let week = 0; week < 6; week++) {
+                for (let day = 0; day < 7; day++) {
+                    const date = new Date(startDate);
+                    date.setDate(startDate.getDate() + (week * 7) + day);
+                    
+                    const dayElement = createDayElement(date, month);
+                    calendarGrid.appendChild(dayElement);
+                }
             }
         }
 
-        // Render schedule timeline
-        function renderScheduleTimeline() {
-            const container = document.getElementById('schedule-timeline');
+        // Create calendar day element
+        function createDayElement(date, currentMonth) {
+            const dayDiv = document.createElement('div');
+            const isCurrentMonth = date.getMonth() === currentMonth;
+            const isToday = date.toDateString() === new Date().toDateString();
+            const isSelected = date.toDateString() === selectedDate.toDateString();
             
-            if (todayAppointments.length === 0) {
-                container.innerHTML = '<div class="text-center py-8 text-gray-500">No appointments scheduled for today</div>';
+            // Get appointments for this day
+            const dayAppointments = getDayAppointments(date);
+            const dayRevenue = dayAppointments.reduce((sum, apt) => sum + (apt.estimatedRevenue || 0), 0);
+
+            dayDiv.className = `calendar-day border border-gray-200 rounded p-2 cursor-pointer ${
+                isCurrentMonth ? 'bg-white' : 'bg-gray-50 text-gray-400'
+            } ${isToday ? 'today border-2' : ''} ${isSelected ? 'selected border-2' : ''}`;
+            
+            dayDiv.onclick = () => selectDate(date);
+
+            // Day number
+            const dayNumber = document.createElement('div');
+            dayNumber.className = 'font-semibold text-sm mb-1';
+            dayNumber.textContent = date.getDate();
+            dayDiv.appendChild(dayNumber);
+
+            // Appointments indicators
+            if (dayAppointments.length > 0) {
+                const appointmentsDiv = document.createElement('div');
+                appointmentsDiv.className = 'space-y-1';
+
+                // Show appointment dots
+                dayAppointments.slice(0, 3).forEach(apt => {
+                    const aptDiv = document.createElement('div');
+                    aptDiv.className = 'text-xs flex items-center';
+                    
+                    const dot = document.createElement('span');
+                    dot.className = `appointment-dot ${apt.service || 'regular'}`;
+                    
+                    const time = new Date(apt.startTime).toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                    });
+                    
+                    aptDiv.appendChild(dot);
+                    aptDiv.appendChild(document.createTextNode(time));
+                    appointmentsDiv.appendChild(aptDiv);
+                });
+
+                // Show more indicator
+                if (dayAppointments.length > 3) {
+                    const moreDiv = document.createElement('div');
+                    moreDiv.className = 'text-xs text-gray-500';
+                    moreDiv.textContent = `+${dayAppointments.length - 3} more`;
+                    appointmentsDiv.appendChild(moreDiv);
+                }
+
+                dayDiv.appendChild(appointmentsDiv);
+
+                // Revenue indicator
+                if (dayRevenue > 0) {
+                    const revenueDiv = document.createElement('div');
+                    revenueDiv.className = 'text-xs font-medium text-green-600 mt-1';
+                    revenueDiv.textContent = `$${dayRevenue}`;
+                    dayDiv.appendChild(revenueDiv);
+                }
+            }
+
+            return dayDiv;
+        }
+
+        // Select a date
+        function selectDate(date) {
+            selectedDate = new Date(date);
+            renderCalendar(); // Re-render to show selection
+            loadSelectedDayData();
+        }
+
+        // Load data for selected day
+        function loadSelectedDayData() {
+            const dateStr = selectedDate.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                month: 'long', 
+                day: 'numeric',
+                year: 'numeric'
+            });
+            
+            document.getElementById('selected-date-header').textContent = dateStr;
+            document.getElementById('selected-day-label').textContent = 
+                selectedDate.toDateString() === new Date().toDateString() ? "Today's Appointments" : "Selected Day";
+
+            // Load appointments for selected day
+            const dayAppointments = getDayAppointments(selectedDate);
+            renderSelectedDayAppointments(dayAppointments);
+
+            // Load available slots for selected day
+            loadAvailableSlotsForDate(selectedDate);
+
+            // Update stats for selected day
+            const dayRevenue = dayAppointments.reduce((sum, apt) => sum + (apt.estimatedRevenue || 0), 0);
+            document.getElementById('selected-day-appointments').textContent = dayAppointments.length;
+            document.getElementById('selected-day-revenue').textContent = `$${dayRevenue}`;
+        }
+
+        // Get appointments for a specific day
+        function getDayAppointments(date) {
+            return appointments.filter(apt => {
+                const aptDate = new Date(apt.startTime);
+                return aptDate.toDateString() === date.toDateString();
+            }).sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+        }
+
+        // Render selected day appointments
+        function renderSelectedDayAppointments(dayAppointments) {
+            const container = document.getElementById('selected-day-appointments-list');
+            
+            if (dayAppointments.length === 0) {
+                container.innerHTML = '<div class="text-center py-4 text-gray-500">No appointments scheduled</div>';
                 return;
             }
 
-            container.innerHTML = todayAppointments.map((apt, index) => {
+            container.innerHTML = dayAppointments.map(apt => {
                 const startTime = new Date(apt.startTime);
-                const endTime = new Date(apt.endTime);
-                const now = new Date();
-                
-                // Calculate time window (±30 minutes)
-                const windowStart = new Date(startTime.getTime() - 30 * 60 * 1000);
-                const windowEnd = new Date(startTime.getTime() + 30 * 60 * 1000);
-                
-                const timeWindow = `${windowStart.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})} - ${windowEnd.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}`;
-                
-                // Determine status
-                let status = apt.status || 'scheduled';
-                let statusClass = 'status-scheduled';
-                let cardClass = '';
-                
-                if (apt.completed) {
-                    status = 'completed';
-                    statusClass = 'status-completed';
-                    cardClass = 'completed';
-                } else if (now > endTime) {
-                    status = 'delayed';
-                    statusClass = 'status-delayed';
-                    cardClass = 'delayed';
-                } else if (now >= windowStart && now <= windowEnd) {
-                    status = 'current';
-                    statusClass = 'status-en-route';
-                    cardClass = 'current';
-                    currentAppointmentIndex = index;
-                }
+                const timeString = startTime.toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                });
 
                 return `
-                    <div class="appointment-card border-2 rounded-lg p-4 ${cardClass}" data-appointment-id="${apt.id}">
-                        <div class="flex items-start justify-between mb-3">
-                            <div class="flex-1">
-                                <div class="flex items-center gap-3 mb-2">
-                                    <span class="status-dot ${statusClass}"></span>
-                                    <span class="font-bold text-lg">${timeWindow}</span>
-                                    <span class="px-2 py-1 rounded-full text-xs font-medium ${apt.service === 'emergency' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}">
-                                        ${apt.service}
-                                    </span>
-                                </div>
-                                <div class="text-lg font-medium text-gray-900 mb-1">
-                                    👤 ${apt.customerName}
-                                </div>
-                                <div class="text-sm text-gray-600 mb-2">
-                                    📞 ${apt.customerPhone}
-                                </div>
-                                ${apt.address ? `<div class="text-sm text-gray-600 mb-2">📍 ${apt.address}</div>` : ''}
-                                <div class="text-sm text-gray-800 mb-2">
-                                    <strong>Issue:</strong> ${apt.issue || 'Not specified'}
-                                </div>
-                                <div class="flex items-center gap-4 text-xs text-gray-500">
-                                    <span>💰 $${apt.estimatedRevenue}</span>
-                                    <span>⏱️ ${apt.duration} min</span>
-                                    <span>📱 ${apt.bookedVia}</span>
-                                </div>
-                            </div>
-                            <div class="flex flex-col gap-2 ml-4">
-                                <button onclick="callCustomer('${apt.customerPhone}')" class="bg-green-600 text-white px-3 py-1 rounded text-xs hover:bg-green-700">
-                                    📞 Call
-                                </button>
-                                <button onclick="sendDirectMessage('${apt.id}')" class="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700">
-                                    💬 Text
-                                </button>
-                                ${!apt.completed ? `<button onclick="markCompleted('${apt.id}')" class="bg-gray-600 text-white px-3 py-1 rounded text-xs hover:bg-gray-700">✓ Done</button>` : ''}
-                            </div>
+                    <div class="border rounded-lg p-3 hover:bg-gray-50">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="font-semibold">${timeString}</span>
+                            <span class="px-2 py-1 rounded-full text-xs font-medium ${apt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">
+                                ${apt.status}
+                            </span>
+                            <span class="px-2 py-1 rounded-full text-xs font-medium ${apt.service === 'emergency' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}">
+                                ${apt.service}
+                            </span>
                         </div>
-                        
-                        ${apt.communicationHistory ? `
-                            <div class="border-t pt-2 mt-2">
-                                <div class="text-xs text-gray-500">Recent: ${apt.communicationHistory}</div>
-                            </div>
-                        ` : ''}
+                        <div class="text-sm font-medium text-gray-900 mb-1">
+                            👤 ${apt.customerName}
+                        </div>
+                        <div class="text-sm text-gray-600 mb-1">
+                            📞 ${apt.customerPhone}
+                        </div>
+                        <div class="text-sm text-gray-800 mb-2">
+                            <strong>Issue:</strong> ${apt.issue || 'Not specified'}
+                        </div>
+                        <div class="flex items-center gap-4 text-xs text-gray-500">
+                            <span>💰 $${apt.estimatedRevenue}</span>
+                            <span>📱 ${apt.bookedVia}</span>
+                            <span>⏱️ ${apt.duration} min</span>
+                        </div>
                     </div>
                 `;
             }).join('');
         }
 
-        // Update status panel
-        function updateStatusPanel() {
-            if (todayAppointments.length === 0) {
-                document.getElementById('next-appointment').textContent = 'None today';
-                document.getElementById('time-until-next').textContent = '--';
-                document.getElementById('schedule-status').textContent = 'No appointments';
+        // Load available slots for selected date
+        async function loadAvailableSlotsForDate(date) {
+            try {
+                const dateParam = date.toISOString().split('T')[0];
+                const response = await fetch(`/api/available-slots?date=${dateParam}`);
+                const slots = await response.json();
+                renderSelectedDayAvailableSlots(slots);
+            } catch (error) {
+                console.error('Error loading available slots:', error);
+            }
+        }
+
+        // Render available slots for selected day
+        function renderSelectedDayAvailableSlots(slots) {
+            const container = document.getElementById('selected-day-available-slots');
+            
+            if (slots.length === 0) {
+                container.innerHTML = '<div class="text-center py-4 text-gray-500 col-span-2">No slots available</div>';
                 return;
             }
 
-            const now = new Date();
-            const nextApt = todayAppointments.find(apt => !apt.completed && new Date(apt.startTime) > now);
+            container.innerHTML = slots.slice(0, 8).map(slot => `
+                <div class="text-center py-2 px-3 bg-green-50 text-green-700 rounded border border-green-200 text-sm">
+                    ${slot.display}
+                </div>
+            `).join('');
+        }
+
+        // Refresh all data
+        async function refreshData() {
+            try {
+                await Promise.all([
+                    loadAllAppointments(),
+                    loadNotifications(),
+                    loadStats()
+                ]);
+                loadSelectedDayData(); // Refresh selected day data
+                console.log('Data refreshed successfully');
+            } catch (error) {
+                console.error('Error refreshing data:', error);
+            }
+        }
+
+        // Load all appointments
+        async function loadAllAppointments() {
+            try {
+                const response = await fetch('/api/appointments');
+                appointments = await response.json();
+            } catch (error) {
+                console.error('Error loading appointments:', error);
+                appointments = [];
+            }
+        }
+
+        // Load notifications
+        async function loadNotifications() {
+            try {
+                const response = await fetch('/api/notifications');
+                notifications = await response.json();
+                renderNotifications();
+                updateNotificationBadge();
+            } catch (error) {
+                console.error('Error loading notifications:', error);
+            }
+        }
+
+        // Load stats
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                stats = await response.json();
+                renderStats();
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Render notifications
+        function renderNotifications() {
+            const container = document.getElementById('notifications-list');
             
-            if (nextApt) {
-                const nextTime = new Date(nextApt.startTime);
-                const timeUntil = Math.ceil((nextTime - now) / (1000 * 60)); // minutes
-                
-                document.getElementById('next-appointment').textContent = nextApt.customerName;
-                document.getElementById('time-until-next').textContent = timeUntil > 0 ? `${timeUntil} min` : 'Now';
-                
-                // Determine schedule status
-                if (timeUntil < -30) {
-                    document.getElementById('schedule-status').textContent = 'Running Late';
-                    document.getElementById('schedule-status').className = 'font-medium text-red-600';
-                } else if (timeUntil > 60) {
-                    document.getElementById('schedule-status').textContent = 'Ahead of Schedule';
-                    document.getElementById('schedule-status').className = 'font-medium text-green-600';
-                } else {
-                    document.getElementById('schedule-status').textContent = 'On Time';
-                    document.getElementById('schedule-status').className = 'font-medium text-green-600';
-                }
+            if (notifications.length === 0) {
+                container.innerHTML = '<div class="text-center py-4 text-gray-500">No new notifications</div>';
+                return;
+            }
+
+            container.innerHTML = notifications.slice(0, 5).map(notif => `
+                <div class="p-3 rounded border-l-4 ${notif.type === 'new_booking' ? 'border-blue-500 bg-blue-50' : 'border-orange-500 bg-orange-50'}">
+                    <div class="text-sm font-medium text-gray-900">
+                        ${notif.message}
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">
+                        ${notif.time}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Render stats
+        function renderStats() {
+            document.getElementById('total-appointments').textContent = stats.totalAppointments || 0;
+            document.getElementById('ai-bookings').textContent = stats.aiBookings || 0;
+        }
+
+        // Update notification badge
+        function updateNotificationBadge() {
+            const badge = document.getElementById('notification-badge');
+            const unreadCount = notifications.filter(n => !n.read).length;
+            
+            if (unreadCount > 0) {
+                badge.textContent = unreadCount;
+                badge.classList.remove('hidden');
             } else {
-                document.getElementById('next-appointment').textContent = 'All complete';
-                document.getElementById('time-until-next').textContent = '--';
-                document.getElementById('schedule-status').textContent = 'Day Complete';
-                document.getElementById('schedule-status').className = 'font-medium text-green-600';
+                badge.classList.add('hidden');
             }
         }
 
-        // Show running late modal
-        function showRunningLateModal() {
-            document.getElementById('running-late-modal').classList.remove('hidden');
-            updateLateMessagePreview();
+        // Refresh notifications
+        function refreshNotifications() {
+            loadNotifications();
         }
 
-        function closeRunningLateModal() {
-            document.getElementById('running-late-modal').classList.add('hidden');
+        // Test call functionality
+        function testCall() {
+            alert(`📞 Test your AI system:\n\nCall: (844) 540-1735\n\nSay: "I need a plumber for my kitchen sink"\n\nThe AI will offer available appointment times and book the appointment automatically!`);
         }
 
-        // Update late message preview
-        function updateLateMessagePreview() {
-            const minutes = document.getElementById('late-minutes').value;
-            const reason = document.getElementById('late-reason').value;
-            
-            let message = `Hi! This is Smith Plumbing. I'm running about ${minutes} minutes behind schedule today.`;
-            
-            if (reason) {
-                message += ` ${reason}.`;
+        // Auto-refresh when tab becomes visible
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                refreshData();
+                renderCalendar();
             }
-            
-            message += ` Your appointment window has been adjusted accordingly. Thanks for your patience!`;
-            
-            document.getElementById('late-message-preview').textContent = message;
-        }
-
-        // Send running late message
-        async function sendRunningLateMessage() {
-            const minutes = parseInt(document.getElementById('late-minutes').value);
-            const reason = document.getElementById('late-reason').value;
-            
-            try {
-                const response = await fetch('/api/send-running-late', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ delayMinutes: minutes, reason })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert(`Message sent to ${result.customerCount} customers`);
-                    closeRunningLateModal();
-                    refreshSchedule();
-                } else {
-                    alert('Error sending messages: ' + result.error);
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error sending messages');
-            }
-        }
-
-        // Show early arrival modal
-        function showEarlyArrivalModal() {
-            updateEarlyArrivalOptions();
-            document.getElementById('early-arrival-modal').classList.remove('hidden');
-            updateEarlyMessagePreview();
-        }
-
-        function closeEarlyArrivalModal() {
-            document.getElementById('early-arrival-modal').classList.add('hidden');
-        }
-
-        // Update early arrival customer options
-        function updateEarlyArrivalOptions() {
-            const select = document.getElementById('early-customer');
-            const now = new Date();
-            const upcomingAppointments = todayAppointments.filter(apt => 
-                !apt.completed && new Date(apt.startTime) > now
-            ).slice(0, 3); // Next 3 appointments
-            
-            select.innerHTML = '<option value="">Select next customer...</option>';
-            
-            upcomingAppointments.forEach(apt => {
-                const time = new Date(apt.startTime).toLocaleTimeString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true
-                });
-                select.innerHTML += `<option value="${apt.id}">${apt.customerName} (${time})</option>`;
-            });
-        }
-
-        // Update early message preview
-        function updateEarlyMessagePreview() {
-            const customerId = document.getElementById('early-customer').value;
-            const minutes = document.getElementById('early-minutes').value;
-            
-            if (!customerId) {
-                document.getElementById('early-message-preview').textContent = 'Please select a customer first.';
-                return;
-            }
-            
-            const customer = todayAppointments.find(apt => apt.id === customerId);
-            const originalTime = new Date(customer.startTime);
-            const earlyTime = new Date(originalTime.getTime() - minutes * 60 * 1000);
-            
-            const message = `Hi ${customer.customerName}! This is Smith Plumbing. I'm ahead of schedule and could arrive ${minutes} minutes early (around ${earlyTime.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}) if that works for you. Reply YES if that's okay, or I'll stick to the original time window. Thanks!`;
-            
-            document.getElementById('early-message-preview').textContent = message;
-        }
-
-        // Send early arrival message
-        async function sendEarlyArrivalMessage() {
-            const customerId = document.getElementById('early-customer').value;
-            const minutes = parseInt(document.getElementById('early-minutes').value);
-            
-            if (!customerId) {
-                alert('Please select a customer');
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/send-early-arrival', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ appointmentId: customerId, earlyMinutes: minutes })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert('Early arrival message sent!');
-                    closeEarlyArrivalModal();
-                } else {
-                    alert('Error sending message: ' + result.error);
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error sending message');
-            }
-        }
-
-        // Send standard messages
-        async function sendArrivedMessage() {
-            await sendQuickMessage('arrived');
-        }
-
-        async function sendEnRouteMessage() {
-            await sendQuickMessage('enroute');
-        }
-
-        async function sendQuickMessage(type) {
-            const nextApt = todayAppointments.find(apt => !apt.completed);
-            if (!nextApt) {
-                alert('No upcoming appointments');
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/send-quick-message', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ appointmentId: nextApt.id, messageType: type })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert('Message sent!');
-                } else {
-                    alert('Error sending message: ' + result.error);
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error sending message');
-            }
-        }
-
-        // Show custom message modal
-        function sendCustomMessage() {
-            document.getElementById('custom-message-modal').classList.remove('hidden');
-        }
-
-        function closeCustomMessageModal() {
-            document.getElementById('custom-message-modal').classList.add('hidden');
-        }
-
-        // Send custom message to customers
-        async function sendCustomMessageToCustomers() {
-            const recipients = document.getElementById('custom-recipients').value;
-            const message = document.getElementById('custom-message-text').value;
-            
-            if (!message.trim()) {
-                alert('Please enter a message');
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/send-custom-message', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ recipients, message })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert(`Message sent to ${result.customerCount} customers`);
-                    closeCustomMessageModal();
-                    document.getElementById('custom-message-text').value = '';
-                } else {
-                    alert('Error sending message: ' + result.error);
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error sending message');
-            }
-        }
-
-        // Mark appointment as completed
-        async function markCompleted(appointmentId) {
-            try {
-                const response = await fetch('/api/complete-appointment', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ appointmentId })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    refreshSchedule();
-                } else {
-                    alert('Error marking complete: ' + result.error);
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error marking complete');
-            }
-        }
-
-        // Mark current appointment as completed
-        function markCurrentCompleted() {
-            const currentApt = todayAppointments[currentAppointmentIndex];
-            if (currentApt && !currentApt.completed) {
-                markCompleted(currentApt.id);
-            }
-        }
-
-        // Call customer
-        function callCustomer(phoneNumber) {
-            window.open(`tel:${phoneNumber}`, '_self');
-        }
-
-        // Send direct message to specific customer
-        function sendDirectMessage(appointmentId) {
-            const message = prompt('Enter message to send:');
-            if (message) {
-                sendCustomMessageToSpecificCustomer(appointmentId, message);
-            }
-        }
-
-        async function sendCustomMessageToSpecificCustomer(appointmentId, message) {
-            try {
-                const response = await fetch('/api/send-direct-message', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ appointmentId, message })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert('Message sent!');
-                } else {
-                    alert('Error sending message: ' + result.error);
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error sending message');
-            }
-        }
-
-        // Event listeners for modal updates
-        document.getElementById('late-minutes').addEventListener('change', updateLateMessagePreview);
-        document.getElementById('late-reason').addEventListener('change', updateLateMessagePreview);
-        document.getElementById('early-customer').addEventListener('change', updateEarlyMessagePreview);
-        document.getElementById('early-minutes').addEventListener('change', updateEarlyMessagePreview);
+        });
     </script>
 </body>
 </html>
