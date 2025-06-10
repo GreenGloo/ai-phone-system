@@ -20,6 +20,17 @@ const appointments = new Map();
 const callLogs = new Map();
 const notifications = [];
 
+// Enhanced service configuration with durations and travel time
+const serviceTypes = {
+  'emergency': { name: 'Emergency Service', duration: 60, rate: 150, travelBuffer: 30 },
+  'drain-cleaning': { name: 'Drain Cleaning', duration: 90, rate: 120, travelBuffer: 30 },
+  'water-heater': { name: 'Water Heater', duration: 180, rate: 100, travelBuffer: 45 },
+  'pipe-repair': { name: 'Pipe Repair', duration: 120, rate: 110, travelBuffer: 30 },
+  'fixture-install': { name: 'Fixture Install', duration: 90, rate: 95, travelBuffer: 30 },
+  'consultation': { name: 'Consultation', duration: 45, rate: 75, travelBuffer: 15 },
+  'regular': { name: 'Regular Service', duration: 90, rate: 100, travelBuffer: 30 }
+};
+
 // Business configuration
 const businessConfig = {
   businessName: "CallCatcher Demo",
@@ -32,9 +43,9 @@ const businessConfig = {
   }
 };
 
-// Calendar Manager
-class CalendarManager {
-  getAvailableSlots(date, duration = 60) {
+// Enhanced Calendar Manager with travel time
+class EnhancedCalendarManager {
+  getAvailableSlots(date, requestedDuration = 60) {
     const dayAppointments = this.getDayAppointments(date);
     const slots = [];
     
@@ -43,12 +54,21 @@ class CalendarManager {
         const slotStart = new Date(date);
         slotStart.setHours(hour, minute, 0, 0);
         
+        // Add travel buffer to requested duration
+        const totalDuration = requestedDuration + 30; // 30 min travel buffer
         const slotEnd = new Date(slotStart);
-        slotEnd.setMinutes(slotEnd.getMinutes() + duration);
+        slotEnd.setMinutes(slotEnd.getMinutes() + totalDuration);
         
+        // Check if slot conflicts with existing appointments (including their travel buffers)
         const hasConflict = dayAppointments.some(apt => {
           const aptStart = new Date(apt.startTime);
           const aptEnd = new Date(apt.endTime);
+          
+          // Add travel buffer to existing appointments
+          const serviceType = serviceTypes[apt.serviceType] || { travelBuffer: 30 };
+          aptStart.setMinutes(aptStart.getMinutes() - serviceType.travelBuffer);
+          aptEnd.setMinutes(aptEnd.getMinutes() + serviceType.travelBuffer);
+          
           return (slotStart < aptEnd && slotEnd > aptStart);
         });
         
@@ -66,7 +86,7 @@ class CalendarManager {
       }
     }
     
-    return slots.slice(0, 6);
+    return slots.slice(0, 8);
   }
 
   getDayAppointments(date) {
@@ -84,8 +104,9 @@ class CalendarManager {
 
   bookAppointment(customerInfo, appointmentTime, serviceType, callId) {
     const appointmentId = 'apt_' + Date.now();
-    const duration = businessConfig.services[serviceType]?.duration || 60;
-    const rate = businessConfig.services[serviceType]?.rate || 100;
+    const serviceConfig = serviceTypes[serviceType] || serviceTypes['regular'];
+    const duration = serviceConfig.duration;
+    const rate = serviceConfig.rate;
     
     const startTime = new Date(appointmentTime);
     const endTime = new Date(startTime.getTime() + duration * 60000);
@@ -94,16 +115,21 @@ class CalendarManager {
       id: appointmentId,
       customerName: customerInfo.name,
       customerPhone: customerInfo.phone,
-      service: serviceType,
+      customerEmail: customerInfo.email || null,
+      address: customerInfo.address || '',
+      service: serviceConfig.name,
+      serviceType: serviceType,
       issue: customerInfo.issue || '',
       startTime: startTime.toISOString(),
       endTime: endTime.toISOString(),
       duration: duration,
       estimatedRevenue: rate,
-      status: 'confirmed',
+      status: 'scheduled',
       bookedVia: 'AI Phone',
       callId: callId,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      completed: false,
+      communicationHistory: ''
     };
     
     appointments.set(appointmentId, appointment);
@@ -143,10 +169,15 @@ class CalendarManager {
       read: false,
       time: 'Just now'
     });
+    
+    // Keep only last 50 notifications
+    if (notifications.length > 50) {
+      notifications.splice(50);
+    }
   }
 }
 
-const calendar = new CalendarManager();
+const calendar = new EnhancedCalendarManager();
 
 // AI prompt
 const createCalendarAwarePrompt = (availableSlots, isEmergency = false) => `
@@ -177,9 +208,17 @@ ALWAYS offer specific times immediately when they need service.
 ALWAYS get name and phone before confirming the booking.
 `;
 
-// Serve calendar frontend
+// Serve frontend pages
 app.get('/calendar', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/book', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'book.html'));
+});
+
+app.get('/schedule', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'schedule.html'));
 });
 
 // Handle incoming calls
@@ -321,6 +360,305 @@ app.post('/voice/process', async (req, res) => {
   }
 });
 
+// Manual booking API endpoint
+app.post('/api/book-appointment', async (req, res) => {
+  try {
+    const { customerInfo, service, appointmentTime, bookedVia = 'Website' } = req.body;
+    
+    // Validate service type
+    const serviceConfig = serviceTypes[service.type];
+    if (!serviceConfig) {
+      return res.status(400).json({ success: false, error: 'Invalid service type' });
+    }
+    
+    // Create appointment
+    const appointment = calendar.bookAppointment(
+      customerInfo,
+      new Date(appointmentTime),
+      service.type,
+      'manual_' + Date.now()
+    );
+    
+    // Update appointment with enhanced data
+    appointment.bookedVia = bookedVia;
+    
+    // Update in storage
+    appointments.set(appointment.id, appointment);
+    
+    // Send confirmations
+    await sendManualBookingConfirmations(customerInfo, appointment);
+    
+    res.json({ success: true, appointment });
+    
+  } catch (error) {
+    console.error('Manual booking error:', error);
+    res.status(500).json({ success: false, error: 'Failed to book appointment' });
+  }
+});
+
+// Send running late notification to all remaining customers
+app.post('/api/send-running-late', async (req, res) => {
+  try {
+    const { delayMinutes, reason } = req.body;
+    const today = new Date();
+    const now = new Date();
+    
+    // Get remaining appointments for today
+    const remainingAppointments = Array.from(appointments.values()).filter(apt => {
+      const aptDate = new Date(apt.startTime);
+      return aptDate.toDateString() === today.toDateString() && 
+             aptDate > now && 
+             !apt.completed;
+    });
+    
+    let customerCount = 0;
+    
+    for (const apt of remainingAppointments) {
+      const originalTime = new Date(apt.startTime);
+      const newTime = new Date(originalTime.getTime() + delayMinutes * 60 * 1000);
+      const windowStart = new Date(newTime.getTime() - 30 * 60 * 1000);
+      const windowEnd = new Date(newTime.getTime() + 30 * 60 * 1000);
+      
+      const timeWindow = `${windowStart.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}-${windowEnd.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}`;
+      
+      let message = `Hi ${apt.customerName}! This is ${businessConfig.businessName}. I'm running about ${delayMinutes} minutes behind schedule today.`;
+      
+      if (reason) {
+        message += ` ${reason}.`;
+      }
+      
+      message += ` Your new appointment window is ${timeWindow}. Thanks for your patience!`;
+      
+      try {
+        await twilioClient.messages.create({
+          body: message,
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: apt.customerPhone
+        });
+        
+        // Update appointment time
+        apt.startTime = newTime.toISOString();
+        apt.endTime = new Date(newTime.getTime() + apt.duration * 60 * 1000).toISOString();
+        apt.communicationHistory = `Notified of ${delayMinutes}min delay`;
+        
+        customerCount++;
+      } catch (error) {
+        console.error(`Error sending to ${apt.customerPhone}:`, error);
+      }
+    }
+    
+    calendar.addNotification({
+      type: 'delay_notification',
+      message: `Sent delay notification to ${customerCount} customers (${delayMinutes} min delay)`
+    });
+    
+    res.json({ success: true, customerCount });
+    
+  } catch (error) {
+    console.error('Running late error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Send early arrival request to specific customer
+app.post('/api/send-early-arrival', async (req, res) => {
+  try {
+    const { appointmentId, earlyMinutes } = req.body;
+    const appointment = appointments.get(appointmentId);
+    
+    if (!appointment) {
+      return res.status(404).json({ success: false, error: 'Appointment not found' });
+    }
+    
+    const originalTime = new Date(appointment.startTime);
+    const earlyTime = new Date(originalTime.getTime() - earlyMinutes * 60 * 1000);
+    
+    const message = `Hi ${appointment.customerName}! This is ${businessConfig.businessName}. I'm ahead of schedule and could arrive ${earlyMinutes} minutes early (around ${earlyTime.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}) if that works for you. Reply YES if that's okay, or I'll stick to the original time window. Thanks!`;
+    
+    await twilioClient.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: appointment.customerPhone
+    });
+    
+    appointment.communicationHistory = `Asked about ${earlyMinutes}min early arrival`;
+    
+    calendar.addNotification({
+      type: 'early_request',
+      message: `Asked ${appointment.customerName} about early arrival`
+    });
+    
+    res.json({ success: true });
+    
+  } catch (error) {
+    console.error('Early arrival error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Send quick status messages (arrived, en route, etc.)
+app.post('/api/send-quick-message', async (req, res) => {
+  try {
+    const { appointmentId, messageType } = req.body;
+    const appointment = appointments.get(appointmentId);
+    
+    if (!appointment) {
+      return res.status(404).json({ success: false, error: 'Appointment not found' });
+    }
+    
+    let message;
+    
+    switch (messageType) {
+      case 'arrived':
+        message = `Hi ${appointment.customerName}! This is ${businessConfig.businessName}. I've arrived and will be with you shortly. Thanks!`;
+        appointment.status = 'arrived';
+        break;
+      case 'enroute':
+        message = `Hi ${appointment.customerName}! This is ${businessConfig.businessName}. I'm on my way and should be there in about 30 minutes. See you soon!`;
+        appointment.status = 'enroute';
+        break;
+      default:
+        return res.status(400).json({ success: false, error: 'Invalid message type' });
+    }
+    
+    await twilioClient.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: appointment.customerPhone
+    });
+    
+    appointment.communicationHistory = `Sent ${messageType} message`;
+    
+    res.json({ success: true });
+    
+  } catch (error) {
+    console.error('Quick message error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Send custom message to selected customers
+app.post('/api/send-custom-message', async (req, res) => {
+  try {
+    const { recipients, message } = req.body;
+    const today = new Date();
+    const now = new Date();
+    
+    let targetAppointments = [];
+    
+    switch (recipients) {
+      case 'all':
+        targetAppointments = Array.from(appointments.values()).filter(apt => {
+          const aptDate = new Date(apt.startTime);
+          return aptDate.toDateString() === today.toDateString();
+        });
+        break;
+      case 'remaining':
+        targetAppointments = Array.from(appointments.values()).filter(apt => {
+          const aptDate = new Date(apt.startTime);
+          return aptDate.toDateString() === today.toDateString() && 
+                 aptDate > now && 
+                 !apt.completed;
+        });
+        break;
+      case 'next':
+        const nextApt = Array.from(appointments.values())
+          .filter(apt => {
+            const aptDate = new Date(apt.startTime);
+            return aptDate.toDateString() === today.toDateString() && 
+                   aptDate > now && 
+                   !apt.completed;
+          })
+          .sort((a, b) => new Date(a.startTime) - new Date(b.startTime))[0];
+        if (nextApt) targetAppointments = [nextApt];
+        break;
+    }
+    
+    let customerCount = 0;
+    
+    for (const apt of targetAppointments) {
+      try {
+        const personalizedMessage = message.replace(/\{name\}/g, apt.customerName);
+        
+        await twilioClient.messages.create({
+          body: `Hi ${apt.customerName}! This is ${businessConfig.businessName}. ${personalizedMessage}`,
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: apt.customerPhone
+        });
+        
+        apt.communicationHistory = `Custom message sent`;
+        customerCount++;
+      } catch (error) {
+        console.error(`Error sending to ${apt.customerPhone}:`, error);
+      }
+    }
+    
+    calendar.addNotification({
+      type: 'custom_message',
+      message: `Sent custom message to ${customerCount} customers`
+    });
+    
+    res.json({ success: true, customerCount });
+    
+  } catch (error) {
+    console.error('Custom message error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Send direct message to specific customer
+app.post('/api/send-direct-message', async (req, res) => {
+  try {
+    const { appointmentId, message } = req.body;
+    const appointment = appointments.get(appointmentId);
+    
+    if (!appointment) {
+      return res.status(404).json({ success: false, error: 'Appointment not found' });
+    }
+    
+    await twilioClient.messages.create({
+      body: `Hi ${appointment.customerName}! This is ${businessConfig.businessName}. ${message}`,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: appointment.customerPhone
+    });
+    
+    appointment.communicationHistory = `Direct message sent`;
+    
+    res.json({ success: true });
+    
+  } catch (error) {
+    console.error('Direct message error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Mark appointment as completed
+app.post('/api/complete-appointment', async (req, res) => {
+  try {
+    const { appointmentId } = req.body;
+    const appointment = appointments.get(appointmentId);
+    
+    if (!appointment) {
+      return res.status(404).json({ success: false, error: 'Appointment not found' });
+    }
+    
+    appointment.completed = true;
+    appointment.completedAt = new Date().toISOString();
+    appointment.status = 'completed';
+    
+    calendar.addNotification({
+      type: 'appointment_completed',
+      message: `Completed appointment with ${appointment.customerName}`
+    });
+    
+    res.json({ success: true });
+    
+  } catch (error) {
+    console.error('Complete appointment error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Helper functions
 async function extractCustomerInfo(input, callLog) {
   try {
@@ -379,7 +717,12 @@ function findBookingTime(timeSlot, availableSlots) {
 
 async function sendAppointmentConfirmations(callLog, appointment) {
   try {
-    const customerMessage = `📅 APPOINTMENT CONFIRMED\n\n${businessConfig.businessName}\nDate: ${new Date(appointment.startTime).toLocaleString()}\nService: ${appointment.service}\n\nWe'll call if running late!`;
+    const appointmentTime = new Date(appointment.startTime);
+    const windowStart = new Date(appointmentTime.getTime() - 30 * 60 * 1000);
+    const windowEnd = new Date(appointmentTime.getTime() + 30 * 60 * 1000);
+    const timeWindow = `${windowStart.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}-${windowEnd.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}`;
+    
+    const customerMessage = `📅 APPOINTMENT CONFIRMED\n\n${businessConfig.businessName}\nService: ${appointment.service}\nTime Window: ${timeWindow}\n${new Date(appointment.startTime).toDateString()}\n\nWe'll call 30 minutes before arrival!`;
     
     if (callLog.customerInfo.phone) {
       await twilioClient.messages.create({
@@ -402,6 +745,55 @@ async function sendAppointmentConfirmations(callLog, appointment) {
   }
 }
 
+async function sendManualBookingConfirmations(customerInfo, appointment) {
+  try {
+    const appointmentTime = new Date(appointment.startTime);
+    const windowStart = new Date(appointmentTime.getTime() - 30 * 60 * 1000);
+    const windowEnd = new Date(appointmentTime.getTime() + 30 * 60 * 1000);
+    const timeWindow = `${windowStart.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}-${windowEnd.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit', hour12: true})}`;
+    
+    // Customer SMS
+    if (customerInfo.phone) {
+      const customerMessage = `📅 APPOINTMENT CONFIRMED
+
+${businessConfig.businessName}
+Service: ${appointment.service}
+Time Window: ${timeWindow}
+${appointmentTime.toDateString()}
+Address: ${customerInfo.address}
+
+We'll call 30 minutes before arrival. Thank you!`;
+
+      await twilioClient.messages.create({
+        body: customerMessage,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: customerInfo.phone
+      });
+    }
+    
+    // Owner notification
+    const ownerMessage = `🔧 NEW WEBSITE BOOKING
+
+Customer: ${customerInfo.name}
+Phone: ${customerInfo.phone}
+Service: ${appointment.service}
+Time: ${appointmentTime.toLocaleString()}
+Address: ${customerInfo.address}
+Issue: ${customerInfo.issue}
+
+Estimated: $${appointment.estimatedRevenue}`;
+
+    await twilioClient.messages.create({
+      body: ownerMessage,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: businessConfig.ownerPhone
+    });
+    
+  } catch (error) {
+    console.error('Manual booking SMS error:', error);
+  }
+}
+
 // API Endpoints
 app.get('/api/appointments', (req, res) => {
   const { date } = req.query;
@@ -415,9 +807,10 @@ app.get('/api/appointments', (req, res) => {
 });
 
 app.get('/api/available-slots', (req, res) => {
-  const { date } = req.query;
+  const { date, duration } = req.query;
   const targetDate = date ? new Date(date) : new Date();
-  const slots = calendar.getAvailableSlots(targetDate);
+  const requestedDuration = duration ? parseInt(duration) : 60;
+  const slots = calendar.getAvailableSlots(targetDate, requestedDuration);
   res.json(slots);
 });
 
@@ -440,10 +833,14 @@ app.get('/api/stats', (req, res) => {
 
 app.get('/', (req, res) => {
   res.json({
-    message: 'AI Phone System with Calendar Frontend Running!',
+    message: 'AI Phone System with Calendar & Communication Running!',
     status: 'active',
-    features: ['Real appointment booking', 'Calendar dashboard', 'SMS confirmations'],
-    calendar: '/calendar',
+    features: ['Real appointment booking', 'Customer communication', 'Schedule management'],
+    pages: {
+      calendar: '/calendar',
+      booking: '/book', 
+      schedule: '/schedule'
+    },
     endpoints: {
       incoming: '/voice/incoming',
       appointments: '/api/appointments',
@@ -456,8 +853,9 @@ app.get('/', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 AI Phone System with Calendar running on port ${PORT}`);
-  console.log(`📅 Calendar dashboard: /calendar`);
+  console.log(`🚀 AI Phone System with Communication running on port ${PORT}`);
+  console.log(`📅 Calendar: /calendar`);
+  console.log(`📝 Booking: /book`);
+  console.log(`📋 Schedule: /schedule`);
   console.log(`📞 Phone: (844) 540-1735`);
-  console.log(`💻 Dashboard: https://nodejs-production-5e30.up.railway.app/calendar`);
 });
