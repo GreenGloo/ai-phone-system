@@ -1,150 +1,60 @@
-import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Phone, User, MapPin, DollarSign, Bell, Plus, Edit, Trash2, CheckCircle } from 'lucide-react';
+require('dotenv').config();
+const express = require('express');
+const twilio = require('twilio');
+const OpenAI = require('openai');
+const cors = require('cors');
 
-const CalendarApp = () => {
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [appointments, setAppointments] = useState([
-    {
-      id: 1,
-      customerName: "John Smith",
-      customerPhone: "(555) 123-4567",
-      service: "Emergency Repair",
-      issue: "Burst pipe in basement",
-      date: new Date(2025, 5, 10, 9, 0),
-      duration: 60,
-      status: "confirmed",
-      bookedVia: "AI Phone",
-      estimatedRevenue: 150,
-      address: "123 Main St"
-    },
-    {
-      id: 2,
-      customerName: "Sarah Johnson",
-      customerPhone: "(555) 987-6543", 
-      service: "Kitchen Sink Installation",
-      issue: "Install new kitchen sink",
-      date: new Date(2025, 5, 10, 14, 0),
-      duration: 120,
-      status: "confirmed",
-      bookedVia: "AI Phone",
-      estimatedRevenue: 200,
-      address: "456 Oak Ave"
-    },
-    {
-      id: 3,
-      customerName: "Mike Davis",
-      customerPhone: "(555) 555-1234",
-      service: "Water Heater Repair", 
-      issue: "No hot water",
-      date: new Date(2025, 5, 11, 10, 30),
-      duration: 90,
-      status: "pending",
-      bookedVia: "AI Phone",
-      estimatedRevenue: 175,
-      address: "789 Pine St"
-    }
-  ]);
+const app = express();
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cors());
 
-  const [showNewAppointment, setShowNewAppointment] = useState(false);
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      type: "new_booking",
-      message: "New emergency appointment booked for 9:00 AM",
-      time: "2 minutes ago",
-      read: false
-    },
-    {
-      id: 2,
-      type: "upcoming",
-      message: "Appointment with John Smith in 30 minutes",
-      time: "30 minutes",
-      read: false
-    }
-  ]);
+// Initialize services
+const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  // Get appointments for selected date
-  const getDayAppointments = (date) => {
-    return appointments.filter(apt => {
-      const aptDate = new Date(apt.date);
-      return aptDate.toDateString() === date.toDateString();
-    }).sort((a, b) => new Date(a.date) - new Date(b.date));
-  };
+// In-memory database
+const appointments = new Map();
+const callLogs = new Map();
+const notifications = [];
 
-  // Generate calendar days
-  const generateCalendarDays = () => {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const startDate = new Date(firstDay);
-    startDate.setDate(startDate.getDate() - firstDay.getDay());
+// Business configuration
+const businessConfig = {
+  businessName: "CallCatcher Demo",
+  ownerName: "Business Owner",
+  ownerPhone: process.env.OWNER_PHONE || "+15551234567",
+  businessHours: { start: 8, end: 18 },
+  services: {
+    emergency: { rate: 150, duration: 60 },
+    regular: { rate: 100, duration: 90 }
+  }
+};
 
-    const days = [];
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + 42);
-
-    for (let date = new Date(startDate); date < endDate; date.setDate(date.getDate() + 1)) {
-      const dayAppointments = getDayAppointments(date);
-      days.push({
-        date: new Date(date),
-        isCurrentMonth: date.getMonth() === month,
-        isToday: date.toDateString() === new Date().toDateString(),
-        isSelected: date.toDateString() === selectedDate.toDateString(),
-        appointmentCount: dayAppointments.length,
-        revenue: dayAppointments.reduce((sum, apt) => sum + apt.estimatedRevenue, 0)
-      });
-    }
-
-    return days;
-  };
-
-  // Add new appointment (simulates AI booking)
-  const addAppointment = (appointmentData) => {
-    const newAppointment = {
-      id: Date.now(),
-      ...appointmentData,
-      status: "confirmed",
-      bookedVia: "AI Phone"
-    };
-    setAppointments([...appointments, newAppointment]);
-    
-    // Add notification
-    setNotifications([{
-      id: Date.now(),
-      type: "new_booking",
-      message: `New appointment booked: ${appointmentData.customerName}`,
-      time: "Just now",
-      read: false
-    }, ...notifications]);
-  };
-
-  // Get available time slots for a date
-  const getAvailableSlots = (date) => {
-    const dayAppointments = getDayAppointments(date);
-    const businessHours = { start: 8, end: 18 }; // 8 AM to 6 PM
+// Calendar Manager
+class CalendarManager {
+  getAvailableSlots(date, duration = 60) {
+    const dayAppointments = this.getDayAppointments(date);
     const slots = [];
-
-    for (let hour = businessHours.start; hour < businessHours.end; hour++) {
+    
+    for (let hour = businessConfig.businessHours.start; hour < businessConfig.businessHours.end; hour++) {
       for (let minute = 0; minute < 60; minute += 30) {
-        const slotTime = new Date(date);
-        slotTime.setHours(hour, minute, 0, 0);
+        const slotStart = new Date(date);
+        slotStart.setHours(hour, minute, 0, 0);
         
-        const slotEnd = new Date(slotTime);
-        slotEnd.setMinutes(slotEnd.getMinutes() + 60);
-
-        // Check if slot conflicts with existing appointments
+        const slotEnd = new Date(slotStart);
+        slotEnd.setMinutes(slotEnd.getMinutes() + duration);
+        
         const hasConflict = dayAppointments.some(apt => {
-          const aptStart = new Date(apt.date);
-          const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
-          return (slotTime < aptEnd && slotEnd > aptStart);
+          const aptStart = new Date(apt.startTime);
+          const aptEnd = new Date(apt.endTime);
+          return (slotStart < aptEnd && slotEnd > aptStart);
         });
-
-        if (!hasConflict) {
+        
+        if (!hasConflict && slotEnd.getHours() <= businessConfig.businessHours.end) {
           slots.push({
-            time: slotTime,
-            display: slotTime.toLocaleTimeString('en-US', {
+            start: slotStart,
+            end: slotEnd,
+            display: slotStart.toLocaleTimeString('en-US', {
               hour: 'numeric',
               minute: '2-digit',
               hour12: true
@@ -153,240 +63,390 @@ const CalendarApp = () => {
         }
       }
     }
+    
+    return slots.slice(0, 6);
+  }
 
-    return slots.slice(0, 8); // Return first 8 available slots
+  getDayAppointments(date) {
+    const dayStart = new Date(date);
+    dayStart.setHours(0, 0, 0, 0);
+    
+    const dayEnd = new Date(date);
+    dayEnd.setHours(23, 59, 59, 999);
+    
+    return Array.from(appointments.values()).filter(apt => {
+      const aptDate = new Date(apt.startTime);
+      return aptDate >= dayStart && aptDate <= dayEnd;
+    });
+  }
+
+  bookAppointment(customerInfo, appointmentTime, serviceType, callId) {
+    const appointmentId = 'apt_' + Date.now();
+    const duration = businessConfig.services[serviceType]?.duration || 60;
+    const rate = businessConfig.services[serviceType]?.rate || 100;
+    
+    const startTime = new Date(appointmentTime);
+    const endTime = new Date(startTime.getTime() + duration * 60000);
+    
+    const appointment = {
+      id: appointmentId,
+      customerName: customerInfo.name,
+      customerPhone: customerInfo.phone,
+      service: serviceType,
+      issue: customerInfo.issue || '',
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      duration: duration,
+      estimatedRevenue: rate,
+      status: 'confirmed',
+      bookedVia: 'AI Phone',
+      callId: callId,
+      createdAt: new Date().toISOString()
+    };
+    
+    appointments.set(appointmentId, appointment);
+    
+    this.addNotification({
+      type: 'new_booking',
+      message: `New ${serviceType} appointment: ${customerInfo.name}`,
+      appointmentId: appointmentId
+    });
+    
+    console.log('✅ Appointment booked:', appointment);
+    return appointment;
+  }
+
+  getNextEmergencySlot() {
+    const now = new Date();
+    let checkTime = new Date(Math.ceil(now.getTime() / (30 * 60 * 1000)) * (30 * 60 * 1000));
+    
+    const slotEnd = new Date(checkTime.getTime() + 60 * 60 * 1000);
+    
+    return {
+      start: checkTime,
+      end: slotEnd,
+      display: checkTime.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      })
+    };
+  }
+
+  addNotification(notification) {
+    notifications.unshift({
+      id: 'notif_' + Date.now(),
+      ...notification,
+      timestamp: new Date().toISOString(),
+      read: false,
+      time: 'Just now'
+    });
+  }
+}
+
+const calendar = new CalendarManager();
+
+// AI prompt
+const createCalendarAwarePrompt = (availableSlots, isEmergency = false) => `
+You are Sarah, the AI receptionist for ${businessConfig.businessName}.
+
+APPOINTMENT SCHEDULING:
+${isEmergency ? 
+  `EMERGENCY SERVICE: I can get you in ${availableSlots?.[0]?.display || 'within the hour'} for $${businessConfig.services.emergency.rate}/hour.` :
+  `Available appointments today: ${availableSlots?.map(slot => slot.display).slice(0, 3).join(', ') || 'checking availability...'}`
+}
+
+BOOKING PROCESS:
+1. Determine if emergency or regular service
+2. Get customer name and phone number  
+3. Brief issue description
+4. Offer 2-3 specific time slots
+5. When customer chooses, say "Perfect! Let me book that for you right now."
+6. Confirm appointment details
+
+EMERGENCY CRITERIA:
+- Water damage, flooding, burst pipes
+- No heat in winter, no AC in extreme heat
+- Gas leaks or electrical safety issues
+- Sewage backup
+
+Always sound confident about booking. You handle scheduling directly.
+`;
+
+// Handle incoming calls
+app.post('/voice/incoming', async (req, res) => {
+  console.log('📞 Incoming call:', req.body);
+  
+  const { CallSid, From, To } = req.body;
+  
+  const today = new Date();
+  const availableSlots = calendar.getAvailableSlots(today);
+  
+  const callLog = {
+    id: CallSid,
+    from: From,
+    to: To,
+    startTime: new Date(),
+    status: 'in-progress',
+    conversation: [],
+    customerInfo: {},
+    availableSlots
   };
+  callLogs.set(CallSid, callLog);
 
-  const todayAppointments = getDayAppointments(selectedDate);
-  const availableSlots = getAvailableSlots(selectedDate);
-  const calendarDays = generateCalendarDays();
+  const twiml = new twilio.twiml.VoiceResponse();
+  
+  const greeting = `Hello, ${businessConfig.businessName}, this is Sarah. I can schedule your appointment right away. How can I help you today?`;
+  
+  twiml.say({
+    voice: 'Polly.Joanna-Neural',
+    language: 'en-US'
+  }, greeting);
+  
+  twiml.gather({
+    input: 'speech',
+    timeout: 5,
+    speechTimeout: 'auto',
+    action: '/voice/process',
+    method: 'POST'
+  });
+  
+  twiml.say('I didn\'t catch that. Let me have someone call you back.');
+  twiml.hangup();
 
-  return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">CallCatcher Calendar</h1>
-              <p className="text-gray-600">AI-powered appointment scheduling</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <Bell className="w-6 h-6 text-gray-600 cursor-pointer" />
-                {notifications.filter(n => !n.read).length > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                    {notifications.filter(n => !n.read).length}
-                  </span>
-                )}
-              </div>
-              <button 
-                onClick={() => setShowNewAppointment(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Manual Booking
-              </button>
-            </div>
-          </div>
-        </div>
+  res.type('text/xml').send(twiml.toString());
+});
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Calendar */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-gray-900">
-                  {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                </h2>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() - 1)))}
-                    className="px-3 py-1 border rounded hover:bg-gray-50"
-                  >
-                    ←
-                  </button>
-                  <button 
-                    onClick={() => setCurrentDate(new Date())}
-                    className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                  >
-                    Today
-                  </button>
-                  <button 
-                    onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() + 1)))}
-                    className="px-3 py-1 border rounded hover:bg-gray-50"
-                  >
-                    →
-                  </button>
-                </div>
-              </div>
+// Process customer speech
+app.post('/voice/process', async (req, res) => {
+  const { CallSid, SpeechResult } = req.body;
+  const callLog = callLogs.get(CallSid);
+  
+  console.log(`🗣️ Customer: ${SpeechResult}`);
+  
+  if (!callLog) {
+    return res.status(404).send('Call not found');
+  }
+  
+  callLog.conversation.push({ role: 'user', content: SpeechResult });
+  
+  try {
+    await extractCustomerInfo(SpeechResult, callLog);
+    
+    const isEmergency = await detectEmergency(callLog.conversation);
+    
+    let availableSlots;
+    if (isEmergency) {
+      const emergencySlot = calendar.getNextEmergencySlot();
+      availableSlots = [emergencySlot];
+    } else {
+      availableSlots = callLog.availableSlots;
+    }
+    
+    const aiResponse = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: 'system', content: createCalendarAwarePrompt(availableSlots, isEmergency) },
+        ...callLog.conversation
+      ],
+      max_tokens: 200,
+      temperature: 0.7
+    });
+    
+    const responseText = aiResponse.choices[0].message.content;
+    callLog.conversation.push({ role: 'assistant', content: responseText });
+    
+    console.log(`🤖 Sarah: ${responseText}`);
+    
+    const bookingIntent = await detectBookingIntent(callLog.conversation);
+    
+    if (bookingIntent.shouldBook && callLog.customerInfo.name && callLog.customerInfo.phone) {
+      const serviceType = isEmergency ? 'emergency' : 'regular';
+      const appointmentTime = findBookingTime(bookingIntent.timeSlot, availableSlots);
+      
+      if (appointmentTime) {
+        const appointment = calendar.bookAppointment(
+          callLog.customerInfo,
+          appointmentTime,
+          serviceType,
+          CallSid
+        );
+        
+        await sendAppointmentConfirmations(callLog, appointment);
+        
+        const confirmationText = `Excellent! I've booked your ${serviceType} appointment for ${new Date(appointment.startTime).toLocaleString()}. You'll receive a text confirmation. We'll see you then!`;
+        
+        const twiml = new twilio.twiml.VoiceResponse();
+        twiml.say({
+          voice: 'Polly.Joanna-Neural',
+          language: 'en-US'
+        }, confirmationText);
+        twiml.hangup();
+        
+        return res.type('text/xml').send(twiml.toString());
+      }
+    }
+    
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.say({
+      voice: 'Polly.Joanna-Neural',
+      language: 'en-US'
+    }, responseText);
+    
+    twiml.gather({
+      input: 'speech',
+      timeout: 5,
+      speechTimeout: 'auto',
+      action: '/voice/process',
+      method: 'POST'
+    });
+    
+    res.type('text/xml').send(twiml.toString());
+    
+  } catch (error) {
+    console.error('Error:', error);
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.say('I apologize, I\'m having technical difficulties. Someone will call you back shortly.');
+    twiml.hangup();
+    res.type('text/xml').send(twiml.toString());
+  }
+});
 
-              {/* Calendar Grid */}
-              <div className="grid grid-cols-7 gap-1 mb-2">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                  <div key={day} className="p-2 text-center text-sm font-medium text-gray-500">
-                    {day}
-                  </div>
-                ))}
-              </div>
+// Helper functions
+async function extractCustomerInfo(input, callLog) {
+  try {
+    const prompt = `Extract info from: "${input}"\nReturn JSON: {"name": "", "phone": "", "issue": ""}`;
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 100
+    });
+    
+    const extracted = JSON.parse(response.choices[0].message.content);
+    Object.assign(callLog.customerInfo, extracted);
+  } catch (error) {
+    console.error('Extraction error:', error);
+  }
+}
 
-              <div className="grid grid-cols-7 gap-1">
-                {calendarDays.map((day, index) => (
-                  <div
-                    key={index}
-                    onClick={() => setSelectedDate(day.date)}
-                    className={`
-                      p-2 min-h-[60px] border rounded cursor-pointer hover:bg-blue-50
-                      ${day.isCurrentMonth ? 'bg-white' : 'bg-gray-50 text-gray-400'}
-                      ${day.isToday ? 'ring-2 ring-blue-500' : ''}
-                      ${day.isSelected ? 'bg-blue-100' : ''}
-                    `}
-                  >
-                    <div className="text-sm font-medium">{day.date.getDate()}</div>
-                    {day.appointmentCount > 0 && (
-                      <div className="text-xs mt-1">
-                        <div className="bg-green-100 text-green-700 px-1 rounded text-center">
-                          {day.appointmentCount} apt
-                        </div>
-                        <div className="text-green-600 font-medium">
-                          ${day.revenue}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+async function detectEmergency(conversation) {
+  try {
+    const prompt = `Is this an emergency? ${conversation.map(m => m.content).join(' ')}\nReturn only "true" or "false"`;
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo", 
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 5
+    });
+    return response.choices[0].message.content.includes('true');
+  } catch (error) {
+    return false;
+  }
+}
 
-          {/* Right Sidebar */}
-          <div className="space-y-6">
-            {/* Today's Appointments */}
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">
-                {selectedDate.toLocaleDateString('en-US', { 
-                  weekday: 'long',
-                  month: 'short', 
-                  day: 'numeric' 
-                })}
-              </h3>
-              
-              {todayAppointments.length === 0 ? (
-                <p className="text-gray-500 text-center py-4">No appointments scheduled</p>
-              ) : (
-                <div className="space-y-3">
-                  {todayAppointments.map(apt => (
-                    <div key={apt.id} className="border rounded-lg p-3 hover:bg-gray-50">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Clock className="w-4 h-4 text-blue-600" />
-                            <span className="font-medium">
-                              {new Date(apt.date).toLocaleTimeString('en-US', {
-                                hour: 'numeric',
-                                minute: '2-digit',
-                                hour12: true
-                              })}
-                            </span>
-                            <span className={`px-2 py-1 rounded-full text-xs ${
-                              apt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                            }`}>
-                              {apt.status}
-                            </span>
-                          </div>
-                          <div className="text-sm text-gray-600 mb-1">
-                            <User className="w-4 h-4 inline mr-1" />
-                            {apt.customerName}
-                          </div>
-                          <div className="text-sm text-gray-600 mb-1">
-                            <Phone className="w-4 h-4 inline mr-1" />
-                            {apt.customerPhone}
-                          </div>
-                          <div className="text-sm text-gray-800 font-medium mb-1">
-                            {apt.service}
-                          </div>
-                          <div className="text-sm text-gray-600">
-                            {apt.issue}
-                          </div>
-                          <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                            <span className="flex items-center gap-1">
-                              <DollarSign className="w-3 h-3" />
-                              ${apt.estimatedRevenue}
-                            </span>
-                            <span>via {apt.bookedVia}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+async function detectBookingIntent(conversation) {
+  try {
+    const prompt = `Analyze for booking intent: ${conversation.map(m => m.content).join(' ')}\nReturn JSON: {"shouldBook": boolean, "timeSlot": "time mentioned"}`;
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 50
+    });
+    return JSON.parse(response.choices[0].message.content);
+  } catch (error) {
+    return { shouldBook: false, timeSlot: null };
+  }
+}
 
-            {/* Available Slots */}
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Available Slots</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {availableSlots.slice(0, 8).map((slot, index) => (
-                  <div 
-                    key={index}
-                    className="text-center py-2 px-3 bg-green-50 text-green-700 rounded border border-green-200 text-sm"
-                  >
-                    {slot.display}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 text-xs text-gray-500 text-center">
-                AI offers these slots to callers
-              </div>
-            </div>
-
-            {/* Live Notifications */}
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Live Notifications</h3>
-              <div className="space-y-3">
-                {notifications.slice(0, 3).map(notification => (
-                  <div key={notification.id} className={`p-3 rounded border-l-4 ${
-                    notification.type === 'new_booking' ? 'border-blue-500 bg-blue-50' : 'border-orange-500 bg-orange-50'
-                  }`}>
-                    <div className="text-sm font-medium text-gray-900">
-                      {notification.message}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {notification.time}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Daily Stats */}
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Today's Stats</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Appointments:</span>
-                  <span className="font-medium">{todayAppointments.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Revenue:</span>
-                  <span className="font-medium text-green-600">
-                    ${todayAppointments.reduce((sum, apt) => sum + apt.estimatedRevenue, 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">AI Bookings:</span>
-                  <span className="font-medium">
-                    {todayAppointments.filter(apt => apt.bookedVia === 'AI Phone').length}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+function findBookingTime(timeSlot, availableSlots) {
+  if (!timeSlot || !availableSlots.length) return null;
+  
+  const slot = availableSlots.find(s => 
+    s.display.toLowerCase().includes(timeSlot.toLowerCase()) ||
+    timeSlot.toLowerCase().includes(s.display.toLowerCase())
   );
-};
+  
+  return slot?.start || availableSlots[0]?.start;
+}
 
-export default CalendarApp;
+async function sendAppointmentConfirmations(callLog, appointment) {
+  try {
+    const customerMessage = `📅 APPOINTMENT CONFIRMED\n\n${businessConfig.businessName}\nDate: ${new Date(appointment.startTime).toLocaleString()}\nService: ${appointment.service}\n\nWe'll call if running late!`;
+    
+    if (callLog.customerInfo.phone) {
+      await twilioClient.messages.create({
+        body: customerMessage,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: callLog.customerInfo.phone
+      });
+    }
+    
+    const ownerMessage = `🔧 NEW APPOINTMENT\n\nCustomer: ${appointment.customerName}\nPhone: ${appointment.customerPhone}\nTime: ${new Date(appointment.startTime).toLocaleString()}\nService: ${appointment.service}\nIssue: ${appointment.issue}`;
+    
+    await twilioClient.messages.create({
+      body: ownerMessage,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: businessConfig.ownerPhone
+    });
+    
+  } catch (error) {
+    console.error('SMS error:', error);
+  }
+}
+
+// API Endpoints
+app.get('/api/appointments', (req, res) => {
+  const { date } = req.query;
+  if (date) {
+    const targetDate = new Date(date);
+    const dayAppointments = calendar.getDayAppointments(targetDate);
+    res.json(dayAppointments);
+  } else {
+    res.json(Array.from(appointments.values()));
+  }
+});
+
+app.get('/api/available-slots', (req, res) => {
+  const { date } = req.query;
+  const targetDate = date ? new Date(date) : new Date();
+  const slots = calendar.getAvailableSlots(targetDate);
+  res.json(slots);
+});
+
+app.get('/api/notifications', (req, res) => {
+  res.json(notifications.slice(0, 20));
+});
+
+app.get('/api/stats', (req, res) => {
+  const today = new Date();
+  const todayAppointments = calendar.getDayAppointments(today);
+  const totalRevenue = todayAppointments.reduce((sum, apt) => sum + apt.estimatedRevenue, 0);
+  
+  res.json({
+    todayAppointments: todayAppointments.length,
+    todayRevenue: totalRevenue,
+    totalAppointments: appointments.size,
+    aiBookings: Array.from(appointments.values()).filter(apt => apt.bookedVia === 'AI Phone').length
+  });
+});
+
+app.get('/', (req, res) => {
+  res.json({
+    message: 'AI Phone System with Calendar Database Running!',
+    status: 'active',
+    features: ['Real appointment booking', 'Calendar database', 'SMS confirmations'],
+    endpoints: {
+      incoming: '/voice/incoming',
+      appointments: '/api/appointments',
+      availableSlots: '/api/available-slots',
+      notifications: '/api/notifications',
+      stats: '/api/stats'
+    }
+  });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 AI Phone System with Calendar running on port ${PORT}`);
+  console.log(`📅 Calendar database ready`);
+  console.log(`📞 Phone: (844) 540-1735`);
+});
