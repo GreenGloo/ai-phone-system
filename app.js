@@ -1,344 +1,392 @@
-require('dotenv').config();
-const express = require('express');
-const twilio = require('twilio');
-const OpenAI = require('openai');
-const cors = require('cors');
+import React, { useState, useEffect } from 'react';
+import { Calendar, Clock, Phone, User, MapPin, DollarSign, Bell, Plus, Edit, Trash2, CheckCircle } from 'lucide-react';
 
-const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cors());
-
-// Initialize services
-const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// In-memory storage (replace with database later)
-const callLogs = new Map();
-const businesses = new Map();
-
-// Default business configuration
-const defaultBusinessConfig = {
-  businessName: "Professional Services",
-  ownerName: "Business Owner",
-  ownerPhone: process.env.OWNER_PHONE || "+15551234567",
-  businessHours: { start: "08:00", end: "18:00" },
-  emergencyRate: "$150/hour",
-  regularRate: "$100/hour",
-  services: ["Emergency Repairs", "Regular Service", "Consultations", "Estimates"],
-  personality: "friendly but professional"
-};
-
-// AI Prompt for receptionist
-const createAIPrompt = (businessConfig) => `
-You are a professional receptionist for ${businessConfig.businessName}.
-
-CRITICAL INSTRUCTIONS:
-- Sound completely human and professional
-- NEVER mention you're an AI unless directly asked
-- Keep conversations natural and flowing
-- Your job is to help customers and book appointments
-
-BUSINESS INFO:
-- Services: ${businessConfig.services.join(", ")}
-- Hours: ${businessConfig.businessHours.start} to ${businessConfig.businessHours.end}
-- Emergency rate: ${businessConfig.emergencyRate}
-- Regular rate: ${businessConfig.regularRate}
-
-CALL HANDLING:
-1. Greet warmly: "Hello, ${businessConfig.businessName}, this is Sarah. How can I help you today?"
-2. Determine if emergency or regular service
-3. For emergencies: Quote emergency rate, find next available slot, book immediately
-4. For regular: Schedule during business hours, explain services
-5. Always get: Name, phone, address, brief description of issue
-6. Confirm all details before ending call
-
-EMERGENCY CRITERIA:
-- Urgent repairs needed
-- No heat/cooling in extreme weather
-- Water damage/flooding
-- Safety concerns
-- Anything causing business disruption
-
-If you can't help, say you'll have ${businessConfig.ownerName} call them back within 30 minutes.
-
-Stay in character as Sarah, the helpful receptionist. Be warm, efficient, and professional.
-`;
-
-// Handle incoming calls
-app.post('/voice/incoming', async (req, res) => {
-  console.log('Incoming call:', req.body);
-  
-  const { CallSid, From, To } = req.body;
-  const businessId = To;
-  
-  const business = businesses.get(businessId) || defaultBusinessConfig;
-  
-  // Log the call
-  const callLog = {
-    id: CallSid,
-    from: From,
-    to: To,
-    startTime: new Date(),
-    status: 'in-progress',
-    businessId,
-    conversation: []
-  };
-  callLogs.set(CallSid, callLog);
-
-  // Create TwiML response
-  const twiml = new twilio.twiml.VoiceResponse();
-  
-  // Initial greeting
-  const greeting = `Hello, ${business.businessName}, this is Sarah. How can I help you today?`;
-  
-  // Use Twilio's built-in text-to-speech for now
-  twiml.say({
-    voice: 'Polly.Joanna',
-    language: 'en-US'
-  }, greeting);
-  
-  // Gather customer input
-  const gather = twiml.gather({
-    input: 'speech',
-    timeout: 5,
-    speechTimeout: 'auto',
-    action: '/voice/process',
-    method: 'POST'
-  });
-  
-  // If no input, redirect to voicemail
-  twiml.say('I didn\'t hear anything. Let me transfer you to voicemail.');
-  twiml.record({
-    action: '/voice/voicemail',
-    maxLength: 60,
-    playBeep: true
-  });
-
-  res.type('text/xml').send(twiml.toString());
-});
-
-// Process customer speech
-app.post('/voice/process', async (req, res) => {
-  const { CallSid, SpeechResult } = req.body;
-  const callLog = callLogs.get(CallSid);
-  
-  console.log(`Customer said: ${SpeechResult}`);
-  
-  if (!callLog) {
-    return res.status(404).send('Call not found');
-  }
-  
-  // Add customer message to conversation
-  callLog.conversation.push({ role: 'user', content: SpeechResult });
-  
-  try {
-    // Get business config
-    const business = businesses.get(callLog.businessId) || defaultBusinessConfig;
-    
-    // Generate AI response
-    const aiResponse = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        { role: 'system', content: createAIPrompt(business) },
-        ...callLog.conversation
-      ],
-      max_tokens: 150,
-      temperature: 0.7
-    });
-    
-    const responseText = aiResponse.choices[0].message.content;
-    callLog.conversation.push({ role: 'assistant', content: responseText });
-    
-    console.log(`AI response: ${responseText}`);
-    
-    // Create TwiML response
-    const twiml = new twilio.twiml.VoiceResponse();
-    
-    twiml.say({
-      voice: 'Polly.Joanna',
-      language: 'en-US'
-    }, responseText);
-    
-    // Continue gathering input
-    const gather = twiml.gather({
-      input: 'speech',
-      timeout: 5,
-      speechTimeout: 'auto',
-      action: '/voice/process',
-      method: 'POST'
-    });
-    
-    // Extract booking information
-    await extractBookingInfo(SpeechResult, responseText, CallSid);
-    
-    res.type('text/xml').send(twiml.toString());
-    
-  } catch (error) {
-    console.error('Error processing speech:', error);
-    
-    const twiml = new twilio.twiml.VoiceResponse();
-    twiml.say('I\'m sorry, I\'m having trouble right now. Let me have someone call you back.');
-    twiml.hangup();
-    
-    res.type('text/xml').send(twiml.toString());
-  }
-});
-
-// Handle voicemail
-app.post('/voice/voicemail', async (req, res) => {
-  const { CallSid, RecordingUrl } = req.body;
-  
-  console.log(`Voicemail received: ${RecordingUrl}`);
-  
-  // Send notification to business owner
-  await sendOwnerNotification({
-    id: CallSid,
-    type: 'voicemail',
-    recordingUrl: RecordingUrl,
-    from: req.body.From
-  });
-  
-  const twiml = new twilio.twiml.VoiceResponse();
-  twiml.say('Thank you for your message. Someone will call you back soon. Goodbye!');
-  twiml.hangup();
-  
-  res.type('text/xml').send(twiml.toString());
-});
-
-// Extract booking information
-async function extractBookingInfo(customerInput, aiResponse, callSid) {
-  try {
-    const extractionPrompt = `
-    Extract booking information from this conversation:
-    Customer: "${customerInput}"
-    AI: "${aiResponse}"
-    
-    Return JSON with:
+const CalendarApp = () => {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [appointments, setAppointments] = useState([
     {
-      "customerName": "name if mentioned",
-      "phoneNumber": "phone if mentioned", 
-      "serviceType": "emergency or regular",
-      "issueDescription": "brief description",
-      "appointmentBooked": true/false,
-      "appointmentTime": "time if scheduled",
-      "urgencyLevel": "low/medium/high"
+      id: 1,
+      customerName: "John Smith",
+      customerPhone: "(555) 123-4567",
+      service: "Emergency Repair",
+      issue: "Burst pipe in basement",
+      date: new Date(2025, 5, 10, 9, 0),
+      duration: 60,
+      status: "confirmed",
+      bookedVia: "AI Phone",
+      estimatedRevenue: 150,
+      address: "123 Main St"
+    },
+    {
+      id: 2,
+      customerName: "Sarah Johnson",
+      customerPhone: "(555) 987-6543", 
+      service: "Kitchen Sink Installation",
+      issue: "Install new kitchen sink",
+      date: new Date(2025, 5, 10, 14, 0),
+      duration: 120,
+      status: "confirmed",
+      bookedVia: "AI Phone",
+      estimatedRevenue: 200,
+      address: "456 Oak Ave"
+    },
+    {
+      id: 3,
+      customerName: "Mike Davis",
+      customerPhone: "(555) 555-1234",
+      service: "Water Heater Repair", 
+      issue: "No hot water",
+      date: new Date(2025, 5, 11, 10, 30),
+      duration: 90,
+      status: "pending",
+      bookedVia: "AI Phone",
+      estimatedRevenue: 175,
+      address: "789 Pine St"
     }
-    `;
+  ]);
+
+  const [showNewAppointment, setShowNewAppointment] = useState(false);
+  const [notifications, setNotifications] = useState([
+    {
+      id: 1,
+      type: "new_booking",
+      message: "New emergency appointment booked for 9:00 AM",
+      time: "2 minutes ago",
+      read: false
+    },
+    {
+      id: 2,
+      type: "upcoming",
+      message: "Appointment with John Smith in 30 minutes",
+      time: "30 minutes",
+      read: false
+    }
+  ]);
+
+  // Get appointments for selected date
+  const getDayAppointments = (date) => {
+    return appointments.filter(apt => {
+      const aptDate = new Date(apt.date);
+      return aptDate.toDateString() === date.toDateString();
+    }).sort((a, b) => new Date(a.date) - new Date(b.date));
+  };
+
+  // Generate calendar days
+  const generateCalendarDays = () => {
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startDate = new Date(firstDay);
+    startDate.setDate(startDate.getDate() - firstDay.getDay());
+
+    const days = [];
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 42);
+
+    for (let date = new Date(startDate); date < endDate; date.setDate(date.getDate() + 1)) {
+      const dayAppointments = getDayAppointments(date);
+      days.push({
+        date: new Date(date),
+        isCurrentMonth: date.getMonth() === month,
+        isToday: date.toDateString() === new Date().toDateString(),
+        isSelected: date.toDateString() === selectedDate.toDateString(),
+        appointmentCount: dayAppointments.length,
+        revenue: dayAppointments.reduce((sum, apt) => sum + apt.estimatedRevenue, 0)
+      });
+    }
+
+    return days;
+  };
+
+  // Add new appointment (simulates AI booking)
+  const addAppointment = (appointmentData) => {
+    const newAppointment = {
+      id: Date.now(),
+      ...appointmentData,
+      status: "confirmed",
+      bookedVia: "AI Phone"
+    };
+    setAppointments([...appointments, newAppointment]);
     
-    const extraction = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [{ role: 'user', content: extractionPrompt }],
-      max_tokens: 200
-    });
-    
-    const bookingInfo = JSON.parse(extraction.choices[0].message.content);
-    
-    // Update call log
-    const callLog = callLogs.get(callSid);
-    if (callLog) {
-      callLog.bookingInfo = bookingInfo;
-      callLog.lastUpdate = new Date();
-      
-      // Send SMS if appointment booked
-      if (bookingInfo.appointmentBooked) {
-        await sendOwnerNotification(callLog);
+    // Add notification
+    setNotifications([{
+      id: Date.now(),
+      type: "new_booking",
+      message: `New appointment booked: ${appointmentData.customerName}`,
+      time: "Just now",
+      read: false
+    }, ...notifications]);
+  };
+
+  // Get available time slots for a date
+  const getAvailableSlots = (date) => {
+    const dayAppointments = getDayAppointments(date);
+    const businessHours = { start: 8, end: 18 }; // 8 AM to 6 PM
+    const slots = [];
+
+    for (let hour = businessHours.start; hour < businessHours.end; hour++) {
+      for (let minute = 0; minute < 60; minute += 30) {
+        const slotTime = new Date(date);
+        slotTime.setHours(hour, minute, 0, 0);
+        
+        const slotEnd = new Date(slotTime);
+        slotEnd.setMinutes(slotEnd.getMinutes() + 60);
+
+        // Check if slot conflicts with existing appointments
+        const hasConflict = dayAppointments.some(apt => {
+          const aptStart = new Date(apt.date);
+          const aptEnd = new Date(aptStart.getTime() + apt.duration * 60000);
+          return (slotTime < aptEnd && slotEnd > aptStart);
+        });
+
+        if (!hasConflict) {
+          slots.push({
+            time: slotTime,
+            display: slotTime.toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true
+            })
+          });
+        }
       }
     }
-    
-  } catch (error) {
-    console.error('Booking extraction error:', error);
-  }
-}
 
-// Send SMS notification
-async function sendOwnerNotification(callLog) {
-  try {
-    const business = businesses.get(callLog.businessId) || defaultBusinessConfig;
-    
-    let message;
-    
-    if (callLog.type === 'voicemail') {
-      message = `📞 NEW VOICEMAIL
-      
-From: ${callLog.from}
-Recording: ${callLog.recordingUrl}
-Time: ${new Date().toLocaleString()}
+    return slots.slice(0, 8); // Return first 8 available slots
+  };
 
-Check your voicemail system for details.`;
-    } else {
-      const booking = callLog.bookingInfo || {};
-      message = `🔧 NEW APPOINTMENT BOOKED
+  const todayAppointments = getDayAppointments(selectedDate);
+  const availableSlots = getAvailableSlots(selectedDate);
+  const calendarDays = generateCalendarDays();
 
-Customer: ${booking.customerName || 'Name not provided'}
-Phone: ${callLog.from}
-Service: ${booking.serviceType} - ${booking.issueDescription}
-Time: ${booking.appointmentTime}
-Urgency: ${booking.urgencyLevel}
+  return (
+    <div className="min-h-screen bg-gray-50 p-4">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">CallCatcher Calendar</h1>
+              <p className="text-gray-600">AI-powered appointment scheduling</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <Bell className="w-6 h-6 text-gray-600 cursor-pointer" />
+                {notifications.filter(n => !n.read).length > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {notifications.filter(n => !n.read).length}
+                  </span>
+                )}
+              </div>
+              <button 
+                onClick={() => setShowNewAppointment(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Manual Booking
+              </button>
+            </div>
+          </div>
+        </div>
 
-Call ID: ${callLog.id}`;
-    }
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Calendar */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-gray-900">
+                  {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </h2>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() - 1)))}
+                    className="px-3 py-1 border rounded hover:bg-gray-50"
+                  >
+                    ←
+                  </button>
+                  <button 
+                    onClick={() => setCurrentDate(new Date())}
+                    className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                  >
+                    Today
+                  </button>
+                  <button 
+                    onClick={() => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() + 1)))}
+                    className="px-3 py-1 border rounded hover:bg-gray-50"
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
 
-    await twilioClient.messages.create({
-      body: message,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: business.ownerPhone
-    });
-    
-    console.log('Owner notification sent');
-  } catch (error) {
-    console.error('SMS notification error:', error);
-  }
-}
+              {/* Calendar Grid */}
+              <div className="grid grid-cols-7 gap-1 mb-2">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                  <div key={day} className="p-2 text-center text-sm font-medium text-gray-500">
+                    {day}
+                  </div>
+                ))}
+              </div>
 
-// API Endpoints for dashboard
+              <div className="grid grid-cols-7 gap-1">
+                {calendarDays.map((day, index) => (
+                  <div
+                    key={index}
+                    onClick={() => setSelectedDate(day.date)}
+                    className={`
+                      p-2 min-h-[60px] border rounded cursor-pointer hover:bg-blue-50
+                      ${day.isCurrentMonth ? 'bg-white' : 'bg-gray-50 text-gray-400'}
+                      ${day.isToday ? 'ring-2 ring-blue-500' : ''}
+                      ${day.isSelected ? 'bg-blue-100' : ''}
+                    `}
+                  >
+                    <div className="text-sm font-medium">{day.date.getDate()}</div>
+                    {day.appointmentCount > 0 && (
+                      <div className="text-xs mt-1">
+                        <div className="bg-green-100 text-green-700 px-1 rounded text-center">
+                          {day.appointmentCount} apt
+                        </div>
+                        <div className="text-green-600 font-medium">
+                          ${day.revenue}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
 
-// Get call logs
-app.get('/api/calls', (req, res) => {
-  const calls = Array.from(callLogs.values())
-    .sort((a, b) => b.startTime - a.startTime)
-    .slice(0, 50); // Last 50 calls
-  
-  res.json(calls);
-});
+          {/* Right Sidebar */}
+          <div className="space-y-6">
+            {/* Today's Appointments */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">
+                {selectedDate.toLocaleDateString('en-US', { 
+                  weekday: 'long',
+                  month: 'short', 
+                  day: 'numeric' 
+                })}
+              </h3>
+              
+              {todayAppointments.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">No appointments scheduled</p>
+              ) : (
+                <div className="space-y-3">
+                  {todayAppointments.map(apt => (
+                    <div key={apt.id} className="border rounded-lg p-3 hover:bg-gray-50">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Clock className="w-4 h-4 text-blue-600" />
+                            <span className="font-medium">
+                              {new Date(apt.date).toLocaleTimeString('en-US', {
+                                hour: 'numeric',
+                                minute: '2-digit',
+                                hour12: true
+                              })}
+                            </span>
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              apt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                            }`}>
+                              {apt.status}
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-600 mb-1">
+                            <User className="w-4 h-4 inline mr-1" />
+                            {apt.customerName}
+                          </div>
+                          <div className="text-sm text-gray-600 mb-1">
+                            <Phone className="w-4 h-4 inline mr-1" />
+                            {apt.customerPhone}
+                          </div>
+                          <div className="text-sm text-gray-800 font-medium mb-1">
+                            {apt.service}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {apt.issue}
+                          </div>
+                          <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                            <span className="flex items-center gap-1">
+                              <DollarSign className="w-3 h-3" />
+                              ${apt.estimatedRevenue}
+                            </span>
+                            <span>via {apt.bookedVia}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-// Get business settings
-app.get('/api/business/settings', (req, res) => {
-  res.json(defaultBusinessConfig);
-});
+            {/* Available Slots */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Available Slots</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {availableSlots.slice(0, 8).map((slot, index) => (
+                  <div 
+                    key={index}
+                    className="text-center py-2 px-3 bg-green-50 text-green-700 rounded border border-green-200 text-sm"
+                  >
+                    {slot.display}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 text-xs text-gray-500 text-center">
+                AI offers these slots to callers
+              </div>
+            </div>
 
-// Update business settings
-app.post('/api/business/settings', (req, res) => {
-  // In production, save to database
-  Object.assign(defaultBusinessConfig, req.body);
-  res.json({ success: true });
-});
+            {/* Live Notifications */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Live Notifications</h3>
+              <div className="space-y-3">
+                {notifications.slice(0, 3).map(notification => (
+                  <div key={notification.id} className={`p-3 rounded border-l-4 ${
+                    notification.type === 'new_booking' ? 'border-blue-500 bg-blue-50' : 'border-orange-500 bg-orange-50'
+                  }`}>
+                    <div className="text-sm font-medium text-gray-900">
+                      {notification.message}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {notification.time}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy',
-    activeCalls: callLogs.size,
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'production'
-  });
-});
+            {/* Daily Stats */}
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Today's Stats</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Appointments:</span>
+                  <span className="font-medium">{todayAppointments.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Revenue:</span>
+                  <span className="font-medium text-green-600">
+                    ${todayAppointments.reduce((sum, apt) => sum + apt.estimatedRevenue, 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">AI Bookings:</span>
+                  <span className="font-medium">
+                    {todayAppointments.filter(apt => apt.bookedVia === 'AI Phone').length}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({
-    message: 'AI Phone System is running!',
-    status: 'active',
-    endpoints: {
-      incoming: '/voice/incoming',
-      health: '/health',
-      calls: '/api/calls'
-    }
-  });
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 AI Phone System running on port ${PORT}`);
-  console.log(`📞 Webhook URL: https://your-domain.railway.app/voice/incoming`);
-});
+export default CalendarApp;
