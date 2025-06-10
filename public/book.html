@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CallCatcher - Book Appointment</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .service-card {
+            transition: all 0.3s ease;
+        }
+        
+        .service-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+        
+        .service-card.selected {
+            border-color: #3b82f6;
+            background-color: #dbeafe;
+        }
+        
+        .time-slot {
+            transition: all 0.2s ease;
+        }
+        
+        .time-slot:hover {
+            background-color: #f3f4f6;
+        }
+        
+        .time-slot.selected {
+            background-color: #3b82f6;
+            color: white;
+        }
+        
+        .time-slot.unavailable {
+            background-color: #f9fafb;
+            color: #9ca3af;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-4xl mx-auto p-4">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900">Book Your Appointment</h1>
+                    <p class="text-gray-600">Professional plumbing services - available 24/7</p>
+                </div>
+                <div class="text-right">
+                    <div class="text-lg font-bold text-blue-600">(844) 540-1735</div>
+                    <div class="text-sm text-gray-500">Or call our AI assistant</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="booking-form" class="space-y-6">
+            <!-- Step 1: Service Selection -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">1. Select Service Type</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Emergency Services -->
+                    <div class="service-card border-2 border-red-200 rounded-lg p-4 cursor-pointer" 
+                         data-service="emergency" data-duration="60" data-rate="150">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="text-2xl">🚨</span>
+                            <h3 class="font-bold text-gray-900">Emergency Service</h3>
+                        </div>
+                        <p class="text-sm text-gray-600 mb-2">Burst pipes, no water, flooding, gas leaks</p>
+                        <div class="text-sm">
+                            <div class="font-medium text-red-600">$150/hour + emergency fee</div>
+                            <div class="text-gray-500">~1 hour minimum</div>
+                        </div>
+                    </div>
+
+                    <!-- Drain Cleaning -->
+                    <div class="service-card border-2 border-gray-200 rounded-lg p-4 cursor-pointer" 
+                         data-service="drain-cleaning" data-duration="90" data-rate="120">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="text-2xl">🚿</span>
+                            <h3 class="font-bold text-gray-900">Drain Cleaning</h3>
+                        </div>
+                        <p class="text-sm text-gray-600 mb-2">Clogged drains, slow drainage, backups</p>
+                        <div class="text-sm">
+                            <div class="font-medium text-blue-600">$120/hour</div>
+                            <div class="text-gray-500">~1.5 hours typical</div>
+                        </div>
+                    </div>
+
+                    <!-- Water Heater -->
+                    <div class="service-card border-2 border-gray-200 rounded-lg p-4 cursor-pointer" 
+                         data-service="water-heater" data-duration="180" data-rate="100">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="text-2xl">🔥</span>
+                            <h3 class="font-bold text-gray-900">Water Heater</h3>
+                        </div>
+                        <p class="text-sm text-gray-600 mb-2">Installation, repair, maintenance</p>
+                        <div class="text-sm">
+                            <div class="font-medium text-blue-600">$100/hour</div>
+                            <div class="text-gray-500">~3 hours typical</div>
+                        </div>
+                    </div>
+
+                    <!-- Pipe Repair -->
+                    <div class="service-card border-2 border-gray-200 rounded-lg p-4 cursor-pointer" 
+                         data-service="pipe-repair" data-duration="120" data-rate="110">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="text-2xl">🔧</span>
+                            <h3 class="font-bold text-gray-900">Pipe Repair</h3>
+                        </div>
+                        <p class="text-sm text-gray-600 mb-2">Leaks, pipe replacement, fittings</p>
+                        <div class="text-sm">
+                            <div class="font-medium text-blue-600">$110/hour</div>
+                            <div class="text-gray-500">~2 hours typical</div>
+                        </div>
+                    </div>
+
+                    <!-- Fixture Installation -->
+                    <div class="service-card border-2 border-gray-200 rounded-lg p-4 cursor-pointer" 
+                         data-service="fixture-install" data-duration="90" data-rate="95">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="text-2xl">🚽</span>
+                            <h3 class="font-bold text-gray-900">Fixture Install</h3>
+                        </div>
+                        <p class="text-sm text-gray-600 mb-2">Toilets, faucets, sinks, showers</p>
+                        <div class="text-sm">
+                            <div class="font-medium text-blue-600">$95/hour</div>
+                            <div class="text-gray-500">~1.5 hours typical</div>
+                        </div>
+                    </div>
+
+                    <!-- Consultation -->
+                    <div class="service-card border-2 border-gray-200 rounded-lg p-4 cursor-pointer" 
+                         data-service="consultation" data-duration="45" data-rate="75">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="text-2xl">📋</span>
+                            <h3 class="font-bold text-gray-900">Consultation</h3>
+                        </div>
+                        <p class="text-sm text-gray-600 mb-2">Estimates, inspection, planning</p>
+                        <div class="text-sm">
+                            <div class="font-medium text-blue-600">$75 flat rate</div>
+                            <div class="text-gray-500">~45 minutes</div>
+                        </div>
+                    </div>
+                </div>
+                <div id="service-error" class="text-red-600 text-sm mt-2 hidden">Please select a service type</div>
+            </div>
+
+            <!-- Step 2: Customer Information -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">2. Your Information</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+                        <input type="text" id="customer-name" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="John Smith">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
+                        <input type="tel" id="customer-phone" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="(555) 123-4567">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email (Optional)</label>
+                        <input type="email" id="customer-email" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="john@email.com">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Service Address *</label>
+                        <input type="text" id="customer-address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="123 Main St, City, State, ZIP">
+                        <div class="text-xs text-gray-500 mt-1">We use this to calculate travel time and provide accurate scheduling</div>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Describe the Issue *</label>
+                        <textarea id="customer-issue" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Please describe what's happening with your plumbing..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Date Selection -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">3. Select Date</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2" id="date-selector">
+                    <!-- Dates will be populated here -->
+                </div>
+                <div id="date-error" class="text-red-600 text-sm mt-2 hidden">Please select a date</div>
+            </div>
+
+            <!-- Step 4: Time Selection -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">4. Select Time</h2>
+                <div id="time-slots-container">
+                    <div class="text-center py-8 text-gray-500">
+                        Please select a service type and date first
+                    </div>
+                </div>
+                <div id="time-error" class="text-red-600 text-sm mt-2 hidden">Please select a time slot</div>
+            </div>
+
+            <!-- Step 5: Booking Summary -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">5. Booking Summary</h2>
+                <div id="booking-summary" class="bg-gray-50 rounded-lg p-4 mb-4">
+                    <div class="text-center text-gray-500 py-4">
+                        Complete the form above to see your booking details
+                    </div>
+                </div>
+                
+                <div class="flex gap-4">
+                    <button onclick="bookAppointment()" id="book-button" 
+                            class="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                            disabled>
+                        Book Appointment
+                    </button>
+                    <button onclick="resetForm()" class="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium">
+                        Start Over
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Success Modal -->
+        <div id="success-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
+            <div class="bg-white rounded-lg p-6 max-w-md w-full">
+                <div class="text-center">
+                    <div class="text-6xl mb-4">✅</div>
+                    <h3 class="text-xl font-bold text-gray-900 mb-2">Appointment Booked!</h3>
+                    <div id="success-details" class="text-gray-600 mb-4"></div>
+                    <div class="text-sm text-gray-500 mb-4">
+                        You'll receive a confirmation text message shortly.
+                    </div>
+                    <button onclick="closeSuccessModal()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let selectedService = null;
+        let selectedDate = null;
+        let selectedTime = null;
+        let availableSlots = [];
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            setupServiceSelection();
+            generateDateOptions();
+            updateFormValidation();
+        });
+
+        // Service selection
+        function setupServiceSelection() {
+            document.querySelectorAll('.service-card').forEach(card => {
+                card.addEventListener('click', function() {
+                    // Remove previous selection
+                    document.querySelectorAll('.service-card').forEach(c => c.classList.remove('selected'));
+                    
+                    // Select this card
+                    this.classList.add('selected');
+                    
+                    selectedService = {
+                        type: this.dataset.service,
+                        duration: parseInt(this.dataset.duration),
+                        rate: parseInt(this.dataset.rate),
+                        name: this.querySelector('h3').textContent
+                    };
+                    
+                    // Clear time selection when service changes
+                    selectedTime = null;
+                    
+                    // Reload time slots if date is selected
+                    if (selectedDate) {
+                        loadTimeSlots();
+                    }
+                    
+                    updateFormValidation();
+                });
+            });
+        }
+
+        // Generate date options (next 14 days)
+        function generateDateOptions() {
+            const container = document.getElementById('date-selector');
+            const today = new Date();
+            
+            for (let i = 0; i < 14; i++) {
+                const date = new Date(today);
+                date.setDate(today.getDate() + i);
+                
+                const dateCard = document.createElement('div');
+                dateCard.className = 'border border-gray-300 rounded-lg p-3 text-center cursor-pointer hover:bg-gray-50 transition-colors';
+                dateCard.dataset.date = date.toISOString().split('T')[0];
+                
+                const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                const dayNumber = date.getDate();
+                const monthName = date.toLocaleDateString('en-US', { month: 'short' });
+                
+                dateCard.innerHTML = `
+                    <div class="text-xs text-gray-500">${dayName}</div>
+                    <div class="text-lg font-bold">${dayNumber}</div>
+                    <div class="text-xs text-gray-500">${monthName}</div>
+                `;
+                
+                if (i === 0) {
+                    dateCard.innerHTML += '<div class="text-xs text-blue-600 font-medium">Today</div>';
+                }
+                
+                dateCard.addEventListener('click', function() {
+                    // Remove previous selection
+                    document.querySelectorAll('#date-selector > div').forEach(d => {
+                        d.classList.remove('bg-blue-600', 'text-white');
+                        d.classList.add('border-gray-300');
+                    });
+                    
+                    // Select this date
+                    this.classList.remove('border-gray-300');
+                    this.classList.add('bg-blue-600', 'text-white');
+                    
+                    selectedDate = date;
+                    selectedTime = null; // Clear time selection
+                    
+                    if (selectedService) {
+                        loadTimeSlots();
+                    }
+                    
+                    updateFormValidation();
+                });
+                
+                container.appendChild(dateCard);
+            }
+        }
+
+        // Load available time slots
+        async function loadTimeSlots() {
+            if (!selectedService || !selectedDate) return;
+            
+            const container = document.getElementById('time-slots-container');
+            container.innerHTML = '<div class="text-center py-4 text-gray-500">Loading available times...</div>';
+            
+            try {
+                const dateParam = selectedDate.toISOString().split('T')[0];
+                const response = await fetch(`/api/available-slots?date=${dateParam}&duration=${selectedService.duration}`);
+                availableSlots = await response.json();
+                
+                renderTimeSlots();
+            } catch (error) {
+                console.error('Error loading time slots:', error);
+                container.innerHTML = '<div class="text-center py-4 text-red-500">Error loading available times</div>';
+            }
+        }
+
+        // Render time slots
+        function renderTimeSlots() {
+            const container = document.getElementById('time-slots-container');
+            
+            if (availableSlots.length === 0) {
+                container.innerHTML = '<div class="text-center py-4 text-gray-500">No available time slots for this date. Please select another date.</div>';
+                return;
+            }
+            
+            const slotsHtml = availableSlots.map(slot => `
+                <div class="time-slot border border-gray-300 rounded-lg p-3 text-center cursor-pointer" 
+                     data-time="${slot.start}">
+                    <div class="font-medium">${slot.display}</div>
+                    <div class="text-xs text-gray-500">${selectedService.duration} min</div>
+                </div>
+            `).join('');
+            
+            container.innerHTML = `
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    ${slotsHtml}
+                </div>
+            `;
+            
+            // Add click handlers to time slots
+            container.querySelectorAll('.time-slot').forEach(slot => {
+                slot.addEventListener('click', function() {
+                    // Remove previous selection
+                    container.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
+                    
+                    // Select this slot
+                    this.classList.add('selected');
+                    
+                    selectedTime = new Date(this.dataset.time);
+                    updateFormValidation();
+                });
+            });
+        }
+
+        // Update form validation and summary
+        function updateFormValidation() {
+            const name = document.getElementById('customer-name').value;
+            const phone = document.getElementById('customer-phone').value;
+            const address = document.getElementById('customer-address').value;
+            const issue = document.getElementById('customer-issue').value;
+            
+            const isValid = selectedService && selectedDate && selectedTime && name && phone && address && issue;
+            
+            document.getElementById('book-button').disabled = !isValid;
+            
+            if (isValid) {
+                updateBookingSummary();
+            }
+        }
+
+        // Update booking summary
+        function updateBookingSummary() {
+            const name = document.getElementById('customer-name').value;
+            const phone = document.getElementById('customer-phone').value;
+            const address = document.getElementById('customer-address').value;
+            const issue = document.getElementById('customer-issue').value;
+            
+            const appointmentTime = selectedTime.toLocaleString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+            
+            const estimatedCost = selectedService.type === 'consultation' ? 
+                selectedService.rate : 
+                `$${selectedService.rate}/hour (estimated)`;
+            
+            document.getElementById('booking-summary').innerHTML = `
+                <div class="space-y-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <h4 class="font-medium text-gray-900">Service</h4>
+                            <p class="text-gray-600">${selectedService.name}</p>
+                            <p class="text-sm text-gray-500">${selectedService.duration} minutes</p>
+                        </div>
+                        <div>
+                            <h4 class="font-medium text-gray-900">Customer</h4>
+                            <p class="text-gray-600">${name}</p>
+                            <p class="text-gray-600">${phone}</p>
+                        </div>
+                        <div>
+                            <h4 class="font-medium text-gray-900">Date & Time</h4>
+                            <p class="text-gray-600">${appointmentTime}</p>
+                        </div>
+                        <div>
+                            <h4 class="font-medium text-gray-900">Estimated Cost</h4>
+                            <p class="text-green-600 font-medium">${estimatedCost}</p>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 class="font-medium text-gray-900">Issue Description</h4>
+                        <p class="text-gray-600">${issue}</p>
+                    </div>
+                    <div>
+                        <h4 class="font-medium text-gray-900">Service Address</h4>
+                        <p class="text-gray-600">${address}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Book appointment
+        async function bookAppointment() {
+            const name = document.getElementById('customer-name').value;
+            const phone = document.getElementById('customer-phone').value;
+            const email = document.getElementById('customer-email').value;
+            const address = document.getElementById('customer-address').value;
+            const issue = document.getElementById('customer-issue').value;
+            
+            const bookingData = {
+                customerInfo: {
+                    name: name,
+                    phone: phone,
+                    email: email,
+                    address: address,
+                    issue: issue
+                },
+                service: selectedService,
+                appointmentTime: selectedTime.toISOString(),
+                bookedVia: 'Website'
+            };
+            
+            try {
+                document.getElementById('book-button').disabled = true;
+                document.getElementById('book-button').textContent = 'Booking...';
+                
+                const response = await fetch('/api/book-appointment', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(bookingData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showSuccessModal(result.appointment);
+                } else {
+                    alert('Error booking appointment: ' + result.error);
+                    document.getElementById('book-button').disabled = false;
+                    document.getElementById('book-button').textContent = 'Book Appointment';
+                }
+            } catch (error) {
+                console.error('Booking error:', error);
+                alert('Error booking appointment. Please try again.');
+                document.getElementById('book-button').disabled = false;
+                document.getElementById('book-button').textContent = 'Book Appointment';
+            }
+        }
+
+        // Show success modal
+        function showSuccessModal(appointment) {
+            const appointmentTime = new Date(appointment.startTime).toLocaleString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            });
+            
+            document.getElementById('success-details').innerHTML = `
+                <div class="text-left">
+                    <p><strong>Service:</strong> ${appointment.service}</p>
+                    <p><strong>Date:</strong> ${appointmentTime}</p>
+                    <p><strong>Customer:</strong> ${appointment.customerName}</p>
+                    <p><strong>Reference:</strong> ${appointment.id}</p>
+                </div>
+            `;
+            
+            document.getElementById('success-modal').classList.remove('hidden');
+        }
+
+        // Close success modal
+        function closeSuccessModal() {
+            document.getElementById('success-modal').classList.add('hidden');
+            resetForm();
+        }
+
+        // Reset form
+        function resetForm() {
+            selectedService = null;
+            selectedDate = null;
+            selectedTime = null;
+            
+            document.querySelectorAll('.service-card').forEach(c => c.classList.remove('selected'));
+            document.querySelectorAll('#date-selector > div').forEach(d => {
+                d.classList.remove('bg-blue-600', 'text-white');
+                d.classList.add('border-gray-300');
+            });
+            
+            document.getElementById('customer-name').value = '';
+            document.getElementById('customer-phone').value = '';
+            document.getElementById('customer-email').value = '';
+            document.getElementById('customer-address').value = '';
+            document.getElementById('customer-issue').value = '';
+            
+            document.getElementById('time-slots-container').innerHTML = '<div class="text-center py-8 text-gray-500">Please select a service type and date first</div>';
+            document.getElementById('booking-summary').innerHTML = '<div class="text-center text-gray-500 py-4">Complete the form above to see your booking details</div>';
+            
+            updateFormValidation();
+        }
+
+        // Add event listeners for form validation
+        ['customer-name', 'customer-phone', 'customer-address', 'customer-issue'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateFormValidation);
+        });
+    </script>
+</body>
+</html>
