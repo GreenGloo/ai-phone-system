@@ -1823,6 +1823,25 @@ app.post('/api/admin/fix-business/:businessId', async (req, res) => {
   }
 });
 
+// Debug endpoint to check what services are being returned
+app.get('/api/debug/services/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    
+    const businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
+    const servicesResult = await pool.query('SELECT * FROM service_types WHERE business_id = $1 AND is_active = true ORDER BY display_order, name', [businessId]);
+    
+    res.json({
+      business: businessResult.rows[0],
+      services: servicesResult.rows,
+      serviceCount: servicesResult.rows.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
