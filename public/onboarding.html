@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Your CallCatcher - Onboarding</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .step-active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .step-completed {
+            background-color: #10b981;
+            color: white;
+        }
+        .step-pending {
+            background-color: #e5e7eb;
+            color: #6b7280;
+        }
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-4xl mx-auto py-8 px-4">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">Welcome to CallCatcher! 🎉</h1>
+            <p class="text-gray-600">Let's set up your AI phone system in just a few minutes</p>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="mb-8">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm text-gray-500">Setup Progress</span>
+                <span id="progress-text" class="text-sm text-gray-500">Step 1 of 5</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2">
+                <div id="progress-bar" class="progress-bar bg-blue-600 h-2 rounded-full" style="width: 20%"></div>
+            </div>
+        </div>
+
+        <!-- Step Navigation -->
+        <div class="flex justify-center mb-8">
+            <div class="flex items-center space-x-4">
+                <div id="step-1" class="step-active flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold">1</div>
+                <div class="w-12 h-1 bg-gray-300"></div>
+                <div id="step-2" class="step-pending flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold">2</div>
+                <div class="w-12 h-1 bg-gray-300"></div>
+                <div id="step-3" class="step-pending flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold">3</div>
+                <div class="w-12 h-1 bg-gray-300"></div>
+                <div id="step-4" class="step-pending flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold">4</div>
+                <div class="w-12 h-1 bg-gray-300"></div>
+                <div id="step-5" class="step-pending flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold">5</div>
+            </div>
+        </div>
+
+        <!-- Onboarding Steps -->
+        <div class="bg-white rounded-lg shadow-sm p-8">
+            
+            <!-- Step 1: Business Hours -->
+            <div id="step-content-1" class="step-content">
+                <div class="text-center mb-8">
+                    <div class="text-6xl mb-4">🕐</div>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">When are you available?</h2>
+                    <p class="text-gray-600">Set your business hours so the AI knows when to offer appointments</p>
+                </div>
+
+                <div class="space-y-4 max-w-2xl mx-auto">
+                    <div class="grid grid-cols-1 md:grid-cols-7 gap-4">
+                        <div class="font-medium text-gray-700 text-center md:text-left">Day</div>
+                        <div class="font-medium text-gray-700 text-center">Enabled</div>
+                        <div class="font-medium text-gray-700 text-center">Start Time</div>
+                        <div class="font-medium text-gray-700 text-center">End Time</div>
+                        <div class="font-medium text-gray-700 text-center">Lunch Start</div>
+                        <div class="font-medium text-gray-700 text-center">Lunch End</div>
+                        <div class="font-medium text-gray-700 text-center">Emergency</div>
+                    </div>
+
+                    <div id="business-hours-container">
+                        <!-- Days will be populated by JavaScript -->
+                    </div>
+                </div>
+
+                <div class="flex justify-center mt-8">
+                    <button onclick="nextStep()" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold">
+                        Continue to Services →
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Service Configuration -->
+            <div id="step-content-2" class="step-content hidden">
+                <div class="text-center mb-8">
+                    <div class="text-6xl mb-4">🔧</div>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Configure Your Services</h2>
+                    <p class="text-gray-600">Review and customize your service types and pricing</p>
+                </div>
+
+                <div id="services-container" class="space-y-4 max-w-3xl mx-auto">
+                    <!-- Services will be populated by JavaScript -->
+                </div>
+
+                <div class="flex justify-center mt-8 space-x-4">
+                    <button onclick="previousStep()" class="bg-gray-200 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-300 font-semibold">
+                        ← Back
+                    </button>
+                    <button onclick="nextStep()" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold">
+                        Continue to AI Setup →
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 3: AI Personality -->
+            <div id="step-content-3" class="step-content hidden">
+                <div class="text-center mb-8">
+                    <div class="text-6xl mb-4">🤖</div>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Customize Your AI Assistant</h2>
+                    <p class="text-gray-600">Choose how your AI assistant should talk to customers</p>
+                </div>
+
+                <div class="max-w-2xl mx-auto space-y-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">AI Personality</label>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="personality-option border-2 border-gray-200 rounded-lg p-4 cursor-pointer hover:border-blue-500" data-personality="professional">
+                                <div class="text-center">
+                                    <div class="text-2xl mb-2">👔</div>
+                                    <h3 class="font-semibold text-gray-900">Professional</h3>
+                                    <p class="text-sm text-gray-600">Formal, efficient, business-focused</p>
+                                </div>
+                            </div>
+                            <div class="personality-option border-2 border-blue-500 bg-blue-50 rounded-lg p-4 cursor-pointer" data-personality="friendly">
+                                <div class="text-center">
+                                    <div class="text-2xl mb-2">😊</div>
+                                    <h3 class="font-semibold text-gray-900">Friendly</h3>
+                                    <p class="text-sm text-gray-600">Warm, approachable, conversational</p>
+                                </div>
+                            </div>
+                            <div class="personality-option border-2 border-gray-200 rounded-lg p-4 cursor-pointer hover:border-blue-500" data-personality="urgent">
+                                <div class="text-center">
+                                    <div class="text-2xl mb-2">⚡</div>
+                                    <h3 class="font-semibold text-gray-900">Urgent</h3>
+                                    <p class="text-sm text-gray-600">Quick, direct, emergency-focused</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Business Description</label>
+                        <textarea id="business-description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="Tell us about your business so the AI can better help customers...">Expert plumbing services for residential and commercial customers. We handle everything from emergency repairs to new installations.</textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Emergency Message</label>
+                        <textarea id="emergency-message" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="What should the AI say for emergency calls?">We understand this is an emergency. Let me get you scheduled for immediate service. Our technician can be there within the hour.</textarea>
+                    </div>
+
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h4 class="font-semibold text-gray-900 mb-2">Preview: How Your AI Will Sound</h4>
+                        <div id="ai-preview" class="text-gray-700 italic">
+                            "Hello! Thanks for calling. I'm Sarah, your AI assistant. I can help you schedule your plumbing service right away. What kind of issue are you having today?"
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-center mt-8 space-x-4">
+                    <button onclick="previousStep()" class="bg-gray-200 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-300 font-semibold">
+                        ← Back
+                    </button>
+                    <button onclick="nextStep()" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold">
+                        Continue to Phone Setup →
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 4: Phone Number -->
+            <div id="step-content-4" class="step-content hidden">
+                <div class="text-center mb-8">
+                    <div class="text-6xl mb-4">📞</div>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Your AI Phone Number</h2>
+                    <p class="text-gray-600">We've set up a dedicated phone number for your business</p>
+                </div>
+
+                <div class="max-w-lg mx-auto">
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-6 text-center mb-6">
+                        <div class="text-green-600 mb-2">✅ Phone Number Assigned</div>
+                        <div id="assigned-phone" class="text-2xl font-bold text-gray-900 mb-2">(Loading...)</div>
+                        <div class="text-sm text-gray-600">This number is ready to receive calls and book appointments!</div>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <h4 class="font-semibold text-blue-900 mb-2">📋 Next Steps:</h4>
+                            <ul class="text-sm text-blue-800 space-y-1">
+                                <li>• Update your website with this number</li>
+                                <li>• Add it to your Google Business listing</li>
+                                <li>• Update your business cards and marketing</li>
+                                <li>• Forward your existing number (optional)</li>
+                            </ul>
+                        </div>
+
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                            <h4 class="font-semibold text-yellow-900 mb-2">🧪 Test Your System:</h4>
+                            <p class="text-sm text-yellow-800 mb-3">Call your new number to test the AI booking system!</p>
+                            <button onclick="testCall()" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 text-sm">
+                                Call Now to Test
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-center mt-8 space-x-4">
+                    <button onclick="previousStep()" class="bg-gray-200 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-300 font-semibold">
+                        ← Back
+                    </button>
+                    <button onclick="nextStep()" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold">
+                        Continue to Payment →
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 5: Payment & Launch -->
+            <div id="step-content-5" class="step-content hidden">
+                <div class="text-center mb-8">
+                    <div class="text-6xl mb-4">🚀</div>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">You're All Set!</h2>
+                    <p class="text-gray-600">Your AI phone system is ready. Start your free trial!</p>
+                </div>
+
+                <div class="max-w-2xl mx-auto">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-6">
+                            <h3 class="font-semibold text-green-900 mb-3">✅ Setup Complete</h3>
+                            <ul class="text-sm text-green-800 space-y-1">
+                                <li>• Business hours configured</li>
+                                <li>• Services and pricing set</li>
+                                <li>• AI personality customized</li>
+                                <li>• Phone number activated</li>
+                                <li>• 14-day free trial started</li>
+                            </ul>
+                        </div>
+
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                            <h3 class="font-semibold text-blue-900 mb-3">📊 Your Plan</h3>
+                            <div class="text-sm text-blue-800 space-y-1">
+                                <div><strong>Plan:</strong> <span id="selected-plan">Professional</span></div>
+                                <div><strong>Price:</strong> <span id="plan-price">$199/month</span></div>
+                                <div><strong>Trial Ends:</strong> <span id="trial-end-date">June 24, 2025</span></div>
+                                <div class="text-xs text-blue-600 mt-2">No charge until trial ends</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-6">
+                        <h4 class="font-semibold text-yellow-900 mb-3">💳 Payment Method Required</h4>
+                        <p class="text-sm text-yellow-800 mb-4">To activate your trial, we need a payment method. You won't be charged until your trial ends.</p>
+                        
+                        <div id="payment-section" class="space-y-4">
+                            <div class="text-center">
+                                <button onclick="setupPayment()" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold">
+                                    Add Payment Method
+                                </button>
+                                <p class="text-xs text-gray-500 mt-2">Secure payment processing by Stripe</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-center">
+                        <button onclick="launchDashboard()" id="launch-button" class="bg-green-600 text-white px-8 py-4 rounded-lg hover:bg-green-700 font-semibold text-lg disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                            🚀 Launch Dashboard
+                        </button>
+                        <p class="text-sm text-gray-500 mt-2">Start managing your AI phone system</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://js.stripe.com/v3/"></script>
+    <script>
+        let currentStep = 1;
+        const totalSteps = 5;
+        let businessData = {};
+        let selectedPersonality = 'friendly';
+
+        // Initialize onboarding
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserData();
+            populateBusinessHours();
+            populateServices();
+            setupPersonalitySelection();
+        });
+
+        function loadUserData() {
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            const business = JSON.parse(localStorage.getItem('business') || '{}');
+            
+            businessData = { ...user, ...business };
+            
+            if (business.phoneNumber) {
+                document.getElementById('assigned-phone').textContent = formatPhoneNumber(business.phoneNumber);
+            }
+            
+            if (business.plan) {
+                document.getElementById('selected-plan').textContent = capitalizeFirst(business.plan);
+                const prices = { starter: '$99', professional: '$199', enterprise: '$399' };
+                document.getElementById('plan-price').textContent = prices[business.plan] + '/month';
+            }
+            
+            // Set trial end date (14 days from now)
+            const trialEnd = new Date();
+            trialEnd.setDate(trialEnd.getDate() + 14);
+            document.getElementById('trial-end-date').textContent = trialEnd.toLocaleDateString('en-US', { 
+                month: 'long', 
+                day: 'numeric', 
+                year: 'numeric' 
+            });
+        }
+
+        function populateBusinessHours() {
+            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const defaultHours = {
+                monday: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00', emergency: true },
+                tuesday: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00', emergency: true },
+                wednesday: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00', emergency: true },
+                thursday: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00', emergency: true },
+                friday: { enabled: true, start: '08:00', end: '18:00', lunchStart: '12:00', lunchEnd: '13:00', emergency: true },
+                saturday: { enabled: true, start: '09:00', end: '17:00', lunchStart: '12:00', lunchEnd: '13:00', emergency: false },
+                sunday: { enabled: false, start: '10:00', end: '16:00', lunchStart: '12:00', lunchEnd: '13:00', emergency: false }
+            };
+
+            const container = document.getElementById('business-hours-container');
+            
+            days.forEach((day, index) => {
+                const dayData = defaultHours[day];
+                const row = document.createElement('div');
+                row.className = 'grid grid-cols-1 md:grid-cols-7 gap-4 items-center';
+                row.innerHTML = `
+                    <div class="font-medium text-gray-700">${dayNames[index]}</div>
+                    <div class="text-center">
+                        <input type="checkbox" ${dayData.enabled ? 'checked' : ''} 
+                               onchange="toggleDay('${day}')" 
+                               id="enabled-${day}" 
+                               class="w-4 h-4 text-blue-600">
+                    </div>
+                    <div>
+                        <input type="time" value="${dayData.start}" 
+                               id="start-${day}" 
+                               class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
+                    </div>
+                    <div>
+                        <input type="time" value="${dayData.end}" 
+                               id="end-${day}" 
+                               class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
+                    </div>
+                    <div>
+                        <input type="time" value="${dayData.lunchStart}" 
+                               id="lunch-start-${day}" 
+                               class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
+                    </div>
+                    <div>
+                        <input type="time" value="${dayData.lunchEnd}" 
+                               id="lunch-end-${day}" 
+                               class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
+                    </div>
+                    <div class="text-center">
+                        <input type="checkbox" ${dayData.emergency ? 'checked' : ''} 
+                               id="emergency-${day}" 
+                               class="w-4 h-4 text-red-600">
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+        }
+
+        function populateServices() {
+            const defaultServices = [
+                { name: 'Emergency Service', baseRate: 150, duration: 60, emergency: true, description: 'Burst pipes, no water, flooding, gas leaks' },
+                { name: 'Drain Cleaning', baseRate: 120, duration: 90, emergency: false, description: 'Clogged drains, slow drainage, backups' },
+                { name: 'Water Heater Service', baseRate: 100, duration: 180, emergency: false, description: 'Installation, repair, maintenance' },
+                { name: 'Pipe Repair', baseRate: 110, duration: 120, emergency: false, description: 'Leaks, pipe replacement, fittings' },
+                { name: 'Fixture Installation', baseRate: 95, duration: 90, emergency: false, description: 'Toilets, faucets, sinks, showers' },
+                { name: 'Consultation', baseRate: 75, duration: 45, emergency: false, description: 'Estimates, inspection, planning' }
+            ];
+
+            const container = document.getElementById('services-container');
+            
+            defaultServices.forEach((service, index) => {
+                const serviceDiv = document.createElement('div');
+                serviceDiv.className = 'border border-gray-200 rounded-lg p-4';
+                serviceDiv.innerHTML = `
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-3">
+                            <input type="checkbox" checked id="service-enabled-${index}" class="w-4 h-4 text-blue-600">
+                            <h3 class="font-semibold text-gray-900">${service.name}</h3>
+                            ${service.emergency ? '<span class="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">Emergency</span>' : ''}
+                        </div>
+                        <div class="text-lg font-bold text-green-600">$${service.baseRate}</div>
+                    </div>
+                    <p class="text-sm text-gray-600 mb-3">${service.description}</p>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Base Rate ($)</label>
+                            <input type="number" value="${service.baseRate}" 
+                                   id="service-rate-${index}" 
+                                   class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Duration (minutes)</label>
+                            <input type="number" value="${service.duration}" 
+                                   id="service-duration-${index}" 
+                                   class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Emergency Multiplier</label>
+                            <select id="service-multiplier-${index}" class="w-full px-2 py-1 border border-gray-300 rounded text-sm">
+                                <option value="1.0">1.0x (No change)</option>
+                                <option value="1.5" ${service.emergency ? '' : 'selected'}>1.5x (+50%)</option>
+                                <option value="2.0">2.0x (Double)</option>
+                                <option value="2.5">2.5x (+150%)</option>
+                            </select>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(serviceDiv);
+            });
+        }
+
+        function setupPersonalitySelection() {
+            document.querySelectorAll('.personality-option').forEach(option => {
+                option.addEventListener('click', function() {
+                    document.querySelectorAll('.personality-option').forEach(o => {
+                        o.classList.remove('border-blue-500', 'bg-blue-50');
+                        o.classList.add('border-gray-200');
+                    });
+                    
+                    this.classList.remove('border-gray-200');
+                    this.classList.add('border-blue-500', 'bg-blue-50');
+                    
+                    selectedPersonality = this.dataset.personality;
+                    updateAIPreview();
+                });
+            });
+
+            // Listen for changes in description and message
+            document.getElementById('business-description').addEventListener('input', updateAIPreview);
+            document.getElementById('emergency-message').addEventListener('input', updateAIPreview);
+        }
+
+        function updateAIPreview() {
+            const personalities = {
+                professional: "Hello, this is Sarah from CallCatcher AI services. I can assist you with scheduling your service appointment. How may I help you today?",
+                friendly: "Hi there! Thanks for calling! I'm Sarah, your friendly AI assistant. I'd love to help you get your service scheduled. What can I do for you?",
+                urgent: "Hello, this is Sarah with emergency services. I'm here to get you immediate help. What's your urgent service need today?"
+            };
+            
+            document.getElementById('ai-preview').textContent = personalities[selectedPersonality];
+        }
+
+        function toggleDay(day) {
+            const enabled = document.getElementById(`enabled-${day}`).checked;
+            const inputs = [`start-${day}`, `end-${day}`, `lunch-start-${day}`, `lunch-end-${day}`, `emergency-${day}`];
+            
+            inputs.forEach(inputId => {
+                document.getElementById(inputId).disabled = !enabled;
+            });
+        }
+
+        function nextStep() {
+            if (currentStep < totalSteps) {
+                // Save current step data
+                if (currentStep === 1) saveBusinessHours();
+                if (currentStep === 2) saveServices();
+                if (currentStep === 3) saveAISettings();
+                
+                currentStep++;
+                showStep(currentStep);
+            }
+        }
+
+        function previousStep() {
+            if (currentStep > 1) {
+                currentStep--;
+                showStep(currentStep);
+            }
+        }
+
+        function showStep(step) {
+            // Hide all steps
+            document.querySelectorAll('.step-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            
+            // Show current step
+            document.getElementById(`step-content-${step}`).classList.remove('hidden');
+            
+            // Update progress
+            updateProgress();
+            
+            // Update step indicators
+            updateStepIndicators();
+        }
+
+        function updateProgress() {
+            const progress = (currentStep / totalSteps) * 100;
+            document.getElementById('progress-bar').style.width = `${progress}%`;
+            document.getElementById('progress-text').textContent = `Step ${currentStep} of ${totalSteps}`;
+        }
+
+        function updateStepIndicators() {
+            for (let i = 1; i <= totalSteps; i++) {
+                const stepElement = document.getElementById(`step-${i}`);
+                
+                if (i < currentStep) {
+                    stepElement.className = 'step-completed flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold';
+                } else if (i === currentStep) {
+                    stepElement.className = 'step-active flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold';
+                } else {
+                    stepElement.className = 'step-pending flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold';
+                }
+            }
+        }
+
+        function saveBusinessHours() {
+            // Implementation would save to backend
+            console.log('Saving business hours...');
+        }
+
+        function saveServices() {
+            // Implementation would save to backend
+            console.log('Saving services...');
+        }
+
+        function saveAISettings() {
+            businessData.aiPersonality = selectedPersonality;
+            businessData.businessDescription = document.getElementById('business-description').value;
+            businessData.emergencyMessage = document.getElementById('emergency-message').value;
+            console.log('Saving AI settings...', businessData);
+        }
+
+        function testCall() {
+            const phoneNumber = document.getElementById('assigned-phone').textContent;
+            alert(`📞 Test your AI system:\n\nCall: ${phoneNumber}\n\nSay: "I need a plumber for my kitchen sink"\n\nThe AI will offer available appointment times and book the appointment automatically!`);
+        }
+
+        function setupPayment() {
+            // In a real implementation, this would integrate with Stripe
+            alert('Payment setup would integrate with Stripe here. For demo purposes, continuing...');
+            document.getElementById('launch-button').disabled = false;
+            document.getElementById('launch-button').classList.remove('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
+        }
+
+        function launchDashboard() {
+            // Mark onboarding as complete
+            localStorage.setItem('onboarding_complete', 'true');
+            
+            // Redirect to dashboard
+            window.location.href = '/dashboard';
+        }
+
+        function formatPhoneNumber(phoneNumber) {
+            // Format phone number for display
+            const cleaned = phoneNumber.replace(/\D/g, '');
+            const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
+            if (match) {
+                return `(${match[1]}) ${match[2]}-${match[3]}`;
+            }
+            return phoneNumber;
+        }
+
+        function capitalizeFirst(str) {
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        // Initialize
+        updateProgress();
+        updateStepIndicators();
+    </script>
+</body>
+</html>
