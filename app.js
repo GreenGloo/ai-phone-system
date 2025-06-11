@@ -684,6 +684,11 @@ RESPONSE FORMAT (JSON):
   "appointmentTime": "suggested time slot or null"
 }
 
+ACTION GUIDELINES:
+- Use "get_more_info" if you need to ask ANY question that requires a customer response
+- Use "book_appointment" only if you have enough info to actually schedule
+- Use "provide_info" only for simple information that doesn't need a response
+
 Keep responses natural, helpful, and under 25 words. Match the business personality.`;
 
     // Add timeout and faster model for real-time conversation
@@ -1146,6 +1151,53 @@ app.get('/api/industry-templates/:industryType', async (req, res) => {
   } catch (error) {
     console.error('Error fetching industry template:', error);
     res.status(500).json({ error: 'Failed to fetch industry template' });
+  }
+});
+
+// Regenerate services for an existing business (fix old plumbing services)
+app.post('/api/businesses/:businessId/regenerate-services', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    console.log(`🔄 Regenerating services for business: ${req.business.name} (${req.business.business_type})`);
+    
+    // Delete existing services
+    await pool.query('DELETE FROM service_types WHERE business_id = $1', [req.business.id]);
+    console.log('🗑️ Deleted old services');
+    
+    // Generate new AI services
+    const generatedServices = await generateServicesWithAI(req.business.business_type, req.business.name);
+    console.log(`🤖 Generated ${generatedServices.length} new services`);
+    
+    // Insert new services
+    for (const serviceType of generatedServices) {
+      await pool.query(
+        `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          req.business.id,
+          serviceType.name,
+          serviceType.service_key,
+          serviceType.description,
+          serviceType.duration_minutes,
+          serviceType.base_rate,
+          serviceType.emergency_multiplier,
+          serviceType.travel_buffer_minutes,
+          serviceType.is_emergency,
+          serviceType.is_active
+        ]
+      );
+    }
+    
+    console.log(`✅ Successfully regenerated services for ${req.business.name}`);
+    
+    res.json({
+      success: true,
+      message: `Regenerated ${generatedServices.length} services for ${req.business.name}`,
+      services: generatedServices
+    });
+    
+  } catch (error) {
+    console.error('Error regenerating services:', error);
+    res.status(500).json({ error: 'Failed to regenerate services' });
   }
 });
 
