@@ -155,15 +155,28 @@ app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
+// Multi-tenant booking page route
+app.get('/book/:businessId', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'book.html'));
+});
+
+// Fallback booking route (uses first business for demo)
+app.get('/book', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'book.html'));
+});
+
 // Authentication endpoints
 app.post('/api/signup', async (req, res) => {
   try {
-    const { businessName, ownerName, email, phone, businessType, plan = 'professional' } = req.body;
+    const { businessName, ownerName, email, phone, password, businessType, plan = 'professional' } = req.body;
     
     // Validate input
-    if (!businessName || !ownerName || !email || !phone || !businessType) {
+    if (!businessName || !ownerName || !email || !phone || !password || !businessType) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    // Clean up business type for consistent processing
+    const cleanBusinessType = businessType.toLowerCase().trim().replace(/[^a-z0-9]/g, '_');
 
     // Check if user already exists
     const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
@@ -171,9 +184,8 @@ app.post('/api/signup', async (req, res) => {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
-    // Hash password (temporary password for demo)
-    const tempPassword = Math.random().toString(36).slice(-8);
-    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    // Hash the provided password
+    const passwordHash = await bcrypt.hash(password, 10);
 
     // Create user
     const [firstName, ...lastNameParts] = ownerName.split(' ');
@@ -187,56 +199,85 @@ app.post('/api/signup', async (req, res) => {
 
     const userId = userResult.rows[0].id;
 
-    // Create Stripe customer
-    const stripeCustomer = await stripe.customers.create({
-      email: email,
-      name: ownerName,
-      phone: phone,
-      metadata: {
-        business_name: businessName,
-        business_type: businessType
+    // Create Stripe customer (skip if no valid key)
+    let stripeCustomer = { id: 'demo_customer_' + Date.now() };
+    if (process.env.STRIPE_SECRET_KEY && !process.env.STRIPE_SECRET_KEY.includes('sk_test_your_stripe_key_here')) {
+      try {
+        stripeCustomer = await stripe.customers.create({
+          email: email,
+          name: ownerName,
+          phone: phone,
+          metadata: {
+            business_name: businessName,
+            business_type: businessType
+          }
+        });
+      } catch (stripeError) {
+        console.log('Stripe error, using demo customer:', stripeError.message);
       }
-    });
-
-    // Get Twilio phone number (simplified - in production, let user choose)
-    const availableNumbers = await twilioClient.availablePhoneNumbers('US')
-      .local
-      .list({ limit: 1 });
-
-    let phoneNumber = null;
-    if (availableNumbers.length > 0) {
-      const purchasedNumber = await twilioClient.incomingPhoneNumbers.create({
-        phoneNumber: availableNumbers[0].phoneNumber
-      });
-      phoneNumber = purchasedNumber.phoneNumber;
     }
+
+    // Get Twilio phone number (simplified - use existing demo number for now)
+    let phoneNumber = process.env.TWILIO_PHONE_NUMBER || '+18445401735';
+    
+    // In production, you would provision a unique number for each business
+    // For demo/development, we'll use the shared demo number
 
     // Create business
     const businessResult = await pool.query(
       `INSERT INTO businesses (user_id, name, business_type, phone_number) 
        VALUES ($1, $2, $3, $4) RETURNING id`,
-      [userId, businessName, businessType, phoneNumber]
+      [userId, businessName, cleanBusinessType, phoneNumber]
     );
 
     const businessId = businessResult.rows[0].id;
 
-    // Create default service types
-    for (const serviceType of defaultServiceTypes) {
-      await pool.query(
-        `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          businessId,
-          serviceType.name,
-          serviceType.service_key,
-          serviceType.description,
-          serviceType.duration_minutes,
-          serviceType.base_rate,
-          serviceType.emergency_multiplier,
-          serviceType.travel_buffer_minutes,
-          serviceType.is_emergency
-        ]
-      );
+    // Create AI-generated service types based on business type
+    try {
+      console.log(`🤖 Generating services for ${cleanBusinessType} business: ${businessName}`);
+      const generatedServices = await generateServicesWithAI(cleanBusinessType, businessName);
+      
+      for (const serviceType of generatedServices) {
+        await pool.query(
+          `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            businessId,
+            serviceType.name,
+            serviceType.service_key,
+            serviceType.description,
+            serviceType.duration_minutes,
+            serviceType.base_rate,
+            serviceType.emergency_multiplier,
+            serviceType.travel_buffer_minutes,
+            serviceType.is_emergency,
+            serviceType.is_active
+          ]
+        );
+      }
+      
+      console.log(`✅ Generated ${generatedServices.length} services for ${businessName}`);
+    } catch (aiError) {
+      console.error('AI service generation failed, using defaults:', aiError);
+      
+      // Fallback to basic template if AI generation fails during signup
+      for (const serviceType of defaultServiceTypes) {
+        await pool.query(
+          `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            businessId,
+            serviceType.name,
+            serviceType.service_key,
+            serviceType.description,
+            serviceType.duration_minutes,
+            serviceType.base_rate,
+            serviceType.emergency_multiplier,
+            serviceType.travel_buffer_minutes,
+            serviceType.is_emergency
+          ]
+        );
+      }
     }
 
     // Create subscription with trial
@@ -266,8 +307,7 @@ app.post('/api/signup', async (req, res) => {
         name: businessName,
         phoneNumber,
         plan
-      },
-      tempPassword // In production, send via email
+      }
     });
 
   } catch (error) {
@@ -356,6 +396,74 @@ app.get('/api/businesses/:businessId/service-types', authenticateToken, getBusin
   }
 });
 
+// Service management endpoints
+app.post('/api/businesses/:businessId/service-types', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { name, description, base_rate, duration_minutes, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active } = req.body;
+    
+    // Generate service key from name
+    const service_key = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    
+    const result = await pool.query(
+      `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [req.business.id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active]
+    );
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating service type:', error);
+    res.status(500).json({ error: 'Failed to create service type' });
+  }
+});
+
+app.put('/api/businesses/:businessId/service-types/:serviceId', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { serviceId } = req.params;
+    const { name, description, base_rate, duration_minutes, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active } = req.body;
+    
+    // Generate service key from name
+    const service_key = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    
+    const result = await pool.query(
+      `UPDATE service_types SET 
+       name = $1, service_key = $2, description = $3, duration_minutes = $4, base_rate = $5, 
+       emergency_multiplier = $6, travel_buffer_minutes = $7, is_emergency = $8, is_active = $9
+       WHERE id = $10 AND business_id = $11 RETURNING *`,
+      [name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active, serviceId, req.business.id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Service type not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating service type:', error);
+    res.status(500).json({ error: 'Failed to update service type' });
+  }
+});
+
+app.delete('/api/businesses/:businessId/service-types/:serviceId', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { serviceId } = req.params;
+    
+    const result = await pool.query(
+      'DELETE FROM service_types WHERE id = $1 AND business_id = $2 RETURNING *',
+      [serviceId, req.business.id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Service type not found' });
+    }
+    
+    res.json({ success: true, message: 'Service type deleted' });
+  } catch (error) {
+    console.error('Error deleting service type:', error);
+    res.status(500).json({ error: 'Failed to delete service type' });
+  }
+});
+
 // Voice endpoint with business context
 app.post('/voice/incoming/:businessId', async (req, res) => {
   try {
@@ -364,11 +472,23 @@ app.post('/voice/incoming/:businessId', async (req, res) => {
 
     console.log(`📞 Incoming call for business ${businessId}: ${From} → ${To}`);
 
-    // Get business details
-    const businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
+    // Get business details with error handling
+    let businessResult;
+    try {
+      businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
+    } catch (dbError) {
+      console.error('Database connection error:', dbError);
+      // Fallback response when database is down
+      const twiml = new twilio.twiml.VoiceResponse();
+      twiml.say('Hello, thank you for calling. Our system is temporarily unavailable. Please try calling back in a few minutes or leave a voicemail.');
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
     if (businessResult.rows.length === 0) {
       console.error('Business not found:', businessId);
-      return res.status(404).send('Business not found');
+      const twiml = new twilio.twiml.VoiceResponse();
+      twiml.say('This phone number is not currently active. Please check the number and try again.');
+      return res.type('text/xml').send(twiml.toString());
     }
 
     const business = businessResult.rows[0];
@@ -400,18 +520,20 @@ app.post('/voice/incoming/:businessId', async (req, res) => {
       [businessId, CallSid, From, To, 'in-progress']
     );
 
-    // Create AI greeting
+    // Create AI greeting with faster flow
     const twiml = new twilio.twiml.VoiceResponse();
-    const greeting = `Hello, ${business.name}, this is Sarah. I can schedule your appointment right away. How can I help you today?`;
+    const businessTypeDisplay = business.business_type.replace(/_/g, ' ');
+    const greeting = `Hello, you've reached ${business.name}. I'm Sarah, your AI assistant. I can quickly schedule your ${businessTypeDisplay} appointment. What service do you need?`;
 
     twiml.say({
       voice: business.ai_voice_id || 'Polly.Joanna-Neural',
-      language: 'en-US'
+      language: 'en-US',
+      rate: '1.1' // Slightly faster speech
     }, greeting);
 
     twiml.gather({
       input: 'speech',
-      timeout: 5,
+      timeout: 8, // Longer timeout for customer to respond
       speechTimeout: 'auto',
       action: `/voice/process/${businessId}`,
       method: 'POST'
@@ -424,11 +546,246 @@ app.post('/voice/incoming/:businessId', async (req, res) => {
 
   } catch (error) {
     console.error('Voice incoming error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      businessId,
+      requestBody: req.body
+    });
     const twiml = new twilio.twiml.VoiceResponse();
-    twiml.say('Sorry, there was a technical issue. Please try calling back.');
+    twiml.say('Hello, thank you for calling. We are experiencing technical difficulties. Please try again in a few minutes.');
     res.type('text/xml').send(twiml.toString());
   }
 });
+
+// Voice processing endpoint for AI conversations
+app.post('/voice/process/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { SpeechResult, CallSid, From } = req.body;
+    
+    console.log(`🗣️ Processing speech for business ${businessId}: "${SpeechResult}"`);
+
+    // Get business and service types
+    const businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
+    const serviceTypesResult = await pool.query(
+      'SELECT * FROM service_types WHERE business_id = $1 AND is_active = true',
+      [businessId]
+    );
+
+    if (businessResult.rows.length === 0) {
+      const twiml = new twilio.twiml.VoiceResponse();
+      twiml.say('Sorry, this service is not available right now.');
+      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
+    }
+
+    const business = businessResult.rows[0];
+    const serviceTypes = serviceTypesResult.rows;
+
+    // Use OpenAI to process the customer's request
+    const aiResponse = await processCustomerRequest(SpeechResult, business, serviceTypes, From);
+    
+    // Update call log with conversation
+    await pool.query(
+      `UPDATE call_logs SET 
+       conversation_log = conversation_log || $1,
+       customer_intent = $2,
+       customer_name = $3,
+       customer_phone = $4,
+       issue_type = $5,
+       urgency_level = $6
+       WHERE call_sid = $7`,
+      [
+        JSON.stringify([{ role: 'customer', content: SpeechResult, timestamp: new Date() }]),
+        aiResponse.intent,
+        aiResponse.customerName,
+        From,
+        aiResponse.issueType,
+        aiResponse.urgencyLevel,
+        CallSid
+      ]
+    );
+
+    const twiml = new twilio.twiml.VoiceResponse();
+
+    if (aiResponse.action === 'book_appointment') {
+      // Try to book the appointment
+      try {
+        const calendar = new DatabaseCalendarManager(businessId);
+        const appointment = await calendar.bookAppointment(
+          {
+            name: aiResponse.customerName || 'Customer',
+            phone: From,
+            issue: aiResponse.issueDescription
+          },
+          aiResponse.appointmentTime,
+          aiResponse.serviceTypeId,
+          CallSid
+        );
+
+        // Update call log with successful booking
+        await pool.query(
+          `UPDATE call_logs SET 
+           appointment_id = $1,
+           booking_successful = true
+           WHERE call_sid = $2`,
+          [appointment.id, CallSid]
+        );
+
+        twiml.say({
+          voice: business.ai_voice_id || 'Polly.Joanna-Neural'
+        }, aiResponse.response);
+
+      } catch (bookingError) {
+        console.error('Booking error:', bookingError);
+        
+        // Update call log with booking failure
+        await pool.query(
+          `UPDATE call_logs SET 
+           booking_successful = false,
+           booking_failure_reason = $1
+           WHERE call_sid = $2`,
+          [bookingError.message, CallSid]
+        );
+
+        twiml.say({
+          voice: business.ai_voice_id || 'Polly.Joanna-Neural'
+        }, "I'm sorry, I'm having trouble booking that appointment right now. Let me have someone call you back to schedule that for you.");
+      }
+    } else if (aiResponse.action === 'get_more_info') {
+      // Ask for more information
+      twiml.say({
+        voice: business.ai_voice_id || 'Polly.Joanna-Neural'
+      }, aiResponse.response);
+
+      twiml.gather({
+        input: 'speech',
+        timeout: 10,
+        speechTimeout: 'auto',
+        action: `/voice/process/${businessId}`,
+        method: 'POST'
+      });
+
+      twiml.say('I didn\'t catch that. Let me have someone call you back.');
+    } else {
+      // Provide information or transfer
+      twiml.say({
+        voice: business.ai_voice_id || 'Polly.Joanna-Neural'
+      }, aiResponse.response);
+    }
+
+    twiml.hangup();
+    res.type('text/xml').send(twiml.toString());
+
+  } catch (error) {
+    console.error('Voice processing error:', error);
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.say('Sorry, there was a technical issue. Please try calling back.');
+    twiml.hangup();
+    res.type('text/xml').send(twiml.toString());
+  }
+});
+
+// Catch-all voice endpoint for debugging (must be after specific routes)
+app.post('/voice/*', (req, res) => {
+  console.log('📞 Voice request (catch-all):', req.path, req.body);
+  const twiml = new twilio.twiml.VoiceResponse();
+  twiml.say('Hello, this is CallCatcher. The system is being configured. Please try again shortly.');
+  res.type('text/xml').send(twiml.toString());
+});
+
+// AI processing function
+async function processCustomerRequest(speechText, business, serviceTypes, customerPhone) {
+  try {
+    const serviceTypesList = serviceTypes.map(st => 
+      `${st.name}: ${st.description} - $${st.base_rate} (${st.duration_minutes} min)`
+    ).join('\n');
+
+    // Convert business_type back to readable format
+    const businessTypeDisplay = business.business_type.replace(/_/g, ' ');
+    
+    const prompt = `You are Sarah, an AI assistant for ${business.name}, a ${businessTypeDisplay} business.
+
+BUSINESS CONTEXT:
+- Business: ${business.name}
+- Type: ${businessTypeDisplay}
+- Description: ${business.business_description || `Professional ${businessTypeDisplay} service business`}
+- Personality: ${business.ai_personality || 'friendly'}
+
+AVAILABLE SERVICES:
+${serviceTypesList}
+
+CUSTOMER REQUEST: "${speechText}"
+
+SAFETY GUIDELINES:
+- If customer uses profanity, inappropriate language, or discusses illegal activities, politely redirect to business services
+- If request is not related to ${businessTypeDisplay} services, politely explain what services you offer
+- If customer seems confused or intoxicated, offer to have someone call them back
+- Never provide medical, legal, or financial advice
+
+Your goal is to:
+1. Understand what service they need (must be related to ${businessTypeDisplay})
+2. Determine urgency level (emergency, high, medium, low)
+3. Extract customer info if provided
+4. Either book an appointment or ask for more info
+5. Keep conversation focused on legitimate business services
+
+RESPONSE FORMAT (JSON):
+{
+  "action": "book_appointment" | "get_more_info" | "provide_info",
+  "response": "What you say to the customer",
+  "intent": "emergency_repair" | "regular_service" | "pricing_inquiry" | "other",
+  "urgencyLevel": "emergency" | "high" | "medium" | "low",
+  "customerName": "extracted name or null",
+  "issueType": "brief description",
+  "issueDescription": "detailed description",
+  "serviceTypeId": "uuid of matching service or null",
+  "appointmentTime": "suggested time slot or null"
+}
+
+Keep responses natural, helpful, and under 25 words. Match the business personality.`;
+
+    // Add timeout and faster model for real-time conversation
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo", // Faster than GPT-4
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.7,
+      max_tokens: 300, // Shorter responses for faster processing
+      timeout: 10000 // 10 second timeout
+    });
+
+    const aiResponse = JSON.parse(completion.choices[0].message.content);
+    
+    // If booking appointment, find next available slot
+    if (aiResponse.action === 'book_appointment' && aiResponse.serviceTypeId) {
+      const calendar = new DatabaseCalendarManager(business.id);
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      const availableSlots = await calendar.getAvailableSlots(tomorrow, 60);
+      if (availableSlots.length > 0) {
+        aiResponse.appointmentTime = availableSlots[0].start;
+      }
+    }
+
+    return aiResponse;
+
+  } catch (error) {
+    console.error('AI processing error:', error);
+    return {
+      action: 'provide_info',
+      response: 'I apologize, but I\'m having trouble understanding right now. Let me have someone call you back.',
+      intent: 'other',
+      urgencyLevel: 'medium',
+      customerName: null,
+      issueType: 'unclear',
+      issueDescription: speechText,
+      serviceTypeId: null,
+      appointmentTime: null
+    };
+  }
+}
 
 // Enhanced calendar manager with database
 class DatabaseCalendarManager {
@@ -449,7 +806,7 @@ class DatabaseCalendarManager {
       }
 
       const businessHours = businessResult.rows[0].business_hours;
-      const dayName = date.toLocaleDateString('en-US', { weekday: 'monday' });
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
       const dayHours = businessHours[dayName];
 
       if (!dayHours || !dayHours.enabled) {
@@ -639,13 +996,653 @@ app.get('/api/businesses/:businessId/available-slots', authenticateToken, getBus
   }
 });
 
+// Multi-tenant booking API endpoint
+app.post('/api/book-appointment/:businessId?', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { customerInfo, service, appointmentTime, bookedVia } = req.body;
+    
+    let businessResult;
+    
+    if (businessId) {
+      // Get specific business
+      businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
+    } else {
+      // Fallback: use first business (demo mode)
+      businessResult = await pool.query('SELECT * FROM businesses ORDER BY created_at LIMIT 1');
+    }
+    
+    if (businessResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+    
+    const business = businessResult.rows[0];
+    
+    // Get the matching service type from database
+    const serviceTypeResult = await pool.query(
+      'SELECT * FROM service_types WHERE business_id = $1 AND service_key = $2',
+      [business.id, service.type]
+    );
+    
+    let serviceTypeId = null;
+    let serviceName = service.name;
+    let estimatedRevenue = service.rate;
+    
+    if (serviceTypeResult.rows.length > 0) {
+      const serviceType = serviceTypeResult.rows[0];
+      serviceTypeId = serviceType.id;
+      serviceName = serviceType.name;
+      estimatedRevenue = serviceType.base_rate;
+    }
+    
+    const startTime = new Date(appointmentTime);
+    const endTime = new Date(startTime.getTime() + service.duration * 60000);
+    
+    // Create appointment
+    const appointmentResult = await pool.query(
+      `INSERT INTO appointments (
+        business_id, customer_name, customer_phone, customer_email, customer_address,
+        service_type_id, service_name, issue_description, start_time, end_time,
+        duration_minutes, estimated_revenue, booking_source
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING *`,
+      [
+        business.id,
+        customerInfo.name,
+        customerInfo.phone,
+        customerInfo.email || null,
+        customerInfo.address,
+        serviceTypeId,
+        serviceName,
+        customerInfo.issue,
+        startTime.toISOString(),
+        endTime.toISOString(),
+        service.duration,
+        estimatedRevenue,
+        bookedVia || 'website'
+      ]
+    );
+    
+    const appointment = appointmentResult.rows[0];
+    
+    // Create notification for business owner
+    await pool.query(
+      `INSERT INTO notifications (business_id, type, title, message, data)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        business.id,
+        'new_booking',
+        'New Online Booking',
+        `${customerInfo.name} booked ${serviceName} online for ${startTime.toLocaleString()}`,
+        JSON.stringify({ appointmentId: appointment.id, source: 'website' })
+      ]
+    );
+    
+    // Send SMS notifications to team members (Enterprise feature)
+    try {
+      await sendNewAppointmentNotification(business, appointment);
+    } catch (notificationError) {
+      console.error('Failed to send team notifications:', notificationError);
+      // Don't fail the booking if notifications fail
+    }
+    
+    console.log('✅ Online appointment booked:', appointment.id);
+    
+    res.json({
+      success: true,
+      appointment: {
+        id: appointment.id,
+        service: serviceName,
+        startTime: appointment.start_time,
+        customerName: appointment.customer_name
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error booking appointment:', error);
+    res.status(500).json({ error: 'Failed to book appointment' });
+  }
+});
+
+// Multi-tenant services endpoint for booking page
+app.get('/api/public/services/:businessId?', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    let businessResult;
+    
+    if (businessId) {
+      // Get specific business
+      businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
+    } else {
+      // Fallback: use first business (demo mode)
+      businessResult = await pool.query('SELECT * FROM businesses ORDER BY created_at LIMIT 1');
+    }
+    
+    if (businessResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+    
+    const business = businessResult.rows[0];
+    
+    const servicesResult = await pool.query(
+      'SELECT * FROM service_types WHERE business_id = $1 AND is_active = true ORDER BY display_order, name',
+      [business.id]
+    );
+    
+    res.json({
+      business: {
+        name: business.name,
+        phone: business.phone_number,
+        businessType: business.business_type
+      },
+      services: servicesResult.rows
+    });
+    
+  } catch (error) {
+    console.error('Error getting public services:', error);
+    res.status(500).json({ error: 'Failed to get services' });
+  }
+});
+
+// Multi-tenant available slots endpoint
+app.get('/api/available-slots/:businessId?', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { date, duration } = req.query;
+    const requestedDate = date ? new Date(date) : new Date();
+    const requestedDuration = duration ? parseInt(duration) : 60;
+    
+    let businessResult;
+    
+    if (businessId) {
+      // Get specific business
+      businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
+    } else {
+      // Fallback: use first business (demo mode) 
+      businessResult = await pool.query('SELECT * FROM businesses ORDER BY created_at LIMIT 1');
+    }
+    
+    if (businessResult.rows.length === 0) {
+      return res.json([]);
+    }
+    
+    const business = businessResult.rows[0];
+    const calendar = new DatabaseCalendarManager(business.id);
+    const slots = await calendar.getAvailableSlots(requestedDate, requestedDuration);
+    
+    res.json(slots);
+    
+  } catch (error) {
+    console.error('Error getting available slots:', error);
+    res.status(500).json({ error: 'Failed to get available slots' });
+  }
+});
+
+// Industry template endpoints for AI-powered service generation
+app.get('/api/industry-templates', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT industry_type, template_name, description FROM industry_templates WHERE is_active = true ORDER BY industry_type'
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching industry templates:', error);
+    res.status(500).json({ error: 'Failed to fetch industry templates' });
+  }
+});
+
+app.get('/api/industry-templates/:industryType', async (req, res) => {
+  try {
+    const { industryType } = req.params;
+    const result = await pool.query(
+      'SELECT * FROM industry_templates WHERE industry_type = $1 AND is_active = true',
+      [industryType]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Industry template not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching industry template:', error);
+    res.status(500).json({ error: 'Failed to fetch industry template' });
+  }
+});
+
+// Generate services for a business type using Claude/OpenAI
+app.post('/api/generate-services', async (req, res) => {
+  try {
+    const { businessType, businessName } = req.body;
+    
+    if (!businessType) {
+      return res.status(400).json({ error: 'Business type is required' });
+    }
+
+    // Check if we have a cached template first
+    const templateResult = await pool.query(
+      'SELECT service_templates FROM industry_templates WHERE industry_type = $1 AND is_active = true',
+      [businessType]
+    );
+
+    if (templateResult.rows.length > 0) {
+      // Return cached template
+      return res.json({
+        source: 'cached',
+        services: templateResult.rows[0].service_templates
+      });
+    }
+
+    // Generate new services using AI
+    const generatedServices = await generateServicesWithAI(businessType, businessName);
+    
+    // Cache the template for future use
+    await pool.query(
+      `INSERT INTO industry_templates (industry_type, template_name, description, service_templates, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (industry_type) DO UPDATE SET
+       service_templates = $4, last_updated = CURRENT_TIMESTAMP`,
+      [
+        businessType,
+        `${businessType.charAt(0).toUpperCase() + businessType.slice(1)} Services Template`,
+        `AI-generated service template for ${businessType} businesses`,
+        JSON.stringify(generatedServices),
+        'claude'
+      ]
+    );
+
+    res.json({
+      source: 'generated',
+      services: generatedServices
+    });
+
+  } catch (error) {
+    console.error('Error generating services:', error);
+    res.status(500).json({ error: 'Failed to generate services' });
+  }
+});
+
+// AI Service Generation Function
+async function generateServicesWithAI(businessType, businessName = '') {
+  const industryPrompts = {
+    plumbing: `Generate 10 essential plumbing services that a residential/commercial plumbing business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    electrical: `Generate 10 essential electrical services that a residential/commercial electrical business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    hvac: `Generate 10 essential HVAC services that a heating/cooling business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    cleaning: `Generate 10 essential cleaning services that a residential/commercial cleaning business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    handyman: `Generate 10 essential handyman services that a general repair business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    appliance: `Generate 10 essential appliance repair services that an appliance repair business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    locksmith: `Generate 10 essential locksmith services that a locksmith business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    pest_control: `Generate 10 essential pest control services that a pest control business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    landscaping: `Generate 10 essential landscaping services that a landscaping/lawn care business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    roofing: `Generate 10 essential roofing services that a roofing contractor business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    auto_repair: `Generate 10 essential auto repair services that an automotive repair shop typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    carpet_cleaning: `Generate 10 essential carpet and upholstery cleaning services that a carpet cleaning business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    pool_service: `Generate 10 essential pool and spa services that a pool maintenance business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    home_security: `Generate 10 essential home security services that a security system business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    moving: `Generate 10 essential moving and relocation services that a moving company typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    painting: `Generate 10 essential painting services that a residential/commercial painting business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    flooring: `Generate 10 essential flooring services that a flooring contractor business typically offers. Include pricing, duration, and whether it's an emergency service.`
+  };
+
+  // Use predefined prompt if available, otherwise create dynamic prompt for custom business types
+  let prompt;
+  if (industryPrompts[businessType]) {
+    prompt = industryPrompts[businessType];
+  } else {
+    // Dynamic prompt generation for custom business types
+    prompt = `Generate 10 essential services that a ${businessType} business typically offers to customers. Research the ${businessType} industry and create realistic, professional services with appropriate pricing, duration, and emergency classification. Include both basic and premium service options.`;
+  }
+
+  const fullPrompt = `${prompt}
+
+BUSINESS TYPE: ${businessType}
+${businessName ? `BUSINESS NAME: ${businessName}` : ''}
+
+Return a JSON array of exactly 10 service objects. Each service should have:
+- name: Service name (e.g., "Emergency Drain Cleaning", "Dog Grooming - Full Service")
+- service_key: URL-friendly key (e.g., "emergency-drain-cleaning", "dog-grooming-full") 
+- description: Brief description of what's included (customer-friendly)
+- duration_minutes: Typical duration in minutes (15-480 range, realistic for the service)
+- base_rate: Average price in USD (research realistic market rates for this industry)
+- emergency_multiplier: 1.0 for normal services, 1.5-2.0 for emergency/urgent services
+- travel_buffer_minutes: Travel time to add (15-60 minutes, appropriate for industry)
+- is_emergency: true for urgent/emergency services, false for scheduled services
+
+IMPORTANT: Research the ${businessType} industry to provide realistic, competitive pricing and appropriate service offerings. Include a mix of:
+- 1-2 emergency/urgent services (if applicable to this industry)
+- 3-4 basic/standard services 
+- 3-4 premium/comprehensive services
+- 1-2 maintenance/routine services
+
+Make descriptions professional but customer-friendly. Ensure pricing reflects real market rates.
+
+Example format:
+[
+  {
+    "name": "Emergency Service Call",
+    "service_key": "emergency-service-call",
+    "description": "Urgent same-day service for critical issues",
+    "duration_minutes": 90,
+    "base_rate": 150,
+    "emergency_multiplier": 1.75,
+    "travel_buffer_minutes": 30,
+    "is_emergency": true
+  }
+]`;
+
+  try {
+    // Use OpenAI API (you can replace this with Claude API if preferred)
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [{ role: "user", content: fullPrompt }],
+      temperature: 0.7,
+      max_tokens: 2000
+    });
+
+    const servicesText = completion.choices[0].message.content;
+    
+    // Parse the JSON response
+    const jsonMatch = servicesText.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      throw new Error('No valid JSON array found in AI response');
+    }
+
+    const services = JSON.parse(jsonMatch[0]);
+    
+    // Validate and clean the services
+    return services.map((service, index) => ({
+      name: service.name || `Service ${index + 1}`,
+      service_key: service.service_key || service.name?.toLowerCase().replace(/[^a-z0-9]/g, '-') || `service-${index + 1}`,
+      description: service.description || 'Professional service',
+      duration_minutes: Math.max(15, Math.min(480, service.duration_minutes || 60)),
+      base_rate: Math.max(25, service.base_rate || 100),
+      emergency_multiplier: service.emergency_multiplier || 1.0,
+      travel_buffer_minutes: Math.max(0, Math.min(60, service.travel_buffer_minutes || 30)),
+      is_emergency: service.is_emergency || false,
+      is_active: true
+    }));
+
+  } catch (error) {
+    console.error('AI service generation error:', error);
+    
+    // Fallback to basic template if AI fails
+    return getBasicServiceTemplate(businessType);
+  }
+}
+
+// Fallback service template if AI generation fails
+function getBasicServiceTemplate(businessType) {
+  const basicTemplates = {
+    plumbing: [
+      { name: "Emergency Repair", service_key: "emergency-repair", description: "Emergency plumbing repairs", duration_minutes: 90, base_rate: 150, emergency_multiplier: 1.5, travel_buffer_minutes: 30, is_emergency: true, is_active: true },
+      { name: "Drain Cleaning", service_key: "drain-cleaning", description: "Professional drain cleaning", duration_minutes: 60, base_rate: 120, emergency_multiplier: 1.0, travel_buffer_minutes: 30, is_emergency: false, is_active: true },
+      { name: "Water Heater Service", service_key: "water-heater", description: "Water heater repair and installation", duration_minutes: 120, base_rate: 200, emergency_multiplier: 1.0, travel_buffer_minutes: 45, is_emergency: false, is_active: true }
+    ],
+    electrical: [
+      { name: "Emergency Electrical", service_key: "emergency-electrical", description: "Emergency electrical repairs", duration_minutes: 90, base_rate: 175, emergency_multiplier: 1.5, travel_buffer_minutes: 30, is_emergency: true, is_active: true },
+      { name: "Outlet Installation", service_key: "outlet-installation", description: "New outlet installation", duration_minutes: 60, base_rate: 150, emergency_multiplier: 1.0, travel_buffer_minutes: 30, is_emergency: false, is_active: true }
+    ],
+    cleaning: [
+      { name: "Deep House Cleaning", service_key: "deep-house-cleaning", description: "Comprehensive home cleaning service", duration_minutes: 180, base_rate: 200, emergency_multiplier: 1.0, travel_buffer_minutes: 30, is_emergency: false, is_active: true },
+      { name: "Regular Cleaning", service_key: "regular-cleaning", description: "Weekly/biweekly maintenance cleaning", duration_minutes: 120, base_rate: 120, emergency_multiplier: 1.0, travel_buffer_minutes: 30, is_emergency: false, is_active: true }
+    ],
+    landscaping: [
+      { name: "Lawn Maintenance", service_key: "lawn-maintenance", description: "Regular lawn mowing and trimming", duration_minutes: 60, base_rate: 80, emergency_multiplier: 1.0, travel_buffer_minutes: 15, is_emergency: false, is_active: true },
+      { name: "Tree Removal", service_key: "tree-removal", description: "Professional tree removal service", duration_minutes: 240, base_rate: 500, emergency_multiplier: 1.5, travel_buffer_minutes: 45, is_emergency: false, is_active: true }
+    ],
+    auto_repair: [
+      { name: "Oil Change", service_key: "oil-change", description: "Quick oil change and filter replacement", duration_minutes: 30, base_rate: 50, emergency_multiplier: 1.0, travel_buffer_minutes: 15, is_emergency: false, is_active: true },
+      { name: "Emergency Roadside", service_key: "emergency-roadside", description: "Emergency roadside assistance", duration_minutes: 60, base_rate: 100, emergency_multiplier: 1.5, travel_buffer_minutes: 30, is_emergency: true, is_active: true }
+    ]
+  };
+
+  // If no template exists, create a dynamic fallback based on business type
+  if (!basicTemplates[businessType]) {
+    const businessName = businessType.replace(/[_-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    return [
+      { name: `${businessName} Service Call`, service_key: `${businessType}-service-call`, description: `Professional ${businessName.toLowerCase()} service`, duration_minutes: 60, base_rate: 100, emergency_multiplier: 1.0, travel_buffer_minutes: 30, is_emergency: false, is_active: true },
+      { name: `Emergency ${businessName}`, service_key: `emergency-${businessType}`, description: `Urgent ${businessName.toLowerCase()} service`, duration_minutes: 90, base_rate: 150, emergency_multiplier: 1.5, travel_buffer_minutes: 30, is_emergency: true, is_active: true },
+      { name: `${businessName} Consultation`, service_key: `${businessType}-consultation`, description: `Professional consultation and estimate`, duration_minutes: 45, base_rate: 75, emergency_multiplier: 1.0, travel_buffer_minutes: 30, is_emergency: false, is_active: true }
+    ];
+  }
+
+  return basicTemplates[businessType];
+}
+
+// Team Management API Endpoints (Enterprise Feature)
+app.get('/api/businesses/:businessId/team-members', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM team_members WHERE business_id = $1 ORDER BY created_at',
+      [req.business.id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching team members:', error);
+    res.status(500).json({ error: 'Failed to fetch team members' });
+  }
+});
+
+app.post('/api/businesses/:businessId/team-members', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { name, email, mobile_phone, role, specialties, can_receive_notifications } = req.body;
+    
+    if (!name || !mobile_phone) {
+      return res.status(400).json({ error: 'Name and mobile phone are required' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO team_members (business_id, name, email, mobile_phone, role, specialties, can_receive_notifications)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [req.business.id, name, email, mobile_phone, role || 'technician', specialties || [], can_receive_notifications !== false]
+    );
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating team member:', error);
+    res.status(500).json({ error: 'Failed to create team member' });
+  }
+});
+
+app.put('/api/businesses/:businessId/team-members/:memberId', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { memberId } = req.params;
+    const { name, email, mobile_phone, role, specialties, can_receive_notifications, is_active } = req.body;
+    
+    const result = await pool.query(
+      `UPDATE team_members SET 
+       name = $1, email = $2, mobile_phone = $3, role = $4, specialties = $5, 
+       can_receive_notifications = $6, is_active = $7, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $8 AND business_id = $9 RETURNING *`,
+      [name, email, mobile_phone, role, specialties, can_receive_notifications, is_active, memberId, req.business.id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Team member not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating team member:', error);
+    res.status(500).json({ error: 'Failed to update team member' });
+  }
+});
+
+app.delete('/api/businesses/:businessId/team-members/:memberId', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { memberId } = req.params;
+    
+    const result = await pool.query(
+      'DELETE FROM team_members WHERE id = $1 AND business_id = $2 RETURNING *',
+      [memberId, req.business.id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Team member not found' });
+    }
+    
+    res.json({ success: true, message: 'Team member deleted' });
+  } catch (error) {
+    console.error('Error deleting team member:', error);
+    res.status(500).json({ error: 'Failed to delete team member' });
+  }
+});
+
+// Appointment Assignment API
+app.post('/api/businesses/:businessId/appointments/:appointmentId/assign', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const { team_member_id, assignment_notes } = req.body;
+    
+    // Verify team member belongs to this business
+    const teamMemberResult = await pool.query(
+      'SELECT * FROM team_members WHERE id = $1 AND business_id = $2 AND is_active = true',
+      [team_member_id, req.business.id]
+    );
+    
+    if (teamMemberResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Team member not found' });
+    }
+    
+    const teamMember = teamMemberResult.rows[0];
+    
+    // Update appointment assignment
+    const appointmentResult = await pool.query(
+      `UPDATE appointments SET 
+       assigned_to = $1, assigned_at = CURRENT_TIMESTAMP, assignment_notes = $2, notification_sent = false
+       WHERE id = $3 AND business_id = $4 RETURNING *`,
+      [team_member_id, assignment_notes, appointmentId, req.business.id]
+    );
+    
+    if (appointmentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+    
+    const appointment = appointmentResult.rows[0];
+    
+    // Send SMS notification if team member has notifications enabled
+    if (teamMember.can_receive_notifications && teamMember.notification_preferences.assignment_changes) {
+      try {
+        await sendAppointmentAssignmentNotification(teamMember, appointment, req.business);
+        
+        // Mark notification as sent
+        await pool.query(
+          'UPDATE appointments SET notification_sent = true WHERE id = $1',
+          [appointmentId]
+        );
+      } catch (notificationError) {
+        console.error('Failed to send assignment notification:', notificationError);
+        // Don't fail the assignment if notification fails
+      }
+    }
+    
+    res.json({
+      success: true,
+      appointment: appointmentResult.rows[0],
+      assigned_to: teamMember
+    });
+    
+  } catch (error) {
+    console.error('Error assigning appointment:', error);
+    res.status(500).json({ error: 'Failed to assign appointment' });
+  }
+});
+
+// SMS Notification Functions
+async function sendAppointmentAssignmentNotification(teamMember, appointment, business) {
+  try {
+    const appointmentTime = new Date(appointment.start_time).toLocaleString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+    
+    const message = `🔧 ${business.name}: New appointment assigned to you!\n\n` +
+                   `📅 ${appointmentTime}\n` +
+                   `👤 ${appointment.customer_name}\n` +
+                   `📞 ${appointment.customer_phone}\n` +
+                   `🔧 ${appointment.service_name}\n` +
+                   `📍 ${appointment.customer_address}\n\n` +
+                   `💡 ${appointment.issue_description || 'No description provided'}\n\n` +
+                   `Reply CONFIRM to acknowledge assignment.`;
+    
+    const twilioMessage = await twilioClient.messages.create({
+      body: message,
+      from: business.phone_number || process.env.TWILIO_PHONE_NUMBER,
+      to: teamMember.mobile_phone
+    });
+    
+    console.log(`📱 Assignment notification sent to ${teamMember.name}: ${twilioMessage.sid}`);
+    return twilioMessage;
+    
+  } catch (error) {
+    console.error('SMS notification error:', error);
+    throw error;
+  }
+}
+
+async function sendNewAppointmentNotification(business, appointment) {
+  try {
+    // Get all team members who should receive notifications
+    const teamMembersResult = await pool.query(
+      `SELECT * FROM team_members 
+       WHERE business_id = $1 AND is_active = true AND can_receive_notifications = true`,
+      [business.id]
+    );
+    
+    const appointmentTime = new Date(appointment.start_time).toLocaleString('en-US', {
+      weekday: 'short',
+      month: 'short', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+    
+    const message = `📞 ${business.name}: New appointment booked!\n\n` +
+                   `📅 ${appointmentTime}\n` +
+                   `👤 ${appointment.customer_name}\n` +
+                   `📞 ${appointment.customer_phone}\n` +
+                   `🔧 ${appointment.service_name}\n` +
+                   `📍 ${appointment.customer_address}\n\n` +
+                   `${appointment.is_emergency ? '🚨 EMERGENCY SERVICE' : ''}`;
+    
+    // Send notifications to all eligible team members
+    const notifications = [];
+    for (const member of teamMembersResult.rows) {
+      if (member.notification_preferences.new_appointments) {
+        try {
+          const twilioMessage = await twilioClient.messages.create({
+            body: message,
+            from: business.phone_number || process.env.TWILIO_PHONE_NUMBER,
+            to: member.mobile_phone
+          });
+          notifications.push({ member: member.name, sid: twilioMessage.sid });
+        } catch (memberError) {
+          console.error(`Failed to notify ${member.name}:`, memberError);
+        }
+      }
+    }
+    
+    console.log(`📱 New appointment notifications sent to ${notifications.length} team members`);
+    return notifications;
+    
+  } catch (error) {
+    console.error('Team notification error:', error);
+    throw error;
+  }
+}
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     version: '2.0.0',
-    features: ['multi-tenant', 'database', 'authentication', 'billing']
+    features: ['multi-tenant', 'database', 'authentication', 'billing', 'ai-templates', 'team-management']
   });
 });
 
