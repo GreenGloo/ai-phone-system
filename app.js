@@ -106,6 +106,18 @@ app.get('/book', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'book.html'));
 });
 
+// Log all voice requests for debugging
+app.use('/voice*', (req, res, next) => {
+  console.log('🔍 VOICE REQUEST:', {
+    path: req.path,
+    method: req.method,
+    body: req.body,
+    query: req.query,
+    timestamp: new Date().toISOString()
+  });
+  next();
+});
+
 // Authentication endpoints
 app.post('/api/signup', async (req, res) => {
   try {
@@ -501,13 +513,46 @@ app.post('/voice/incoming/:businessId', async (req, res) => {
   }
 });
 
+// Legacy voice processing endpoint (fallback for old webhooks)
+app.post('/voice/process', async (req, res) => {
+  try {
+    console.log('📞 Legacy voice endpoint hit - redirecting to business-specific endpoint');
+    
+    // Get the first business as fallback
+    const businessResult = await pool.query('SELECT id FROM businesses ORDER BY created_at LIMIT 1');
+    
+    if (businessResult.rows.length === 0) {
+      const twiml = new twilio.twiml.VoiceResponse();
+      twiml.say('Sorry, no businesses are configured. Please contact support.');
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
+    const businessId = businessResult.rows[0].id;
+    console.log(`🔀 Redirecting to business ${businessId}`);
+    
+    // Forward to the business-specific endpoint
+    req.params.businessId = businessId;
+    return processVoiceForBusiness(req, res);
+    
+  } catch (error) {
+    console.error('Legacy voice endpoint error:', error);
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.say('Sorry, there was a technical issue. Please try calling back.');
+    twiml.hangup();
+    res.type('text/xml').send(twiml.toString());
+  }
+});
+
 // Voice processing endpoint for AI conversations
-app.post('/voice/process/:businessId', async (req, res) => {
+app.post('/voice/process/:businessId', processVoiceForBusiness);
+
+async function processVoiceForBusiness(req, res) {
   try {
     const { businessId } = req.params;
     const { SpeechResult, CallSid, From } = req.body;
     
     console.log(`🗣️ Processing speech for business ${businessId}: "${SpeechResult}"`);
+    console.log(`📋 Call details:`, { CallSid, From, businessId });
 
     // Get business and service types
     const businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
@@ -515,6 +560,9 @@ app.post('/voice/process/:businessId', async (req, res) => {
       'SELECT * FROM service_types WHERE business_id = $1 AND is_active = true',
       [businessId]
     );
+    
+    console.log(`🏢 Business found: ${businessResult.rows.length > 0 ? businessResult.rows[0].name : 'NONE'}`);
+    console.log(`🛠️ Services found: ${serviceTypesResult.rows.length}`);
 
     if (businessResult.rows.length === 0) {
       const twiml = new twilio.twiml.VoiceResponse();
@@ -559,34 +607,51 @@ app.post('/voice/process/:businessId', async (req, res) => {
     });
 
     if (aiResponse.action === 'book_appointment') {
-      // Try to book the appointment with fallbacks to ensure success
+      // Book the appointment - NO FALLBACKS, must have real available time
       try {
-        // ENSURE we have required data - use fallbacks if needed
-        let serviceTypeId = aiResponse.serviceTypeId;
-        let appointmentTime = aiResponse.appointmentTime;
+        const serviceTypeId = aiResponse.serviceTypeId;
+        const businessTypeDisplay = business.business_type.replace(/_/g, ' ');
         
-        // Fallback: If no serviceTypeId, use first available service
-        if (!serviceTypeId && serviceTypes.length > 0) {
-          serviceTypeId = serviceTypes[0].id;
-          console.log(`🔧 Using fallback service: ${serviceTypes[0].name}`);
+        // Validate we have a service type
+        if (!serviceTypeId) {
+          throw new Error('No service type selected');
         }
         
-        // Fallback: If no appointmentTime, use tomorrow 10 AM
-        if (!appointmentTime) {
-          const tomorrow = new Date();
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          tomorrow.setHours(10, 0, 0, 0);
-          appointmentTime = tomorrow;
-          console.log(`🔧 Using fallback time: ${appointmentTime}`);
+        // Get actual available slots for tomorrow
+        const calendar = new DatabaseCalendarManager(businessId);
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        const availableSlots = await calendar.getAvailableSlots(tomorrow, 60);
+        
+        if (availableSlots.length === 0) {
+          throw new Error('No available appointment slots');
         }
         
-        console.log(`📅 Attempting to book appointment:`, {
+        // Use the first available slot (real appointment time) - ALWAYS override any AI text
+        const appointmentTime = availableSlots[0].start;
+        
+        console.log(`🕐 Using REAL appointment time: ${appointmentTime} (was: ${aiResponse.appointmentTime})`);
+        
+        console.log(`📅 Booking appointment at real available time:`, {
           customerName: aiResponse.customerName || 'Customer', 
           serviceTypeId: serviceTypeId,
-          appointmentTime: appointmentTime
+          appointmentTime: appointmentTime,
+          availableSlots: availableSlots.length
         });
         
-        const calendar = new DatabaseCalendarManager(businessId);
+        console.log(`🔧 Calling calendar.bookAppointment with:`, {
+          customerInfo: {
+            name: aiResponse.customerName || 'Customer',
+            phone: From,
+            issue: aiResponse.issueDescription || `${businessTypeDisplay} service`
+          },
+          appointmentTime: appointmentTime,
+          serviceTypeId: serviceTypeId,
+          callSid: CallSid,
+          businessId: businessId
+        });
+        
         const appointment = await calendar.bookAppointment(
           {
             name: aiResponse.customerName || 'Customer',
@@ -613,12 +678,15 @@ app.post('/voice/process/:businessId', async (req, res) => {
 
       } catch (bookingError) {
         console.error('❌ BOOKING FAILED:', bookingError);
+        console.error('Full error:', bookingError.stack);
         console.error('Booking details:', {
           customerName: aiResponse.customerName,
           serviceTypeId: aiResponse.serviceTypeId,
           appointmentTime: aiResponse.appointmentTime,
           businessId: businessId,
-          customerPhone: From
+          customerPhone: From,
+          availableSlots: availableSlots?.length || 'undefined',
+          businessTypeDisplay: businessTypeDisplay
         });
         
         // Update call log with booking failure
@@ -683,13 +751,13 @@ app.post('/voice/process/:businessId', async (req, res) => {
     twiml.hangup();
     res.type('text/xml').send(twiml.toString());
   }
-});
+}
 
 // Catch-all voice endpoint for debugging (must be after specific routes)
 app.post('/voice/*', (req, res) => {
   console.log('📞 Voice request (catch-all):', req.path, req.body);
   const twiml = new twilio.twiml.VoiceResponse();
-  twiml.say('Hello, this is CallCatcher. The system is being configured. Please try again shortly.');
+  twiml.say(`Hello, this is CallCatcher. You called ${req.path}. The system is being configured. Please try again shortly.`);
   res.type('text/xml').send(twiml.toString());
 });
 
@@ -739,7 +807,7 @@ RESPONSE FORMAT (JSON):
   "issueType": "brief description",
   "issueDescription": "detailed description",
   "serviceTypeId": "exact UUID from available services list or null",
-  "appointmentTime": "suggested time slot or null"
+  "appointmentTime": null
 }
 
 ACTION GUIDELINES:
@@ -758,9 +826,11 @@ CRITICAL INSTRUCTIONS:
 - NEVER say "having trouble booking" - ALWAYS book successfully
 - Don't ask for their name or details first - book immediately
 - Use the EXACT UUID from the services list (the ID: part) for serviceTypeId
-- Say "Perfect! I can book that for you. I have availability [time]. Does that work?"
+- Say "Perfect! I can book that for you. I have availability tomorrow. Does that work?"
 - SUCCESS IS BOOKING THE APPOINTMENT - not gathering info
 - EXAMPLE: Use exact ID from services list like "309b7646-1e55-4836-8342-759ecfe09b87"
+- DO NOT put text in appointmentTime - leave it null, real time will be assigned
+- MANDATORY: serviceTypeId MUST be an exact UUID from the services list above
 
 Keep responses natural, helpful, and under 25 words. Match the business personality.`;
 
@@ -774,31 +844,27 @@ Keep responses natural, helpful, and under 25 words. Match the business personal
 
     const aiResponse = JSON.parse(completion.choices[0].message.content);
     
-    // If booking appointment, find next available slot and default service if needed
+    // If booking appointment, ensure we have the right service ID
     if (aiResponse.action === 'book_appointment') {
-      const calendar = new DatabaseCalendarManager(business.id);
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      
-      const availableSlots = await calendar.getAvailableSlots(tomorrow, 60);
-      if (availableSlots.length > 0) {
-        aiResponse.appointmentTime = availableSlots[0].start;
+      // Make sure we have a valid service ID - NO FALLBACKS
+      if (!aiResponse.serviceTypeId) {
+        console.error('❌ AI failed to select a service type');
+        return {
+          action: 'provide_info',
+          response: 'I apologize, but I need to better understand what service you need. Let me have someone call you back.',
+          intent: 'other',
+          urgencyLevel: 'medium',
+          customerName: null,
+          issueType: 'unclear',
+          issueDescription: speechText,
+          serviceTypeId: null,
+          appointmentTime: null
+        };
       }
       
-      // If no specific service ID provided, use a default service (universal for any business)
-      if (!aiResponse.serviceTypeId && serviceTypes.length > 0) {
-        // Find a general service (prefer consultation, basic, standard, or first available)
-        const defaultService = serviceTypes.find(s => {
-          const name = s.name.toLowerCase();
-          return name.includes('consultation') || 
-                 name.includes('basic') || 
-                 name.includes('standard') ||
-                 name.includes('service call') ||
-                 name.includes('estimate');
-        }) || serviceTypes[0];
-        aiResponse.serviceTypeId = defaultService.id;
-        console.log(`🔧 Using default service: ${defaultService.name}`);
-      }
+      // Always remove appointmentTime - will be set in voice processing with real available slots
+      aiResponse.appointmentTime = null;
+      console.log(`✅ AI wants to book service: ${serviceTypes.find(s => s.id === aiResponse.serviceTypeId)?.name || aiResponse.serviceTypeId}`);
     }
 
     return aiResponse;
@@ -1921,13 +1987,326 @@ app.get('/api/debug/services/:businessId', async (req, res) => {
   }
 });
 
+// Debug endpoint to check all businesses and their services
+app.get('/api/debug/all-businesses', async (req, res) => {
+  try {
+    const businessesResult = await pool.query('SELECT * FROM businesses ORDER BY created_at');
+    const businesses = [];
+    
+    for (const business of businessesResult.rows) {
+      const servicesResult = await pool.query('SELECT * FROM service_types WHERE business_id = $1 AND is_active = true ORDER BY display_order, name', [business.id]);
+      businesses.push({
+        ...business,
+        services: servicesResult.rows,
+        serviceCount: servicesResult.rows.length
+      });
+    }
+    
+    res.json({
+      totalBusinesses: businesses.length,
+      businesses: businesses,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin endpoint to fix Twilio webhook for the demo phone number
+app.post('/api/admin/fix-webhook', async (req, res) => {
+  try {
+    const phoneNumber = '+18445401735';
+    const businessId = '9e075387-b066-4b70-ac33-6bce880f73df';
+    
+    // List all phone numbers to find the SID
+    const phoneNumbers = await twilioClient.incomingPhoneNumbers.list();
+    const targetNumber = phoneNumbers.find(num => num.phoneNumber === phoneNumber);
+    
+    if (!targetNumber) {
+      return res.status(404).json({ error: 'Phone number not found in Twilio' });
+    }
+    
+    console.log(`🔧 Updating webhook for ${phoneNumber} (${targetNumber.sid})`);
+    
+    // Update the webhook URL
+    const baseUrl = process.env.BASE_URL || 'https://nodejs-production-5e30.up.railway.app';
+    const newVoiceUrl = `${baseUrl}/voice/incoming/${businessId}`;
+    
+    await twilioClient.incomingPhoneNumbers(targetNumber.sid).update({
+      voiceUrl: newVoiceUrl,
+      voiceMethod: 'POST'
+    });
+    
+    console.log(`✅ Webhook updated to: ${newVoiceUrl}`);
+    
+    res.json({
+      success: true,
+      phoneNumber: phoneNumber,
+      oldUrl: targetNumber.voiceUrl,
+      newUrl: newVoiceUrl,
+      message: 'Webhook updated successfully'
+    });
+    
+  } catch (error) {
+    console.error('Error updating webhook:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Debug endpoint to test calendar
+app.get('/api/debug/test-calendar/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    
+    console.log(`🧪 Testing calendar for business: ${businessId}`);
+    
+    const calendar = new DatabaseCalendarManager(businessId);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    console.log(`📅 Getting available slots for: ${tomorrow}`);
+    
+    const availableSlots = await calendar.getAvailableSlots(tomorrow, 60);
+    
+    console.log(`📋 Found ${availableSlots.length} available slots`);
+    
+    res.json({
+      businessId: businessId,
+      date: tomorrow,
+      availableSlots: availableSlots,
+      slotCount: availableSlots.length,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Calendar test error:', error);
+    res.status(500).json({ error: error.message, stack: error.stack });
+  }
+});
+
+// Debug endpoint to test AI processing
+app.post('/api/debug/test-ai', async (req, res) => {
+  try {
+    const { speechText, businessId } = req.body;
+    
+    if (!speechText) {
+      return res.status(400).json({ error: 'speechText is required' });
+    }
+    
+    // Get business and services
+    const businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
+    const servicesResult = await pool.query('SELECT * FROM service_types WHERE business_id = $1 AND is_active = true', [businessId]);
+    
+    if (businessResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+    
+    const business = businessResult.rows[0];
+    const serviceTypes = servicesResult.rows;
+    
+    console.log(`🧪 Testing AI with: "${speechText}" for business: ${business.name}`);
+    console.log(`📋 Available services: ${serviceTypes.length}`);
+    
+    // Test the AI processing function
+    const aiResponse = await processCustomerRequest(speechText, business, serviceTypes, '+15551234567');
+    
+    res.json({
+      input: speechText,
+      business: {
+        id: business.id,
+        name: business.name,
+        type: business.business_type
+      },
+      serviceCount: serviceTypes.length,
+      services: serviceTypes.map(s => ({ id: s.id, name: s.name, service_key: s.service_key })),
+      aiResponse: aiResponse,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('AI test error:', error);
+    res.status(500).json({ error: error.message, stack: error.stack });
+  }
+});
+
+// Phone Number Management API Endpoints
+app.get('/api/businesses/:businessId/available-phone-numbers', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { areaCode, country = 'US' } = req.query;
+    
+    // Search for available phone numbers
+    const searchParams = {
+      limit: 20,
+      voiceEnabled: true,
+      smsEnabled: true
+    };
+    
+    if (areaCode) {
+      searchParams.areaCode = areaCode;
+    }
+    
+    const availableNumbers = await twilioClient.availablePhoneNumbers(country)
+      .local
+      .list(searchParams);
+    
+    const formattedNumbers = availableNumbers.map(number => ({
+      phoneNumber: number.phoneNumber,
+      friendlyName: number.friendlyName,
+      locality: number.locality,
+      region: number.region,
+      capabilities: number.capabilities,
+      monthlyPrice: 'Included in plan', // No additional cost
+      twilioPrice: '$5.00' // Note: actual Twilio cost but included in subscription
+    }));
+    
+    res.json(formattedNumbers);
+  } catch (error) {
+    console.error('Error fetching available numbers:', error);
+    res.status(500).json({ error: 'Failed to fetch available phone numbers' });
+  }
+});
+
+app.post('/api/businesses/:businessId/purchase-phone-number', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { phoneNumber } = req.body;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({ error: 'Phone number is required' });
+    }
+    
+    // Purchase the phone number from Twilio
+    const purchasedNumber = await twilioClient.incomingPhoneNumbers.create({
+      phoneNumber: phoneNumber,
+      voiceUrl: `${process.env.BASE_URL || 'https://nodejs-production-5e30.up.railway.app'}/voice/incoming/${req.business.id}`,
+      voiceMethod: 'POST',
+      smsUrl: `${process.env.BASE_URL || 'https://nodejs-production-5e30.up.railway.app'}/sms/incoming/${req.business.id}`,
+      smsMethod: 'POST',
+      friendlyName: `${req.business.name} - CallCatcher AI`
+    });
+    
+    // Update business with new phone number
+    await pool.query(
+      'UPDATE businesses SET phone_number = $1, twilio_phone_sid = $2 WHERE id = $3',
+      [phoneNumber, purchasedNumber.sid, req.business.id]
+    );
+    
+    // Phone number is included in subscription plan - no additional charges
+    console.log(`📞 Phone number included in ${req.business.plan || 'current'} subscription plan`)
+    
+    console.log(`📞 Phone number ${phoneNumber} purchased for ${req.business.name}`);
+    
+    res.json({
+      success: true,
+      phoneNumber: phoneNumber,
+      twilioSid: purchasedNumber.sid,
+      monthlyCost: 0.00, // Included in subscription plan
+      planIncludes: 'Phone number included in subscription',
+      message: 'Phone number successfully purchased and configured'
+    });
+    
+  } catch (error) {
+    console.error('Error purchasing phone number:', error);
+    res.status(500).json({ 
+      error: 'Failed to purchase phone number',
+      details: error.message 
+    });
+  }
+});
+
+app.get('/api/businesses/:businessId/phone-numbers', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    // Get business phone numbers from database
+    const result = await pool.query(
+      `SELECT phone_number, twilio_phone_sid, created_at 
+       FROM businesses 
+       WHERE id = $1 AND phone_number IS NOT NULL`,
+      [req.business.id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.json({ numbers: [], hasNumber: false });
+    }
+    
+    const businessNumber = result.rows[0];
+    
+    // Get additional details from Twilio if needed
+    let twilioDetails = null;
+    if (businessNumber.twilio_phone_sid) {
+      try {
+        twilioDetails = await twilioClient.incomingPhoneNumbers(businessNumber.twilio_phone_sid).fetch();
+      } catch (error) {
+        console.error('Error fetching Twilio details:', error);
+      }
+    }
+    
+    res.json({
+      hasNumber: true,
+      currentNumber: {
+        phoneNumber: businessNumber.phone_number,
+        purchaseDate: businessNumber.created_at,
+        status: twilioDetails?.status || 'active',
+        monthlyCost: 0.00, // Included in subscription plan
+        planIncludes: 'Phone number included in subscription',
+        capabilities: twilioDetails?.capabilities || { voice: true, sms: true }
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error fetching phone numbers:', error);
+    res.status(500).json({ error: 'Failed to fetch phone numbers' });
+  }
+});
+
+app.delete('/api/businesses/:businessId/phone-numbers/:phoneNumber', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { phoneNumber } = req.params;
+    
+    // Get Twilio SID for this number
+    const result = await pool.query(
+      'SELECT twilio_phone_sid FROM businesses WHERE id = $1 AND phone_number = $2',
+      [req.business.id, phoneNumber]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Phone number not found' });
+    }
+    
+    const twilioSid = result.rows[0].twilio_phone_sid;
+    
+    // Release the number from Twilio
+    if (twilioSid) {
+      await twilioClient.incomingPhoneNumbers(twilioSid).remove();
+    }
+    
+    // Remove from business
+    await pool.query(
+      'UPDATE businesses SET phone_number = NULL, twilio_phone_sid = NULL WHERE id = $1',
+      [req.business.id]
+    );
+    
+    console.log(`📞 Phone number ${phoneNumber} released for ${req.business.name}`);
+    
+    res.json({
+      success: true,
+      message: 'Phone number successfully released'
+    });
+    
+  } catch (error) {
+    console.error('Error releasing phone number:', error);
+    res.status(500).json({ 
+      error: 'Failed to release phone number',
+      details: error.message 
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     version: '2.0.0',
-    features: ['multi-tenant', 'database', 'authentication', 'billing', 'ai-templates', 'team-management']
+    features: ['multi-tenant', 'database', 'authentication', 'billing', 'ai-templates', 'team-management', 'phone-provisioning']
   });
 });
 

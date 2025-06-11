@@ -65,6 +65,7 @@ CREATE TABLE businesses (
     state VARCHAR(50),
     zip_code VARCHAR(20),
     phone_number VARCHAR(20), -- Their Twilio number
+    twilio_phone_sid VARCHAR(255), -- Twilio phone number SID for management
     twilio_account_sid VARCHAR(255),
     twilio_auth_token VARCHAR(255),
     
