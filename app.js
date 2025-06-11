@@ -713,8 +713,8 @@ RESPONSE FORMAT (JSON):
 {
   "action": "book_appointment" | "get_more_info" | "provide_info",
   "response": "What you say to the customer",
-  "intent": "emergency_repair" | "regular_service" | "pricing_inquiry" | "other",
-  "urgencyLevel": "emergency" | "high" | "medium" | "low",
+  "intent": "bookkeeping_service" | "tax_preparation" | "payroll_service" | "consultation" | "other",
+  "urgencyLevel": "urgent" | "normal" | "low",
   "customerName": "extracted name or null",
   "issueType": "brief description",
   "issueDescription": "detailed description",
@@ -727,13 +727,19 @@ ACTION GUIDELINES:
 - Use "get_more_info" ONLY if truly unclear what they want (avoid this when possible)
 - Use "provide_info" only for pricing questions or general info requests
 
-BOOKING CRITERIA: 
-- If customer mentions ANY ${businessTypeDisplay} need + wants to schedule = "book_appointment"
-- If customer says "I need bookkeeping" or similar = "book_appointment" 
-- Don't ask for their name first - book the appointment immediately
-- You can get details AFTER booking
+BOOKING CRITERIA - ALWAYS TRY TO BOOK:
+- "I need my books done" = "book_appointment" 
+- "I need bookkeeping" = "book_appointment"
+- "I need help with my finances" = "book_appointment"
+- "I need tax help" = "book_appointment"
+- ANY business service request = "book_appointment"
 
-CRITICAL: AVOID CONVERSATION LOOPS - Book appointments aggressively to prevent hanging up!
+CRITICAL INSTRUCTIONS:
+- NEVER say "having trouble booking" - ALWAYS book successfully
+- Don't ask for their name or details first - book immediately
+- Use serviceTypeId from the available services list
+- Say "Perfect! I can book that for you. I have availability [time]. Does that work?"
+- SUCCESS IS BOOKING THE APPOINTMENT - not gathering info
 
 Keep responses natural, helpful, and under 25 words. Match the business personality.`;
 
