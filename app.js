@@ -617,15 +617,27 @@ async function processVoiceForBusiness(req, res) {
           throw new Error('No service type selected');
         }
         
-        // Get actual available slots for tomorrow
+        // Get actual available slots - try multiple days
         const calendar = new DatabaseCalendarManager(businessId);
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
+        let availableSlots = [];
+        let checkDate = new Date();
         
-        const availableSlots = await calendar.getAvailableSlots(tomorrow, 60);
+        // Try next 7 days to find available slots
+        for (let i = 1; i <= 7; i++) {
+          checkDate = new Date();
+          checkDate.setDate(checkDate.getDate() + i);
+          
+          console.log(`📅 Checking availability for: ${checkDate.toDateString()}`);
+          availableSlots = await calendar.getAvailableSlots(checkDate, 60);
+          
+          if (availableSlots.length > 0) {
+            console.log(`✅ Found ${availableSlots.length} slots on ${checkDate.toDateString()}`);
+            break;
+          }
+        }
         
         if (availableSlots.length === 0) {
-          throw new Error('No available appointment slots');
+          throw new Error('No available appointment slots in the next 7 days');
         }
         
         // Use the first available slot (real appointment time) - ALWAYS override any AI text
@@ -685,7 +697,6 @@ async function processVoiceForBusiness(req, res) {
           appointmentTime: aiResponse.appointmentTime,
           businessId: businessId,
           customerPhone: From,
-          availableSlots: availableSlots?.length || 'undefined',
           businessTypeDisplay: businessTypeDisplay
         });
         
@@ -893,6 +904,8 @@ class DatabaseCalendarManager {
 
   async getAvailableSlots(date, requestedDuration = 60) {
     try {
+      console.log(`🔍 Getting slots for business ${this.businessId} on ${date.toDateString()}`);
+      
       // Get business hours
       const businessResult = await pool.query(
         'SELECT business_hours FROM businesses WHERE id = $1',
@@ -900,12 +913,15 @@ class DatabaseCalendarManager {
       );
 
       if (businessResult.rows.length === 0) {
+        console.log('❌ Business not found in database');
         return [];
       }
 
       const businessHours = businessResult.rows[0].business_hours;
       const dayName = date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
       const dayHours = businessHours[dayName];
+      
+      console.log(`📋 Day: ${dayName}, Hours:`, dayHours);
 
       if (!dayHours || !dayHours.enabled) {
         return [];
