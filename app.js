@@ -80,8 +80,9 @@ const getBusinessContext = async (req, res, next) => {
   }
 };
 
-// Serve static pages
+// Serve static pages (these must come before static middleware conflicts)
 app.get('/', (req, res) => {
+  console.log('🏠 Serving landing page');
   res.sendFile(path.join(__dirname, 'public', 'landing.html'));
 });
 

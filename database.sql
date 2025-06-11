@@ -4,6 +4,39 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Industry service templates for AI-powered business setup
+CREATE TABLE industry_templates (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    industry_type VARCHAR(100) NOT NULL UNIQUE, -- plumbing, electrical, hvac, cleaning, etc
+    template_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    service_templates JSONB NOT NULL, -- Array of service objects with name, description, pricing, duration
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(50) DEFAULT 'system', -- 'system', 'claude', 'openai'
+    is_active BOOLEAN DEFAULT true
+);
+
+-- Team members table for enterprise multi-owner notifications
+CREATE TABLE team_members (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
+    mobile_phone VARCHAR(20) NOT NULL,
+    role VARCHAR(50) DEFAULT 'technician', -- 'owner', 'manager', 'technician'
+    is_active BOOLEAN DEFAULT true,
+    can_receive_notifications BOOLEAN DEFAULT true,
+    notification_preferences JSONB DEFAULT '{
+        "new_appointments": true,
+        "assignment_changes": true,
+        "cancellations": true,
+        "emergency_calls": true
+    }',
+    specialties TEXT[], -- ['plumbing', 'electrical', 'hvac']
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Users table (main account holders)
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -133,6 +166,12 @@ CREATE TABLE appointments (
     call_sid VARCHAR(255),
     call_duration INTEGER, -- seconds
     call_recording_url VARCHAR(500),
+    
+    -- Team assignment (for enterprise plans)
+    assigned_to UUID REFERENCES team_members(id),
+    assigned_at TIMESTAMP,
+    assignment_notes TEXT,
+    notification_sent BOOLEAN DEFAULT false,
     
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
