@@ -558,12 +558,18 @@ app.post('/voice/process/:businessId', async (req, res) => {
     if (aiResponse.action === 'book_appointment') {
       // Try to book the appointment
       try {
+        console.log(`📅 Attempting to book appointment:`, {
+          customerName: aiResponse.customerName || 'Customer', 
+          serviceTypeId: aiResponse.serviceTypeId,
+          appointmentTime: aiResponse.appointmentTime
+        });
+        
         const calendar = new DatabaseCalendarManager(businessId);
         const appointment = await calendar.bookAppointment(
           {
             name: aiResponse.customerName || 'Customer',
             phone: From,
-            issue: aiResponse.issueDescription
+            issue: aiResponse.issueDescription || 'Tax preparation service'
           },
           aiResponse.appointmentTime,
           aiResponse.serviceTypeId,
@@ -584,7 +590,14 @@ app.post('/voice/process/:businessId', async (req, res) => {
         }, aiResponse.response);
 
       } catch (bookingError) {
-        console.error('Booking error:', bookingError);
+        console.error('❌ BOOKING FAILED:', bookingError);
+        console.error('Booking details:', {
+          customerName: aiResponse.customerName,
+          serviceTypeId: aiResponse.serviceTypeId,
+          appointmentTime: aiResponse.appointmentTime,
+          businessId: businessId,
+          customerPhone: From
+        });
         
         // Update call log with booking failure
         await pool.query(
