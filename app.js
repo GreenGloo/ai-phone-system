@@ -67,6 +67,9 @@ const getBusinessContext = async (req, res, next) => {
   try {
     const businessId = req.params.businessId || req.body.businessId || req.query.businessId;
     
+    console.log('🔍 getBusinessContext - businessId:', businessId);
+    console.log('🔍 getBusinessContext - user:', req.user ? req.user.id : 'No user');
+    
     if (!businessId) {
       return res.status(400).json({ error: 'Business ID required' });
     }
@@ -75,6 +78,8 @@ const getBusinessContext = async (req, res, next) => {
       'SELECT * FROM businesses WHERE id = $1 AND user_id = $2',
       [businessId, req.user.id]
     );
+
+    console.log('🔍 getBusinessContext - query result:', result.rows.length > 0 ? 'Found' : 'Not found');
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Business not found' });
@@ -904,6 +909,10 @@ app.get('/api/businesses/:businessId/settings', authenticateToken, getBusinessCo
 
 app.put('/api/businesses/:businessId/settings', authenticateToken, getBusinessContext, async (req, res) => {
   try {
+    console.log('📝 PUT /api/businesses/:businessId/settings called');
+    console.log('📝 Business ID:', req.params.businessId);
+    console.log('📝 Request body keys:', Object.keys(req.body));
+    
     const {
       name,
       business_type,
@@ -933,13 +942,14 @@ app.put('/api/businesses/:businessId/settings', authenticateToken, getBusinessCo
         city = $4,
         state = $5,
         zip_code = $6,
-        business_hours = $7,
-        business_description = $8,
-        ai_personality = $9,
-        ai_voice_id = $10,
-        emergency_message = $11,
+        website = $7,
+        business_hours = $8,
+        business_description = $9,
+        ai_personality = $10,
+        ai_voice_id = $11,
+        emergency_message = $12,
         updated_at = CURRENT_TIMESTAMP
-       WHERE id = $12 AND user_id = $13
+       WHERE id = $13 AND user_id = $14
        RETURNING *`,
       [
         name,
@@ -948,6 +958,7 @@ app.put('/api/businesses/:businessId/settings', authenticateToken, getBusinessCo
         city,
         state,
         zip_code,
+        website,
         business_hours,
         business_description,
         ai_personality,
