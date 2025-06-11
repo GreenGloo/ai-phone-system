@@ -488,13 +488,24 @@ app.post('/voice/incoming/:businessId', async (req, res) => {
 
     twiml.gather({
       input: 'speech',
-      timeout: 8, // Longer timeout for customer to respond
+      timeout: 12, // Longer timeout for customer to respond
       speechTimeout: 'auto',
       action: `/voice/process/${businessId}`,
       method: 'POST'
     });
 
-    twiml.say('I didn\'t catch that. Let me have someone call you back.');
+    // First retry - ask again instead of giving up
+    twiml.say('I didn\'t catch that. Could you please tell me what service you need?');
+    
+    twiml.gather({
+      input: 'speech',
+      timeout: 10,
+      speechTimeout: 'auto', 
+      action: `/voice/process/${businessId}`,
+      method: 'POST'
+    });
+    
+    twiml.say('I\'m having trouble hearing you. Let me have someone call you back.');
     twiml.hangup();
 
     res.type('text/xml').send(twiml.toString());
@@ -617,31 +628,72 @@ async function processVoiceForBusiness(req, res) {
           throw new Error('No service type selected');
         }
         
-        // Get actual available slots - try multiple days
+        // Parse customer's date/time preference and find matching slots
         const calendar = new DatabaseCalendarManager(businessId);
+        let appointmentTime = null;
         let availableSlots = [];
-        let checkDate = new Date();
         
-        // Try next 7 days to find available slots
-        for (let i = 1; i <= 7; i++) {
-          checkDate = new Date();
-          checkDate.setDate(checkDate.getDate() + i);
-          
-          console.log(`📅 Checking availability for: ${checkDate.toDateString()}`);
-          availableSlots = await calendar.getAvailableSlots(checkDate, 60);
+        // Try to parse the customer's preferred date/time from their speech
+        const speechLower = SpeechResult.toLowerCase();
+        const today = new Date();
+        let preferredDate = null;
+        
+        // Simple date parsing
+        if (speechLower.includes('tomorrow')) {
+          preferredDate = new Date();
+          preferredDate.setDate(preferredDate.getDate() + 1);
+        } else if (speechLower.includes('today')) {
+          preferredDate = new Date();
+        } else if (speechLower.includes('monday')) {
+          preferredDate = getNextWeekday(today, 1);
+        } else if (speechLower.includes('tuesday')) {
+          preferredDate = getNextWeekday(today, 2);
+        } else if (speechLower.includes('wednesday')) {
+          preferredDate = getNextWeekday(today, 3);
+        } else if (speechLower.includes('thursday')) {
+          preferredDate = getNextWeekday(today, 4);
+        } else if (speechLower.includes('friday')) {
+          preferredDate = getNextWeekday(today, 5);
+        }
+        
+        if (preferredDate) {
+          console.log(`📅 Customer prefers: ${preferredDate.toDateString()}`);
+          availableSlots = await calendar.getAvailableSlots(preferredDate, 60);
           
           if (availableSlots.length > 0) {
-            console.log(`✅ Found ${availableSlots.length} slots on ${checkDate.toDateString()}`);
-            break;
+            // Try to match preferred time if mentioned
+            let preferredSlot = availableSlots[0]; // Default to first slot
+            
+            if (speechLower.includes('morning') || speechLower.includes('8') || speechLower.includes('9') || speechLower.includes('10')) {
+              preferredSlot = availableSlots.find(slot => slot.start.getHours() < 12) || availableSlots[0];
+            } else if (speechLower.includes('afternoon') || speechLower.includes('1') || speechLower.includes('2') || speechLower.includes('3')) {
+              preferredSlot = availableSlots.find(slot => slot.start.getHours() >= 12) || availableSlots[0];
+            }
+            
+            appointmentTime = preferredSlot.start;
+            console.log(`✅ Selected time: ${appointmentTime}`);
           }
         }
         
-        if (availableSlots.length === 0) {
-          throw new Error('No available appointment slots in the next 7 days');
+        if (!appointmentTime) {
+          // Fallback: find next available slot
+          for (let i = 1; i <= 7; i++) {
+            const checkDate = new Date();
+            checkDate.setDate(checkDate.getDate() + i);
+            
+            availableSlots = await calendar.getAvailableSlots(checkDate, 60);
+            
+            if (availableSlots.length > 0) {
+              appointmentTime = availableSlots[0].start;
+              console.log(`✅ Using fallback time: ${appointmentTime}`);
+              break;
+            }
+          }
         }
         
-        // Use the first available slot (real appointment time) - ALWAYS override any AI text
-        const appointmentTime = availableSlots[0].start;
+        if (!appointmentTime) {
+          throw new Error('No available appointment slots found');
+        }
         
         console.log(`🕐 Using REAL appointment time: ${appointmentTime} (was: ${aiResponse.appointmentTime})`);
         
@@ -727,14 +779,57 @@ async function processVoiceForBusiness(req, res) {
         }, "I apologize, but I'm having trouble completing your booking right now. Let me have someone call you back within the hour to schedule your appointment.");
       }
     } else if (aiResponse.action === 'get_more_info') {
-      // Ask for more information
-      twiml.say({
-        voice: business.ai_voice_id || 'Polly.Joanna-Neural'
-      }, aiResponse.response);
+      // Ask for date preference and show available slots
+      if (aiResponse.intent === 'service_request' && aiResponse.serviceTypeId) {
+        // Customer selected service, now ask for date and show availability
+        const calendar = new DatabaseCalendarManager(businessId);
+        const today = new Date();
+        let availableDays = [];
+        
+        // Check next 7 days for availability
+        for (let i = 1; i <= 7; i++) {
+          const checkDate = new Date();
+          checkDate.setDate(checkDate.getDate() + i);
+          const slots = await calendar.getAvailableSlots(checkDate, 60);
+          
+          if (slots.length > 0) {
+            availableDays.push({
+              date: checkDate,
+              dayName: checkDate.toLocaleDateString('en-US', { weekday: 'long' }),
+              slots: slots.slice(0, 3) // Show first 3 time slots
+            });
+          }
+          
+          if (availableDays.length >= 4) break; // Show up to 4 days
+        }
+        
+        if (availableDays.length > 0) {
+          let availabilityMessage = aiResponse.response + " I have availability: ";
+          availableDays.forEach((day, index) => {
+            const timeList = day.slots.map(slot => slot.display).join(', ');
+            availabilityMessage += `${day.dayName} at ${timeList}`;
+            if (index < availableDays.length - 1) availabilityMessage += "; ";
+          });
+          availabilityMessage += ". Which day and time works for you?";
+          
+          twiml.say({
+            voice: business.ai_voice_id || 'Polly.Joanna-Neural'
+          }, availabilityMessage);
+        } else {
+          twiml.say({
+            voice: business.ai_voice_id || 'Polly.Joanna-Neural'
+          }, "I'm checking our availability. What day would work best for you this week?");
+        }
+      } else {
+        // General info request
+        twiml.say({
+          voice: business.ai_voice_id || 'Polly.Joanna-Neural'
+        }, aiResponse.response);
+      }
 
       twiml.gather({
         input: 'speech',
-        timeout: 10,
+        timeout: 15, // Longer timeout for date selection
         speechTimeout: 'auto',
         action: `/voice/process/${businessId}`,
         method: 'POST'
@@ -783,6 +878,16 @@ app.post('/voice/*', (req, res) => {
   twiml.say(`Hello, this is CallCatcher. You called ${req.path}. The system is being configured. Please try again shortly.`);
   res.type('text/xml').send(twiml.toString());
 });
+
+// Helper function to get next occurrence of a weekday
+function getNextWeekday(date, targetDay) {
+  const today = new Date(date);
+  const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const daysUntilTarget = (targetDay - currentDay + 7) % 7;
+  const resultDate = new Date(today);
+  resultDate.setDate(today.getDate() + (daysUntilTarget === 0 ? 7 : daysUntilTarget));
+  return resultDate;
+}
 
 // AI processing function
 async function processCustomerRequest(speechText, business, serviceTypes, customerPhone) {
@@ -834,22 +939,21 @@ RESPONSE FORMAT (JSON):
 }
 
 ACTION GUIDELINES:
-- Use "book_appointment" IMMEDIATELY if customer wants ANY service and shows intent to schedule
-- Use "get_more_info" ONLY if truly unclear what they want (avoid this when possible)
+- Use "get_more_info" when customer requests a service but hasn't specified date/time
+- Use "book_appointment" ONLY when customer has specified both service AND preferred date/time
 - Use "provide_info" only for pricing questions or general info requests
 
-BOOKING CRITERIA - ALWAYS TRY TO BOOK:
-- Any mention of needing ${businessTypeDisplay} services = "book_appointment"
-- "I need help with [problem]" = "book_appointment"
-- "Can you fix [issue]" = "book_appointment"
-- "I need [any service type]" = "book_appointment"
-- ANY ${businessTypeDisplay} service request = "book_appointment"
+BOOKING CRITERIA:
+- First service request = "get_more_info" (ask for date preference)
+- Service + date mentioned = "book_appointment" 
+- "I need help with [problem]" = "get_more_info" (ask when they want it)
+- Only book when you have BOTH service AND date preference
 
 CRITICAL INSTRUCTIONS:
 - NEVER say "having trouble booking" - ALWAYS book successfully
 - Don't ask for their name or details first - book immediately
 - Use the EXACT UUID from the services list (the ID: part) for serviceTypeId
-- Say "Perfect! I can book that for you right now. Let me schedule that appointment."
+- Say "Perfect! I can help you schedule that. What day works best for you this week?"
 - SUCCESS IS BOOKING THE APPOINTMENT - not gathering info
 - EXAMPLE: Use exact ID from services list like "309b7646-1e55-4836-8342-759ecfe09b87"
 - DO NOT put text in appointmentTime - leave it null, real time will be assigned
