@@ -691,8 +691,7 @@ Keep responses natural, helpful, and under 25 words. Match the business personal
       model: "gpt-3.5-turbo", // Faster than GPT-4
       messages: [{ role: "user", content: prompt }],
       temperature: 0.7,
-      max_tokens: 300, // Shorter responses for faster processing
-      timeout: 10000 // 10 second timeout
+      max_tokens: 300 // Shorter responses for faster processing
     });
 
     const aiResponse = JSON.parse(completion.choices[0].message.content);
