@@ -1726,6 +1726,66 @@ async function sendNewAppointmentNotification(business, appointment) {
   }
 }
 
+// Admin endpoint to fix business data (temporary for debugging)
+app.post('/api/admin/fix-business/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { businessType } = req.body;
+    
+    if (!businessType) {
+      return res.status(400).json({ error: 'Business type is required' });
+    }
+    
+    console.log(`🔧 Admin: Fixing business ${businessId} with type ${businessType}`);
+    
+    // Update business type
+    await pool.query(
+      'UPDATE businesses SET business_type = $1 WHERE id = $2',
+      [businessType, businessId]
+    );
+    
+    // Delete old services
+    await pool.query('DELETE FROM service_types WHERE business_id = $1', [businessId]);
+    console.log('🗑️ Deleted old services');
+    
+    // Generate new services with AI
+    const generatedServices = await generateServicesWithAI(businessType, 'Childers Tax Preparation');
+    console.log(`🤖 Generated ${generatedServices.length} new services`);
+    
+    // Insert new services
+    for (const serviceType of generatedServices) {
+      await pool.query(
+        `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          businessId,
+          serviceType.name,
+          serviceType.service_key,
+          serviceType.description,
+          serviceType.duration_minutes,
+          serviceType.base_rate,
+          serviceType.emergency_multiplier,
+          serviceType.travel_buffer_minutes,
+          serviceType.is_emergency,
+          serviceType.is_active
+        ]
+      );
+    }
+    
+    console.log(`✅ Successfully fixed business ${businessId} with ${businessType} services`);
+    
+    res.json({
+      success: true,
+      message: `Fixed business with ${generatedServices.length} ${businessType} services`,
+      services: generatedServices
+    });
+    
+  } catch (error) {
+    console.error('Error fixing business:', error);
+    res.status(500).json({ error: 'Failed to fix business' });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({

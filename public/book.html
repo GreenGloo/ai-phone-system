@@ -47,7 +47,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <h1 class="text-3xl font-bold text-gray-900">Book Your Appointment</h1>
-                    <p class="text-gray-600">Professional plumbing services - available 24/7</p>
+                    <p class="text-gray-600">Professional services - available when you need them</p>
                 </div>
                 <div class="text-right">
                     <div class="text-lg font-bold text-blue-600">(844) 540-1735</div>
@@ -60,89 +60,10 @@
             <!-- Step 1: Service Selection -->
             <div class="bg-white rounded-lg shadow-sm p-6">
                 <h2 class="text-xl font-bold text-gray-900 mb-4">1. Select Service Type</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <!-- Emergency Services -->
-                    <div class="service-card border-2 border-red-200 rounded-lg p-4 cursor-pointer" 
-                         data-service="emergency" data-duration="60" data-rate="150">
-                        <div class="flex items-center gap-3 mb-2">
-                            <span class="text-2xl">🚨</span>
-                            <h3 class="font-bold text-gray-900">Emergency Service</h3>
-                        </div>
-                        <p class="text-sm text-gray-600 mb-2">Burst pipes, no water, flooding, gas leaks</p>
-                        <div class="text-sm">
-                            <div class="font-medium text-red-600">$150/hour + emergency fee</div>
-                            <div class="text-gray-500">~1 hour minimum</div>
-                        </div>
-                    </div>
-
-                    <!-- Drain Cleaning -->
-                    <div class="service-card border-2 border-gray-200 rounded-lg p-4 cursor-pointer" 
-                         data-service="drain-cleaning" data-duration="90" data-rate="120">
-                        <div class="flex items-center gap-3 mb-2">
-                            <span class="text-2xl">🚿</span>
-                            <h3 class="font-bold text-gray-900">Drain Cleaning</h3>
-                        </div>
-                        <p class="text-sm text-gray-600 mb-2">Clogged drains, slow drainage, backups</p>
-                        <div class="text-sm">
-                            <div class="font-medium text-blue-600">$120/hour</div>
-                            <div class="text-gray-500">~1.5 hours typical</div>
-                        </div>
-                    </div>
-
-                    <!-- Water Heater -->
-                    <div class="service-card border-2 border-gray-200 rounded-lg p-4 cursor-pointer" 
-                         data-service="water-heater" data-duration="180" data-rate="100">
-                        <div class="flex items-center gap-3 mb-2">
-                            <span class="text-2xl">🔥</span>
-                            <h3 class="font-bold text-gray-900">Water Heater</h3>
-                        </div>
-                        <p class="text-sm text-gray-600 mb-2">Installation, repair, maintenance</p>
-                        <div class="text-sm">
-                            <div class="font-medium text-blue-600">$100/hour</div>
-                            <div class="text-gray-500">~3 hours typical</div>
-                        </div>
-                    </div>
-
-                    <!-- Pipe Repair -->
-                    <div class="service-card border-2 border-gray-200 rounded-lg p-4 cursor-pointer" 
-                         data-service="pipe-repair" data-duration="120" data-rate="110">
-                        <div class="flex items-center gap-3 mb-2">
-                            <span class="text-2xl">🔧</span>
-                            <h3 class="font-bold text-gray-900">Pipe Repair</h3>
-                        </div>
-                        <p class="text-sm text-gray-600 mb-2">Leaks, pipe replacement, fittings</p>
-                        <div class="text-sm">
-                            <div class="font-medium text-blue-600">$110/hour</div>
-                            <div class="text-gray-500">~2 hours typical</div>
-                        </div>
-                    </div>
-
-                    <!-- Fixture Installation -->
-                    <div class="service-card border-2 border-gray-200 rounded-lg p-4 cursor-pointer" 
-                         data-service="fixture-install" data-duration="90" data-rate="95">
-                        <div class="flex items-center gap-3 mb-2">
-                            <span class="text-2xl">🚽</span>
-                            <h3 class="font-bold text-gray-900">Fixture Install</h3>
-                        </div>
-                        <p class="text-sm text-gray-600 mb-2">Toilets, faucets, sinks, showers</p>
-                        <div class="text-sm">
-                            <div class="font-medium text-blue-600">$95/hour</div>
-                            <div class="text-gray-500">~1.5 hours typical</div>
-                        </div>
-                    </div>
-
-                    <!-- Consultation -->
-                    <div class="service-card border-2 border-gray-200 rounded-lg p-4 cursor-pointer" 
-                         data-service="consultation" data-duration="45" data-rate="75">
-                        <div class="flex items-center gap-3 mb-2">
-                            <span class="text-2xl">📋</span>
-                            <h3 class="font-bold text-gray-900">Consultation</h3>
-                        </div>
-                        <p class="text-sm text-gray-600 mb-2">Estimates, inspection, planning</p>
-                        <div class="text-sm">
-                            <div class="font-medium text-blue-600">$75 flat rate</div>
-                            <div class="text-gray-500">~45 minutes</div>
-                        </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="services-container">
+                    <!-- Services will be loaded dynamically -->
+                    <div class="col-span-3 text-center py-8 text-gray-500">
+                        Loading services...
                     </div>
                 </div>
                 <div id="service-error" class="text-red-600 text-sm mt-2 hidden">Please select a service type</div>
@@ -242,13 +163,105 @@
         let selectedDate = null;
         let selectedTime = null;
         let availableSlots = [];
+        let businessId = null;
+        let businessData = null;
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
-            setupServiceSelection();
-            generateDateOptions();
-            updateFormValidation();
+            // Extract business ID from URL path like /book/businessId
+            const pathParts = window.location.pathname.split('/');
+            if (pathParts[1] === 'book' && pathParts[2]) {
+                businessId = pathParts[2];
+            }
+            
+            loadBusinessData();
         });
+
+        // Load business data and services
+        async function loadBusinessData() {
+            try {
+                const apiUrl = businessId ? 
+                    `/api/public/services/${businessId}` : 
+                    '/api/public/services';
+                
+                const response = await fetch(apiUrl);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    businessData = data.business;
+                    
+                    // Update page header with business info
+                    document.querySelector('h1').textContent = `Book with ${businessData.name}`;
+                    document.querySelector('.text-gray-600').textContent = businessData.businessType + ' services';
+                    document.querySelector('.text-lg.font-bold').textContent = businessData.phone;
+                    
+                    // Load services dynamically
+                    loadServices(data.services);
+                    generateDateOptions();
+                    updateFormValidation();
+                } else {
+                    document.querySelector('.text-3xl').textContent = 'Business Not Found';
+                    document.querySelector('.text-gray-600').textContent = 'This booking page is not available';
+                }
+            } catch (error) {
+                console.error('Error loading business data:', error);
+            }
+        }
+
+        // Load services dynamically from database
+        function loadServices(services) {
+            const container = document.getElementById('services-container');
+            
+            if (services.length === 0) {
+                container.innerHTML = '<div class="col-span-3 text-center py-8 text-gray-500">No services available</div>';
+                return;
+            }
+            
+            container.innerHTML = services.map(service => {
+                const icon = getServiceIcon(service.service_key);
+                const rate = service.is_emergency ? 
+                    `$${service.base_rate} + emergency fee` : 
+                    `$${service.base_rate}/hour`;
+                
+                return `
+                    <div class="service-card border-2 border-gray-200 rounded-lg p-4 cursor-pointer" 
+                         data-service="${service.service_key}" 
+                         data-duration="${service.duration_minutes}" 
+                         data-rate="${service.base_rate}"
+                         data-service-id="${service.id}">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="text-2xl">${icon}</span>
+                            <h3 class="font-bold text-gray-900">${service.name}</h3>
+                        </div>
+                        <p class="text-sm text-gray-600 mb-2">${service.description || 'Professional service'}</p>
+                        <div class="text-sm">
+                            <div class="font-medium text-blue-600">${rate}</div>
+                            <div class="text-gray-500">~${Math.round(service.duration_minutes/60)} hour${service.duration_minutes > 60 ? 's' : ''}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            setupServiceSelection();
+        }
+
+        // Get icon for service type
+        function getServiceIcon(serviceKey) {
+            const icons = {
+                'emergency': '🚨',
+                'drain-cleaning': '🚿', 
+                'water-heater': '🔥',
+                'pipe-repair': '🔧',
+                'fixture-install': '🚽',
+                'consultation': '📋',
+                'tax-preparation': '📊',
+                'business-taxes': '🏢',
+                'personal-taxes': '👤',
+                'accounting': '💼',
+                'bookkeeping': '📚'
+            };
+            return icons[serviceKey] || '🔧';
+        }
 
         // Service selection
         function setupServiceSelection() {
@@ -341,7 +354,11 @@
             
             try {
                 const dateParam = selectedDate.toISOString().split('T')[0];
-                const response = await fetch(`/api/available-slots?date=${dateParam}&duration=${selectedService.duration}`);
+                const apiUrl = businessId ? 
+                    `/api/available-slots/${businessId}?date=${dateParam}&duration=${selectedService.duration}` :
+                    `/api/available-slots?date=${dateParam}&duration=${selectedService.duration}`;
+                
+                const response = await fetch(apiUrl);
                 availableSlots = await response.json();
                 
                 renderTimeSlots();
@@ -485,7 +502,11 @@
                 document.getElementById('book-button').disabled = true;
                 document.getElementById('book-button').textContent = 'Booking...';
                 
-                const response = await fetch('/api/book-appointment', {
+                const apiUrl = businessId ? 
+                    `/api/book-appointment/${businessId}` :
+                    '/api/book-appointment';
+                
+                const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
