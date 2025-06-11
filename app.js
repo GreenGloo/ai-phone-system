@@ -692,11 +692,12 @@ RESPONSE FORMAT (JSON):
 }
 
 ACTION GUIDELINES:
-- Use "get_more_info" if you ask ANY question that needs an answer (like "Would you like to schedule?" or "What's your name?")
-- Use "book_appointment" only if you have customer name, service type, and can schedule immediately
+- Use "get_more_info" ONLY if you're missing critical information (like which specific service they want if multiple options exist)
+- Use "book_appointment" if you know: what service they want (even generally like "tax preparation") and they want to schedule
 - Use "provide_info" only for statements that don't need any response (like "We're closed" or "Here are our hours")
 
-IMPORTANT: If you ask "Would you like to schedule an appointment?" you MUST use "get_more_info" action!
+BOOKING CRITERIA: If customer wants tax service and agrees to schedule, use "book_appointment" - you don't need their name upfront!
+AVOID LOOPS: Don't keep asking for more details once they've indicated they want a service and want to schedule.
 
 Keep responses natural, helpful, and under 25 words. Match the business personality.`;
 
@@ -710,8 +711,8 @@ Keep responses natural, helpful, and under 25 words. Match the business personal
 
     const aiResponse = JSON.parse(completion.choices[0].message.content);
     
-    // If booking appointment, find next available slot
-    if (aiResponse.action === 'book_appointment' && aiResponse.serviceTypeId) {
+    // If booking appointment, find next available slot and default service if needed
+    if (aiResponse.action === 'book_appointment') {
       const calendar = new DatabaseCalendarManager(business.id);
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
@@ -719,6 +720,17 @@ Keep responses natural, helpful, and under 25 words. Match the business personal
       const availableSlots = await calendar.getAvailableSlots(tomorrow, 60);
       if (availableSlots.length > 0) {
         aiResponse.appointmentTime = availableSlots[0].start;
+      }
+      
+      // If no specific service ID provided, use a default tax service
+      if (!aiResponse.serviceTypeId && serviceTypes.length > 0) {
+        // Find a general tax service (prefer consultation)
+        const defaultService = serviceTypes.find(s => 
+          s.name.toLowerCase().includes('consultation') || 
+          s.name.toLowerCase().includes('individual')
+        ) || serviceTypes[0];
+        aiResponse.serviceTypeId = defaultService.id;
+        console.log(`🔧 Using default service: ${defaultService.name}`);
       }
     }
 
