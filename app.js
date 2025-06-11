@@ -632,11 +632,26 @@ app.post('/voice/process/:businessId', async (req, res) => {
       twiml.say('I didn\'t catch that. Let me have someone call you back.');
       twiml.hangup();
     } else {
-      // Provide information or transfer
+      // Continue conversation or provide info - DON'T hang up unless explicitly needed
       twiml.say({
         voice: business.ai_voice_id || 'Polly.Joanna-Neural'
       }, aiResponse.response);
-      twiml.hangup();
+      
+      // Only hang up if this is final information, otherwise continue conversation
+      if (aiResponse.action === 'provide_info' && !aiResponse.response.toLowerCase().includes('schedule')) {
+        twiml.hangup();
+      } else {
+        // Continue conversation for scheduling
+        twiml.gather({
+          input: 'speech',
+          timeout: 10,
+          speechTimeout: 'auto',
+          action: `/voice/process/${businessId}`,
+          method: 'POST'
+        });
+        twiml.say('I didn\'t catch that. Let me have someone call you back.');
+        twiml.hangup();
+      }
     }
 
     res.type('text/xml').send(twiml.toString());
