@@ -14,10 +14,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
-// IMPORTANT: Root route MUST be defined before static middleware
+// IMPORTANT: Root route MUST be defined before static middleware  
 app.get('/', (req, res) => {
-  console.log('🚨🚨🚨 URGENT: ROOT ROUTE HIT AT ' + new Date().toISOString() + ' 🚨🚨🚨');
-  res.type('text/plain').send('CLAUDE DEBUGGER 2025: THIS IS THE ACTUAL EXPRESS ROUTE FROM APP.JS FILE. IF YOU SEE CALENDAR INTERFACE, RAILWAY IS NOT RUNNING THE CORRECT FILE.');
+  console.log('🏠 Serving landing page from root route');
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
 });
 
 app.use(express.static('public'));
