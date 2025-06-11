@@ -481,10 +481,10 @@
                     state: document.getElementById('state').value,
                     zip_code: document.getElementById('zipCode').value,
                     website: document.getElementById('website').value,
-                    business_hours: businessData.business_hours,
-                    ai_personality: businessData.ai_personality,
-                    ai_voice_id: businessData.ai_voice_id,
-                    emergency_message: businessData.emergency_message
+                    business_hours: businessData.business_hours || {},
+                    ai_personality: businessData.ai_personality || 'professional',
+                    ai_voice_id: businessData.ai_voice_id || 'Polly.Joanna-Neural',
+                    emergency_message: businessData.emergency_message || ''
                 };
                 
                 await saveSettings(formData);
@@ -510,8 +510,18 @@
                 });
                 
                 const formData = {
-                    ...businessData,
-                    business_hours: business_hours
+                    name: businessData.name,
+                    business_type: businessData.business_type,
+                    business_description: businessData.business_description || '',
+                    address: businessData.address || '',
+                    city: businessData.city || '',
+                    state: businessData.state || '',
+                    zip_code: businessData.zip_code || '',
+                    website: businessData.website || '',
+                    business_hours: business_hours,
+                    ai_personality: businessData.ai_personality || 'professional',
+                    ai_voice_id: businessData.ai_voice_id || 'Polly.Joanna-Neural',
+                    emergency_message: businessData.emergency_message || ''
                 };
                 
                 await saveSettings(formData);
@@ -527,7 +537,15 @@
         async function saveAISettings() {
             try {
                 const formData = {
-                    ...businessData,
+                    name: businessData.name,
+                    business_type: businessData.business_type,
+                    business_description: businessData.business_description || '',
+                    address: businessData.address || '',
+                    city: businessData.city || '',
+                    state: businessData.state || '',
+                    zip_code: businessData.zip_code || '',
+                    website: businessData.website || '',
+                    business_hours: businessData.business_hours || {},
                     ai_personality: document.getElementById('aiPersonality').value,
                     ai_voice_id: document.getElementById('aiVoice').value,
                     emergency_message: document.getElementById('emergencyMessage').value
