@@ -13,6 +13,13 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
+
+// IMPORTANT: Root route MUST be defined before static middleware
+app.get('/', (req, res) => {
+  console.log('🏠 Root route hit - serving landing page');
+  res.send('Landing page route is working! This should be the landing page.');
+});
+
 app.use(express.static('public'));
 
 // Database connection
@@ -80,12 +87,7 @@ const getBusinessContext = async (req, res, next) => {
   }
 };
 
-// Serve static pages (these must come before static middleware conflicts)
-app.get('/', (req, res) => {
-  console.log('🏠 Root route hit - serving landing page');
-  res.send('Landing page route is working! This should be the landing page.');
-});
-
+// Other static page routes
 app.get('/onboarding', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'onboarding.html'));
 });
