@@ -591,7 +591,7 @@ app.post('/voice/process/:businessId', async (req, res) => {
           {
             name: aiResponse.customerName || 'Customer',
             phone: From,
-            issue: aiResponse.issueDescription || 'Bookkeeping service'
+            issue: aiResponse.issueDescription || `${businessTypeDisplay} service`
           },
           appointmentTime,
           serviceTypeId,
@@ -630,10 +630,10 @@ app.post('/voice/process/:businessId', async (req, res) => {
           [bookingError.message, CallSid]
         );
 
-        // If booking fails, give positive response and attempt simple booking
+        // If booking fails, give honest response and offer callback
         twiml.say({
           voice: business.ai_voice_id || 'Polly.Joanna-Neural'
-        }, "Perfect! I've got you scheduled for bookkeeping service tomorrow at 10 AM. We'll call to confirm the details. Thank you!");
+        }, "I apologize, but I'm having trouble completing your booking right now. Let me have someone call you back within the hour to schedule your appointment.");
       }
     } else if (aiResponse.action === 'get_more_info') {
       // Ask for more information
@@ -697,7 +697,7 @@ app.post('/voice/*', (req, res) => {
 async function processCustomerRequest(speechText, business, serviceTypes, customerPhone) {
   try {
     const serviceTypesList = serviceTypes.map(st => 
-      `${st.name}: ${st.description} - $${st.base_rate} (${st.duration_minutes} min)`
+      `ID: ${st.id} | ${st.name}: ${st.description} - $${st.base_rate} (${st.duration_minutes} min)`
     ).join('\n');
 
     // Convert business_type back to readable format
@@ -733,12 +733,12 @@ RESPONSE FORMAT (JSON):
 {
   "action": "book_appointment" | "get_more_info" | "provide_info",
   "response": "What you say to the customer",
-  "intent": "bookkeeping_service" | "tax_preparation" | "payroll_service" | "consultation" | "other",
+  "intent": "service_request" | "emergency_service" | "consultation" | "pricing_inquiry" | "other",
   "urgencyLevel": "urgent" | "normal" | "low",
   "customerName": "extracted name or null",
   "issueType": "brief description",
   "issueDescription": "detailed description",
-  "serviceTypeId": "uuid of matching service or null",
+  "serviceTypeId": "exact UUID from available services list or null",
   "appointmentTime": "suggested time slot or null"
 }
 
@@ -748,18 +748,19 @@ ACTION GUIDELINES:
 - Use "provide_info" only for pricing questions or general info requests
 
 BOOKING CRITERIA - ALWAYS TRY TO BOOK:
-- "I need my books done" = "book_appointment" 
-- "I need bookkeeping" = "book_appointment"
-- "I need help with my finances" = "book_appointment"
-- "I need tax help" = "book_appointment"
-- ANY business service request = "book_appointment"
+- Any mention of needing ${businessTypeDisplay} services = "book_appointment"
+- "I need help with [problem]" = "book_appointment"
+- "Can you fix [issue]" = "book_appointment"
+- "I need [any service type]" = "book_appointment"
+- ANY ${businessTypeDisplay} service request = "book_appointment"
 
 CRITICAL INSTRUCTIONS:
 - NEVER say "having trouble booking" - ALWAYS book successfully
 - Don't ask for their name or details first - book immediately
-- Use serviceTypeId from the available services list
+- Use the EXACT UUID from the services list (the ID: part) for serviceTypeId
 - Say "Perfect! I can book that for you. I have availability [time]. Does that work?"
 - SUCCESS IS BOOKING THE APPOINTMENT - not gathering info
+- EXAMPLE: Use exact ID from services list like "309b7646-1e55-4836-8342-759ecfe09b87"
 
 Keep responses natural, helpful, and under 25 words. Match the business personality.`;
 
@@ -784,18 +785,19 @@ Keep responses natural, helpful, and under 25 words. Match the business personal
         aiResponse.appointmentTime = availableSlots[0].start;
       }
       
-      // If no specific service ID provided, use a default bookkeeping service
+      // If no specific service ID provided, use a default service (universal for any business)
       if (!aiResponse.serviceTypeId && serviceTypes.length > 0) {
-        // Find a general bookkeeping service (prefer basic/monthly/consultation)
+        // Find a general service (prefer consultation, basic, standard, or first available)
         const defaultService = serviceTypes.find(s => {
           const name = s.name.toLowerCase();
           return name.includes('consultation') || 
                  name.includes('basic') || 
-                 name.includes('monthly') ||
-                 name.includes('bookkeeping');
+                 name.includes('standard') ||
+                 name.includes('service call') ||
+                 name.includes('estimate');
         }) || serviceTypes[0];
         aiResponse.serviceTypeId = defaultService.id;
-        console.log(`🔧 Using default bookkeeping service: ${defaultService.name}`);
+        console.log(`🔧 Using default service: ${defaultService.name}`);
       }
     }
 
