@@ -980,6 +980,10 @@ ${serviceTypesList}
 
 CUSTOMER REQUEST: "${speechText}"
 
+CONVERSATION CONTEXT:
+- If customer already mentioned a service and this message contains date/time words, USE "book_appointment"
+- If customer says words like: tomorrow, Monday, Tuesday, Wednesday, Thursday, Friday, morning, afternoon, this week, next week - immediately USE "book_appointment"
+
 SAFETY GUIDELINES:
 - If customer uses profanity, inappropriate language, or discusses illegal activities, politely redirect to business services
 - If request is not related to ${businessTypeDisplay} services, politely explain what services you offer
@@ -1007,22 +1011,24 @@ RESPONSE FORMAT (JSON):
 }
 
 ACTION GUIDELINES:
-- Use "get_more_info" when customer requests a service but hasn't specified date/time
-- Use "book_appointment" ONLY when customer has specified both service AND preferred date/time
+- Use "get_more_info" ONLY for the first service request to ask for date preference
+- Use "book_appointment" when customer mentions ANY date/day (tomorrow, Monday, Friday, etc.)
 - Use "provide_info" only for pricing questions or general info requests
 
-BOOKING CRITERIA:
-- First service request = "get_more_info" (ask for date preference)
-- Service + date mentioned = "book_appointment" 
-- "I need help with [problem]" = "get_more_info" (ask when they want it)
-- Only book when you have BOTH service AND date preference
+BOOKING CRITERIA - ALWAYS BOOK WHEN DATE IS MENTIONED:
+- Customer says "tomorrow" = "book_appointment"
+- Customer says "Monday", "Tuesday", etc. = "book_appointment" 
+- Customer says "morning", "afternoon" = "book_appointment"
+- Customer says "this week", "next week" = "book_appointment"
+- ANY time/date reference = "book_appointment"
+- If unsure about timing, default to "book_appointment"
 
 CRITICAL INSTRUCTIONS:
+- FIRST service request: "get_more_info" and ask "What day works best?"
+- SECOND response with date: "book_appointment" and book immediately
+- NEVER ask "What day works best?" twice in a row
 - NEVER say "having trouble booking" - ALWAYS book successfully
-- Don't ask for their name or details first - book immediately
 - Use the EXACT UUID from the services list (the ID: part) for serviceTypeId
-- Say "Perfect! I can help you schedule that. What day works best for you this week?"
-- SUCCESS IS BOOKING THE APPOINTMENT - not gathering info
 - EXAMPLE: Use exact ID from services list like "309b7646-1e55-4836-8342-759ecfe09b87"
 - DO NOT put text in appointmentTime - leave it null, real time will be assigned
 - MANDATORY: serviceTypeId MUST be an exact UUID from the services list above
