@@ -608,14 +608,15 @@ app.post('/voice/process/:businessId', async (req, res) => {
       });
 
       twiml.say('I didn\'t catch that. Let me have someone call you back.');
+      twiml.hangup();
     } else {
       // Provide information or transfer
       twiml.say({
         voice: business.ai_voice_id || 'Polly.Joanna-Neural'
       }, aiResponse.response);
+      twiml.hangup();
     }
 
-    twiml.hangup();
     res.type('text/xml').send(twiml.toString());
 
   } catch (error) {
