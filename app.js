@@ -684,9 +684,21 @@ async function processVoiceForBusiness(req, res) {
           [appointment.id, CallSid]
         );
 
+        // Success! Appointment booked, give confirmation
+        const confirmedTime = appointmentTime.toLocaleString('en-US', {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+        
         twiml.say({
           voice: business.ai_voice_id || 'Polly.Joanna-Neural'
-        }, aiResponse.response);
+        }, `Perfect! I've booked your ${serviceTypes.find(s => s.id === serviceTypeId)?.name || 'appointment'} for ${confirmedTime}. You'll receive a confirmation text shortly. Thank you for calling ${business.name}!`);
+        
+        twiml.hangup();
 
       } catch (bookingError) {
         console.error('❌ BOOKING FAILED:', bookingError);
@@ -837,7 +849,7 @@ CRITICAL INSTRUCTIONS:
 - NEVER say "having trouble booking" - ALWAYS book successfully
 - Don't ask for their name or details first - book immediately
 - Use the EXACT UUID from the services list (the ID: part) for serviceTypeId
-- Say "Perfect! I can book that for you. I have availability tomorrow. Does that work?"
+- Say "Perfect! I can book that for you right now. Let me schedule that appointment."
 - SUCCESS IS BOOKING THE APPOINTMENT - not gathering info
 - EXAMPLE: Use exact ID from services list like "309b7646-1e55-4836-8342-759ecfe09b87"
 - DO NOT put text in appointmentTime - leave it null, real time will be assigned
