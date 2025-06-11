@@ -1270,8 +1270,9 @@ Example format:
   }
 ]`;
 
-  // Retry AI generation up to 3 times
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  try {
+    // Retry AI generation up to 3 times
+    for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       console.log(`🤖 AI generation attempt ${attempt}/3 for ${businessType}`);
       
@@ -1341,11 +1342,11 @@ Example format:
       await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
       continue;
     }
-  }
+    }
+    
+    // This should never be reached due to the throw above, but just in case
+    throw new Error('Unexpected end of AI generation retry loop');
   
-  // This should never be reached due to the throw above, but just in case
-  throw new Error('Unexpected end of AI generation retry loop');
-
   } catch (error) {
     console.error('AI service generation error:', error);
     console.error('Error details:', error.message);
