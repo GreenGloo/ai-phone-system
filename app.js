@@ -1748,12 +1748,67 @@ app.post('/api/admin/fix-business/:businessId', async (req, res) => {
     await pool.query('DELETE FROM service_types WHERE business_id = $1', [businessId]);
     console.log('🗑️ Deleted old services');
     
-    // Generate new services with AI
-    const generatedServices = await generateServicesWithAI(businessType, 'Childers Tax Preparation');
-    console.log(`🤖 Generated ${generatedServices.length} new services`);
+    // Create tax preparation services manually since AI might be failing
+    const taxServices = [
+      {
+        name: "Individual Tax Return",
+        service_key: "individual-tax-return",
+        description: "Complete individual tax return preparation and filing",
+        duration_minutes: 90,
+        base_rate: 150,
+        emergency_multiplier: 1.0,
+        travel_buffer_minutes: 0,
+        is_emergency: false,
+        is_active: true
+      },
+      {
+        name: "Business Tax Return",
+        service_key: "business-tax-return", 
+        description: "Small business tax return preparation and filing",
+        duration_minutes: 120,
+        base_rate: 250,
+        emergency_multiplier: 1.0,
+        travel_buffer_minutes: 0,
+        is_emergency: false,
+        is_active: true
+      },
+      {
+        name: "Tax Consultation",
+        service_key: "tax-consultation",
+        description: "Professional tax advice and planning session",
+        duration_minutes: 60,
+        base_rate: 100,
+        emergency_multiplier: 1.0,
+        travel_buffer_minutes: 0,
+        is_emergency: false,
+        is_active: true
+      },
+      {
+        name: "Bookkeeping Services",
+        service_key: "bookkeeping",
+        description: "Monthly bookkeeping and financial record management",
+        duration_minutes: 120,
+        base_rate: 75,
+        emergency_multiplier: 1.0,
+        travel_buffer_minutes: 0,
+        is_emergency: false,
+        is_active: true
+      },
+      {
+        name: "Tax Amendment",
+        service_key: "tax-amendment",
+        description: "Amend previous year tax returns",
+        duration_minutes: 60,
+        base_rate: 125,
+        emergency_multiplier: 1.0,
+        travel_buffer_minutes: 0,
+        is_emergency: false,
+        is_active: true
+      }
+    ];
     
-    // Insert new services
-    for (const serviceType of generatedServices) {
+    // Insert tax services
+    for (const serviceType of taxServices) {
       await pool.query(
         `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
@@ -1772,17 +1827,17 @@ app.post('/api/admin/fix-business/:businessId', async (req, res) => {
       );
     }
     
-    console.log(`✅ Successfully fixed business ${businessId} with ${businessType} services`);
+    console.log(`✅ Successfully fixed business ${businessId} with ${taxServices.length} ${businessType} services`);
     
     res.json({
       success: true,
-      message: `Fixed business with ${generatedServices.length} ${businessType} services`,
-      services: generatedServices
+      message: `Fixed business with ${taxServices.length} ${businessType} services`,
+      services: taxServices
     });
     
   } catch (error) {
     console.error('Error fixing business:', error);
-    res.status(500).json({ error: 'Failed to fix business' });
+    res.status(500).json({ error: 'Failed to fix business', details: error.message });
   }
 });
 
