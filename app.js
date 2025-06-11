@@ -82,8 +82,8 @@ const getBusinessContext = async (req, res, next) => {
 
 // Serve static pages (these must come before static middleware conflicts)
 app.get('/', (req, res) => {
-  console.log('🏠 Serving landing page');
-  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+  console.log('🏠 Root route hit - serving landing page');
+  res.send('Landing page route is working! This should be the landing page.');
 });
 
 app.get('/onboarding', (req, res) => {
