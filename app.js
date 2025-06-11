@@ -708,12 +708,17 @@ RESPONSE FORMAT (JSON):
 }
 
 ACTION GUIDELINES:
-- Use "get_more_info" ONLY if you're missing critical information (like which specific service they want if multiple options exist)
-- Use "book_appointment" if you know: what service they want (even generally like "tax preparation") and they want to schedule
-- Use "provide_info" only for statements that don't need any response (like "We're closed" or "Here are our hours")
+- Use "book_appointment" IMMEDIATELY if customer wants ANY service and shows intent to schedule
+- Use "get_more_info" ONLY if truly unclear what they want (avoid this when possible)
+- Use "provide_info" only for pricing questions or general info requests
 
-BOOKING CRITERIA: If customer wants tax service and agrees to schedule, use "book_appointment" - you don't need their name upfront!
-AVOID LOOPS: Don't keep asking for more details once they've indicated they want a service and want to schedule.
+BOOKING CRITERIA: 
+- If customer mentions ANY ${businessTypeDisplay} need + wants to schedule = "book_appointment"
+- If customer says "I need bookkeeping" or similar = "book_appointment" 
+- Don't ask for their name first - book the appointment immediately
+- You can get details AFTER booking
+
+CRITICAL: AVOID CONVERSATION LOOPS - Book appointments aggressively to prevent hanging up!
 
 Keep responses natural, helpful, and under 25 words. Match the business personality.`;
 
@@ -738,15 +743,18 @@ Keep responses natural, helpful, and under 25 words. Match the business personal
         aiResponse.appointmentTime = availableSlots[0].start;
       }
       
-      // If no specific service ID provided, use a default tax service
+      // If no specific service ID provided, use a default bookkeeping service
       if (!aiResponse.serviceTypeId && serviceTypes.length > 0) {
-        // Find a general tax service (prefer consultation)
-        const defaultService = serviceTypes.find(s => 
-          s.name.toLowerCase().includes('consultation') || 
-          s.name.toLowerCase().includes('individual')
-        ) || serviceTypes[0];
+        // Find a general bookkeeping service (prefer basic/monthly/consultation)
+        const defaultService = serviceTypes.find(s => {
+          const name = s.name.toLowerCase();
+          return name.includes('consultation') || 
+                 name.includes('basic') || 
+                 name.includes('monthly') ||
+                 name.includes('bookkeeping');
+        }) || serviceTypes[0];
         aiResponse.serviceTypeId = defaultService.id;
-        console.log(`🔧 Using default service: ${defaultService.name}`);
+        console.log(`🔧 Using default bookkeeping service: ${defaultService.name}`);
       }
     }
 
