@@ -8,6 +8,7 @@ const OpenAI = require('openai');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const cors = require('cors');
 const path = require('path');
+const { processSimpleVoice } = require('./simple-booking');
 
 const app = express();
 app.use(express.json());
@@ -561,6 +562,7 @@ app.post('/voice/incoming/:businessId', async (req, res) => {
       method: 'POST'
     });
     
+    // Only execute if both gathers fail
     twiml.say('I\'m having trouble hearing you. Let me have someone call you back.');
     twiml.hangup();
 
@@ -609,6 +611,572 @@ app.post('/voice/process', async (req, res) => {
     res.type('text/xml').send(twiml.toString());
   }
 });
+
+// SIMPLE BOOKING ENDPOINT - Redesigned for reliability
+app.post('/voice/simple/:businessId', processSimpleVoice);
+
+// PUBLIC BOOKING CALENDAR - For customers to book manually
+app.get('/book/:businessId', async (req, res) => {
+  try {
+    const businessId = req.params.businessId;
+    
+    // Get business info and services
+    const businessResult = await pool.query(
+      'SELECT * FROM businesses WHERE id = $1 AND status = $2',
+      [businessId, 'active']
+    );
+    
+    if (businessResult.rows.length === 0) {
+      return res.status(404).send('Business not found or inactive');
+    }
+    
+    const business = businessResult.rows[0];
+    
+    // Get active services
+    const servicesResult = await pool.query(
+      'SELECT * FROM service_types WHERE business_id = $1 AND is_active = true ORDER BY display_order, name',
+      [businessId]
+    );
+    
+    const services = servicesResult.rows;
+    
+    // Generate public booking page HTML
+    const bookingHTML = generateBookingPageHTML(business, services);
+    res.send(bookingHTML);
+    
+  } catch (error) {
+    console.error('Public booking page error:', error);
+    res.status(500).send('Booking system temporarily unavailable');
+  }
+});
+
+// API endpoint for public booking submission
+app.post('/api/book/:businessId', async (req, res) => {
+  try {
+    const businessId = req.params.businessId;
+    const { customerName, customerPhone, customerEmail, serviceId, appointmentDate, appointmentTime, notes } = req.body;
+    
+    // Validate required fields
+    if (!customerName || !customerPhone || !serviceId || !appointmentDate || !appointmentTime) {
+      return res.status(400).json({ error: 'Please fill in all required fields' });
+    }
+    
+    // Get service details
+    const serviceResult = await pool.query(
+      'SELECT * FROM service_types WHERE id = $1 AND business_id = $2 AND is_active = true',
+      [serviceId, businessId]
+    );
+    
+    if (serviceResult.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid service selected' });
+    }
+    
+    const service = serviceResult.rows[0];
+    
+    // Create appointment datetime
+    const appointmentDateTime = new Date(`${appointmentDate}T${appointmentTime}`);
+    const endTime = new Date(appointmentDateTime.getTime() + service.duration_minutes * 60000);
+    
+    // Insert appointment
+    const result = await pool.query(
+      `INSERT INTO appointments (
+        business_id, customer_name, customer_phone, customer_email,
+        service_type_id, service_name, issue_description, start_time, end_time,
+        duration_minutes, estimated_revenue, booking_source, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING id, start_time`,
+      [
+        businessId,
+        customerName,
+        customerPhone,
+        customerEmail || null,
+        serviceId,
+        service.name,
+        notes || '',
+        appointmentDateTime.toISOString(),
+        endTime.toISOString(),
+        service.duration_minutes,
+        service.base_rate,
+        'public_booking',
+        'scheduled'
+      ]
+    );
+    
+    // Send notifications (reuse the SMS function)
+    await sendPublicBookingNotifications(businessId, {
+      customerName,
+      customerPhone,
+      service: service.name,
+      appointmentTime: appointmentDateTime,
+      notes: notes || ''
+    }, result.rows[0]);
+    
+    console.log('✅ Public booking successful:', result.rows[0].id);
+    
+    res.json({
+      success: true,
+      message: 'Appointment booked successfully!',
+      appointmentId: result.rows[0].id,
+      confirmationTime: appointmentDateTime.toLocaleString()
+    });
+    
+  } catch (error) {
+    console.error('Public booking error:', error);
+    res.status(500).json({ error: 'Failed to book appointment' });
+  }
+});
+
+// API endpoint to get available time slots for a specific date and service
+app.get('/api/availability/:businessId', async (req, res) => {
+  try {
+    const businessId = req.params.businessId;
+    const { date, serviceId } = req.query;
+    
+    if (!date || !serviceId) {
+      return res.status(400).json({ error: 'Date and serviceId are required' });
+    }
+    
+    // Get business hours
+    const businessResult = await pool.query(
+      'SELECT business_hours FROM businesses WHERE id = $1',
+      [businessId]
+    );
+    
+    if (businessResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+    
+    const business = businessResult.rows[0];
+    
+    // Get service duration
+    const serviceResult = await pool.query(
+      'SELECT duration_minutes FROM service_types WHERE id = $1 AND business_id = $2',
+      [serviceId, businessId]
+    );
+    
+    if (serviceResult.rows.length === 0) {
+      return res.status(400).json({ error: 'Service not found' });
+    }
+    
+    const serviceDuration = serviceResult.rows[0].duration_minutes;
+    const bufferTime = 30; // Default buffer time
+    
+    // Get existing appointments for the date
+    const appointmentDate = new Date(date);
+    const startOfDay = new Date(appointmentDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(appointmentDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    const appointmentsResult = await pool.query(
+      `SELECT start_time, end_time, duration_minutes 
+       FROM appointments 
+       WHERE business_id = $1 
+       AND start_time >= $2 
+       AND start_time <= $3 
+       AND status NOT IN ('cancelled', 'no_show')
+       ORDER BY start_time`,
+      [businessId, startOfDay.toISOString(), endOfDay.toISOString()]
+    );
+    
+    const existingAppointments = appointmentsResult.rows;
+    
+    // Calculate available slots
+    const availableSlots = calculateAvailableSlots(
+      appointmentDate,
+      business.business_hours,
+      existingAppointments,
+      serviceDuration,
+      bufferTime
+    );
+    
+    res.json({ availableSlots });
+    
+  } catch (error) {
+    console.error('Availability API error:', error);
+    res.status(500).json({ error: 'Failed to get availability' });
+  }
+});
+
+// Function to calculate available time slots
+function calculateAvailableSlots(date, businessHours, existingAppointments, serviceDuration, bufferTime) {
+  const dayName = date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+  const dayHours = businessHours[dayName];
+  
+  if (!dayHours || !dayHours.enabled) {
+    return []; // Business closed on this day
+  }
+  
+  const [startHour, startMinute] = dayHours.start.split(':').map(Number);
+  const [endHour, endMinute] = dayHours.end.split(':').map(Number);
+  
+  // Create time slots every 30 minutes
+  const slots = [];
+  const slotInterval = 30; // minutes
+  
+  // Start from business opening time
+  let currentTime = new Date(date);
+  currentTime.setHours(startHour, startMinute, 0, 0);
+  
+  const businessEnd = new Date(date);
+  businessEnd.setHours(endHour, endMinute, 0, 0);
+  
+  // Don't allow booking in the past
+  const now = new Date();
+  if (currentTime < now) {
+    // Round up to next slot interval
+    const minutesFromNow = Math.ceil((now - currentTime) / (1000 * 60));
+    const slotsFromNow = Math.ceil(minutesFromNow / slotInterval);
+    currentTime = new Date(currentTime.getTime() + slotsFromNow * slotInterval * 60 * 1000);
+  }
+  
+  while (currentTime < businessEnd) {
+    const slotEnd = new Date(currentTime.getTime() + (serviceDuration + bufferTime) * 60 * 1000);
+    
+    // Check if this slot fits within business hours
+    if (slotEnd <= businessEnd) {
+      // Check for conflicts with existing appointments
+      const hasConflict = existingAppointments.some(appointment => {
+        const aptStart = new Date(appointment.start_time);
+        const aptEnd = new Date(appointment.end_time);
+        
+        // Add buffer time to existing appointments
+        const bufferedStart = new Date(aptStart.getTime() - bufferTime * 60 * 1000);
+        const bufferedEnd = new Date(aptEnd.getTime() + bufferTime * 60 * 1000);
+        
+        // Check if proposed slot overlaps with buffered appointment
+        return (currentTime < bufferedEnd && slotEnd > bufferedStart);
+      });
+      
+      if (!hasConflict) {
+        slots.push({
+          time: currentTime.toTimeString().slice(0, 5), // HH:MM format
+          value: currentTime.toTimeString().slice(0, 5),
+          display: currentTime.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+          })
+        });
+      }
+    }
+    
+    // Move to next slot
+    currentTime = new Date(currentTime.getTime() + slotInterval * 60 * 1000);
+  }
+  
+  return slots;
+}
+
+// Helper function for public booking notifications
+async function sendPublicBookingNotifications(businessId, bookingData, appointment) {
+  try {
+    // Get business owner info
+    const ownerResult = await pool.query(
+      `SELECT u.phone, u.first_name, u.last_name, b.name as business_name, b.phone_number 
+       FROM businesses b 
+       JOIN users u ON b.user_id = u.id 
+       WHERE b.id = $1`,
+      [businessId]
+    );
+    
+    if (ownerResult.rows.length === 0) return;
+    
+    const owner = ownerResult.rows[0];
+    const appointmentTime = bookingData.appointmentTime.toLocaleString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'America/New_York'
+    });
+    
+    // Send SMS to owner
+    const ownerMessage = `📅 NEW ONLINE BOOKING!
+
+${owner.business_name}
+👤 Customer: ${bookingData.customerName}
+📞 Phone: ${bookingData.customerPhone}
+🔧 Service: ${bookingData.service}
+⏰ Time: ${appointmentTime}
+
+📋 Notes: ${bookingData.notes || 'None'}
+
+🌐 Booked via Online Calendar`;
+
+    if (owner.phone && owner.phone_number) {
+      await twilioClient.messages.create({
+        body: ownerMessage,
+        from: owner.phone_number,
+        to: owner.phone
+      });
+    }
+    
+    // Send confirmation to customer
+    const customerMessage = `✅ APPOINTMENT CONFIRMED
+
+${owner.business_name}
+📅 ${appointmentTime}
+🔧 ${bookingData.service}
+
+We'll call if running late!
+Questions? Call ${owner.phone_number}`;
+
+    await twilioClient.messages.create({
+      body: customerMessage,
+      from: owner.phone_number,
+      to: bookingData.customerPhone
+    });
+    
+    console.log('📱 Public booking notifications sent');
+    
+  } catch (error) {
+    console.error('Public booking notification error:', error);
+  }
+}
+
+// Generate public booking page HTML
+function generateBookingPageHTML(business, services) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Appointment - ${business.name}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .service-card:hover { transform: translateY(-2px); transition: all 0.3s ease; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen py-8">
+        <div class="max-w-2xl mx-auto px-4">
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">${business.name}</h1>
+                <p class="text-gray-600">Book your appointment online</p>
+                <div class="mt-4 flex justify-center items-center text-sm text-gray-500">
+                    <span class="inline-flex items-center">
+                        <span class="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                        Instant confirmation
+                    </span>
+                </div>
+            </div>
+
+            <!-- Booking Form -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <form id="booking-form">
+                    <!-- Customer Information -->
+                    <div class="mb-6">
+                        <h2 class="text-lg font-semibold mb-4">Your Information</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+                                <input type="text" id="customerName" required 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
+                                <input type="tel" id="customerPhone" required 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Email (optional)</label>
+                            <input type="email" id="customerEmail" 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+
+                    <!-- Service Selection -->
+                    <div class="mb-6">
+                        <h2 class="text-lg font-semibold mb-4">Select Service</h2>
+                        <div class="space-y-3">
+                            ${services.map(service => `
+                                <div class="service-card border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-blue-500" 
+                                     onclick="selectService('${service.id}', '${service.name}', ${service.duration_minutes}, ${service.base_rate})">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <h3 class="font-medium text-gray-900">${service.name}</h3>
+                                            <p class="text-sm text-gray-600 mt-1">${service.description || ''}</p>
+                                            <p class="text-sm text-gray-500 mt-1">${service.duration_minutes} minutes</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-lg font-semibold text-blue-600">$${service.base_rate}</p>
+                                        </div>
+                                    </div>
+                                    <input type="radio" name="serviceId" value="${service.id}" class="hidden">
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <!-- Date & Time Selection -->
+                    <div class="mb-6">
+                        <h2 class="text-lg font-semibold mb-4">Select Date & Time</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Date *</label>
+                                <input type="date" id="appointmentDate" required 
+                                       min="${new Date().toISOString().split('T')[0]}"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Time *</label>
+                                <select id="appointmentTime" required 
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">First select a service and date</option>
+                                </select>
+                                <div id="timeSlotLoading" class="hidden mt-2 text-sm text-gray-500">
+                                    Loading available times...
+                                </div>
+                                <div id="noTimeSlotsMessage" class="hidden mt-2 text-sm text-orange-600">
+                                    No available times for this date. Please select another date.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Notes -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Additional Notes</label>
+                        <textarea id="notes" rows="3" 
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  placeholder="Describe what you need help with..."></textarea>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button type="submit" 
+                            class="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold">
+                        Book Appointment
+                    </button>
+                </form>
+            </div>
+
+            <!-- Contact Info -->
+            <div class="text-center mt-8 text-gray-600">
+                <p>Need help? Call us at <a href="tel:${business.phone_number}" class="text-blue-600 font-semibold">${business.phone_number}</a></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedServiceId = null;
+
+        function selectService(serviceId, serviceName, duration, price) {
+            // Remove previous selection
+            document.querySelectorAll('.service-card').forEach(card => {
+                card.classList.remove('border-blue-500', 'bg-blue-50');
+            });
+            
+            // Select new service
+            event.currentTarget.classList.add('border-blue-500', 'bg-blue-50');
+            selectedServiceId = serviceId;
+            
+            // Update hidden input
+            document.querySelector(\`input[value="\${serviceId}"]\`).checked = true;
+            
+            // Update time slots if date is selected
+            const dateInput = document.getElementById('appointmentDate');
+            if (dateInput.value) {
+                updateTimeSlots();
+            } else {
+                const timeSelect = document.getElementById('appointmentTime');
+                timeSelect.innerHTML = '<option value="">Select a date first</option>';
+            }
+        }
+
+        function updateTimeSlots() {
+            if (!selectedServiceId) return;
+            
+            const dateInput = document.getElementById('appointmentDate');
+            const timeSelect = document.getElementById('appointmentTime');
+            const loadingDiv = document.getElementById('timeSlotLoading');
+            const noTimesDiv = document.getElementById('noTimeSlotsMessage');
+            
+            if (!dateInput.value) return;
+            
+            // Show loading
+            loadingDiv.classList.remove('hidden');
+            noTimesDiv.classList.add('hidden');
+            timeSelect.innerHTML = '<option value="">Loading...</option>';
+            
+            // Fetch available slots
+            fetch(\`/api/availability/${business.id}?date=\${dateInput.value}&serviceId=\${selectedServiceId}\`)
+                .then(response => response.json())
+                .then(data => {
+                    loadingDiv.classList.add('hidden');
+                    
+                    if (data.availableSlots && data.availableSlots.length > 0) {
+                        timeSelect.innerHTML = '<option value="">Select a time</option>';
+                        data.availableSlots.forEach(slot => {
+                            const option = document.createElement('option');
+                            option.value = slot.value;
+                            option.textContent = slot.display;
+                            timeSelect.appendChild(option);
+                        });
+                        noTimesDiv.classList.add('hidden');
+                    } else {
+                        timeSelect.innerHTML = '<option value="">No times available</option>';
+                        noTimesDiv.classList.remove('hidden');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching time slots:', error);
+                    loadingDiv.classList.add('hidden');
+                    timeSelect.innerHTML = '<option value="">Error loading times</option>';
+                });
+        }
+
+        // Update time slots when date changes
+        document.getElementById('appointmentDate').addEventListener('change', updateTimeSlots);
+
+        document.getElementById('booking-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!selectedServiceId) {
+                alert('Please select a service');
+                return;
+            }
+            
+            const formData = {
+                customerName: document.getElementById('customerName').value,
+                customerPhone: document.getElementById('customerPhone').value,
+                customerEmail: document.getElementById('customerEmail').value,
+                serviceId: selectedServiceId,
+                appointmentDate: document.getElementById('appointmentDate').value,
+                appointmentTime: document.getElementById('appointmentTime').value,
+                notes: document.getElementById('notes').value
+            };
+            
+            try {
+                const response = await fetch('/api/book/${business.id}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('🎉 Appointment booked successfully!\\n\\nYou will receive a confirmation text shortly.');
+                    location.reload();
+                } else {
+                    alert('Error: ' + result.error);
+                }
+            } catch (error) {
+                alert('An error occurred. Please try again.');
+            }
+        });
+    </script>
+</body>
+</html>`;
+}
 
 // Voice processing endpoint for AI conversations
 app.post('/voice/process/:businessId', processVoiceForBusiness);
@@ -839,6 +1407,7 @@ async function processVoiceForBusiness(req, res) {
         twiml.say({
           voice: business.ai_voice_id || 'Polly.Joanna-Neural'
         }, "I apologize, but I'm having trouble completing your booking right now. Let me have someone call you back within the hour to schedule your appointment.");
+        twiml.hangup();
       }
     } else if (aiResponse.action === 'get_more_info') {
       // This should rarely happen now, but handle it
@@ -854,6 +1423,7 @@ async function processVoiceForBusiness(req, res) {
         method: 'POST'
       });
 
+      // Only execute if gather fails
       twiml.say('I didn\'t catch that. Let me have someone call you back.');
       twiml.hangup();
     } else {
@@ -873,7 +1443,9 @@ async function processVoiceForBusiness(req, res) {
           speechTimeout: 'auto',
           action: `/voice/process/${businessId}`,
           method: 'POST'
-        });
+        }, 'I\'m ready to help you schedule that appointment. What day works best for you?');
+        
+        // Only hangup if gather times out
         twiml.say('I didn\'t catch that. Let me have someone call you back.');
         twiml.hangup();
       }
@@ -2160,6 +2732,81 @@ app.get('/api/debug/all-businesses', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Complete onboarding with automatic phone number provisioning
+app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { areaCode } = req.body;
+    
+    // Check if business already has a phone number
+    if (req.business.phone_number) {
+      return res.json({
+        success: true,
+        message: 'Onboarding already complete',
+        phoneNumber: req.business.phone_number,
+        alreadyComplete: true
+      });
+    }
+    
+    console.log(`📞 Auto-provisioning phone number for ${req.business.name}`);
+    
+    // Search for available phone numbers
+    const searchParams = {
+      limit: 5,
+      voiceEnabled: true,
+      smsEnabled: true
+    };
+    
+    if (areaCode) {
+      searchParams.areaCode = areaCode;
+    }
+    
+    const availableNumbers = await twilioClient.availablePhoneNumbers('US')
+      .local
+      .list(searchParams);
+    
+    if (availableNumbers.length === 0) {
+      throw new Error('No phone numbers available in the requested area');
+    }
+    
+    const selectedNumber = availableNumbers[0].phoneNumber;
+    
+    // Purchase the phone number with automatic webhook configuration
+    const baseUrl = process.env.BASE_URL || 'https://nodejs-production-5e30.up.railway.app';
+    const purchasedNumber = await twilioClient.incomingPhoneNumbers.create({
+      phoneNumber: selectedNumber,
+      voiceUrl: `${baseUrl}/voice/incoming/${req.business.id}`,
+      voiceMethod: 'POST',
+      smsUrl: `${baseUrl}/sms/incoming/${req.business.id}`,
+      smsMethod: 'POST',
+      friendlyName: `${req.business.name} - CallCatcher AI`
+    });
+    
+    // Update business with new phone number and mark onboarding complete
+    await pool.query(
+      'UPDATE businesses SET phone_number = $1, onboarding_completed = true WHERE id = $2',
+      [selectedNumber, req.business.id]
+    );
+    
+    console.log(`✅ ${req.business.name} onboarding complete with phone ${selectedNumber}`);
+    
+    res.json({
+      success: true,
+      message: 'Onboarding completed successfully!',
+      phoneNumber: selectedNumber,
+      twilioSid: purchasedNumber.sid,
+      webhookConfigured: true,
+      ready: true
+    });
+    
+  } catch (error) {
+    console.error('Auto-provisioning error:', error);
+    res.status(500).json({ 
+      error: 'Failed to complete onboarding',
+      details: error.message 
+    });
   }
 });
 
