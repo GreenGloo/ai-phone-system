@@ -28,69 +28,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // JWT secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
-// Default service types for new businesses
-const defaultServiceTypes = [
-  {
-    name: 'Emergency Service',
-    service_key: 'emergency',
-    description: 'Burst pipes, no water, flooding, gas leaks',
-    duration_minutes: 60,
-    base_rate: 150.00,
-    emergency_multiplier: 1.0,
-    travel_buffer_minutes: 30,
-    is_emergency: true
-  },
-  {
-    name: 'Drain Cleaning',
-    service_key: 'drain-cleaning',
-    description: 'Clogged drains, slow drainage, backups',
-    duration_minutes: 90,
-    base_rate: 120.00,
-    emergency_multiplier: 1.5,
-    travel_buffer_minutes: 30,
-    is_emergency: false
-  },
-  {
-    name: 'Water Heater Service',
-    service_key: 'water-heater',
-    description: 'Installation, repair, maintenance',
-    duration_minutes: 180,
-    base_rate: 100.00,
-    emergency_multiplier: 1.5,
-    travel_buffer_minutes: 45,
-    is_emergency: false
-  },
-  {
-    name: 'Pipe Repair',
-    service_key: 'pipe-repair',
-    description: 'Leaks, pipe replacement, fittings',
-    duration_minutes: 120,
-    base_rate: 110.00,
-    emergency_multiplier: 1.5,
-    travel_buffer_minutes: 30,
-    is_emergency: false
-  },
-  {
-    name: 'Fixture Installation',
-    service_key: 'fixture-install',
-    description: 'Toilets, faucets, sinks, showers',
-    duration_minutes: 90,
-    base_rate: 95.00,
-    emergency_multiplier: 1.5,
-    travel_buffer_minutes: 30,
-    is_emergency: false
-  },
-  {
-    name: 'Consultation',
-    service_key: 'consultation',
-    description: 'Estimates, inspection, planning',
-    duration_minutes: 45,
-    base_rate: 75.00,
-    emergency_multiplier: 1.0,
-    travel_buffer_minutes: 15,
-    is_emergency: false
-  }
-];
+// Removed hardcoded plumbing services - AI generation handles all business types
 
 // Middleware to verify JWT and extract user
 const authenticateToken = async (req, res, next) => {
@@ -258,13 +196,14 @@ app.post('/api/signup', async (req, res) => {
       
       console.log(`✅ Generated ${generatedServices.length} services for ${businessName}`);
     } catch (aiError) {
-      console.error('AI service generation failed, using defaults:', aiError);
+      console.error('AI service generation failed, using business-specific fallback:', aiError);
       
-      // Fallback to basic template if AI generation fails during signup
-      for (const serviceType of defaultServiceTypes) {
+      // Fallback to business-appropriate template if AI generation fails during signup
+      const fallbackServices = getBasicServiceTemplate(cleanBusinessType);
+      for (const serviceType of fallbackServices) {
         await pool.query(
-          `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
           [
             businessId,
             serviceType.name,
@@ -274,7 +213,8 @@ app.post('/api/signup', async (req, res) => {
             serviceType.base_rate,
             serviceType.emergency_multiplier,
             serviceType.travel_buffer_minutes,
-            serviceType.is_emergency
+            serviceType.is_emergency,
+            serviceType.is_active
           ]
         );
       }
@@ -1281,7 +1221,8 @@ async function generateServicesWithAI(businessType, businessName = '') {
     home_security: `Generate 10 essential home security services that a security system business typically offers. Include pricing, duration, and whether it's an emergency service.`,
     moving: `Generate 10 essential moving and relocation services that a moving company typically offers. Include pricing, duration, and whether it's an emergency service.`,
     painting: `Generate 10 essential painting services that a residential/commercial painting business typically offers. Include pricing, duration, and whether it's an emergency service.`,
-    flooring: `Generate 10 essential flooring services that a flooring contractor business typically offers. Include pricing, duration, and whether it's an emergency service.`
+    flooring: `Generate 10 essential flooring services that a flooring contractor business typically offers. Include pricing, duration, and whether it's an emergency service.`,
+    tax_preparation: `Generate 10 essential tax preparation and accounting services that a tax preparation business typically offers. Include pricing, duration, and whether it's an emergency service.`
   };
 
   // Use predefined prompt if available, otherwise create dynamic prompt for custom business types
@@ -1330,43 +1271,126 @@ Example format:
   }
 ]`;
 
-  try {
-    // Use OpenAI API (you can replace this with Claude API if preferred)
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [{ role: "user", content: fullPrompt }],
-      temperature: 0.7,
-      max_tokens: 2000
-    });
+  // Retry AI generation up to 3 times
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`🤖 AI generation attempt ${attempt}/3 for ${businessType}`);
+      
+      // Use faster model for better reliability
+      const completion = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [{ 
+          role: "system", 
+          content: "You are a business services expert. Always respond with valid JSON only. No explanations or additional text."
+        }, {
+          role: "user", 
+          content: fullPrompt
+        }],
+        temperature: 0.3, // Lower temperature for more consistent output
+        max_tokens: 2000
+      });
 
-    const servicesText = completion.choices[0].message.content;
-    
-    // Parse the JSON response
-    const jsonMatch = servicesText.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      throw new Error('No valid JSON array found in AI response');
+      const servicesText = completion.choices[0].message.content.trim();
+      console.log(`📝 AI response preview: ${servicesText.substring(0, 100)}...`);
+      
+      // More robust JSON extraction
+      let jsonText = servicesText;
+      
+      // Try to extract JSON array if embedded in text
+      const jsonMatch = servicesText.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[0];
+      }
+      
+      // Clean up common JSON issues
+      jsonText = jsonText
+        .replace(/```json|```/g, '') // Remove markdown code blocks
+        .replace(/\n/g, ' ') // Remove newlines
+        .trim();
+
+      const services = JSON.parse(jsonText);
+      
+      // Validate the response
+      if (!Array.isArray(services) || services.length === 0) {
+        throw new Error(`Invalid services array: got ${typeof services} with length ${services?.length}`);
+      }
+      
+      console.log(`✅ AI generated ${services.length} services successfully on attempt ${attempt}`);
+      
+      // Validate and clean the services before returning
+      return services.map((service, index) => ({
+        name: service.name || `Service ${index + 1}`,
+        service_key: service.service_key || service.name?.toLowerCase().replace(/[^a-z0-9]/g, '-') || `service-${index + 1}`,
+        description: service.description || 'Professional service',
+        duration_minutes: Math.max(15, Math.min(480, service.duration_minutes || 60)),
+        base_rate: Math.max(25, service.base_rate || 100),
+        emergency_multiplier: service.emergency_multiplier || 1.0,
+        travel_buffer_minutes: Math.max(0, Math.min(60, service.travel_buffer_minutes || 30)),
+        is_emergency: service.is_emergency || false,
+        is_active: true
+      }));
+      
+    } catch (parseError) {
+      console.error(`❌ AI generation attempt ${attempt} failed:`, parseError.message);
+      
+      if (attempt === 3) {
+        // Final attempt failed, throw to trigger fallback
+        throw new Error(`AI generation failed after 3 attempts. Last error: ${parseError.message}`);
+      }
+      
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+      continue;
     }
-
-    const services = JSON.parse(jsonMatch[0]);
-    
-    // Validate and clean the services
-    return services.map((service, index) => ({
-      name: service.name || `Service ${index + 1}`,
-      service_key: service.service_key || service.name?.toLowerCase().replace(/[^a-z0-9]/g, '-') || `service-${index + 1}`,
-      description: service.description || 'Professional service',
-      duration_minutes: Math.max(15, Math.min(480, service.duration_minutes || 60)),
-      base_rate: Math.max(25, service.base_rate || 100),
-      emergency_multiplier: service.emergency_multiplier || 1.0,
-      travel_buffer_minutes: Math.max(0, Math.min(60, service.travel_buffer_minutes || 30)),
-      is_emergency: service.is_emergency || false,
-      is_active: true
-    }));
+  }
+  
+  // This should never be reached due to the throw above, but just in case
+  throw new Error('Unexpected end of AI generation retry loop');
 
   } catch (error) {
     console.error('AI service generation error:', error);
+    console.error('Error details:', error.message);
     
-    // Fallback to basic template if AI fails
-    return getBasicServiceTemplate(businessType);
+    // DO NOT FALLBACK TO WRONG BUSINESS TYPE
+    // If AI fails, create basic services for the actual business type
+    const businessName = businessType.replace(/[_-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    console.log(`🔧 Creating basic ${businessName} services as AI fallback`);
+    
+    return [
+      {
+        name: `${businessName} Consultation`,
+        service_key: `${businessType}-consultation`,
+        description: `Professional ${businessName.toLowerCase()} consultation and assessment`,
+        duration_minutes: 60,
+        base_rate: 100,
+        emergency_multiplier: 1.0,
+        travel_buffer_minutes: 30,
+        is_emergency: false,
+        is_active: true
+      },
+      {
+        name: `${businessName} Service`,
+        service_key: `${businessType}-service`,
+        description: `Professional ${businessName.toLowerCase()} service`,
+        duration_minutes: 90,
+        base_rate: 150,
+        emergency_multiplier: 1.0,
+        travel_buffer_minutes: 30,
+        is_emergency: false,
+        is_active: true
+      },
+      {
+        name: `Emergency ${businessName}`,
+        service_key: `emergency-${businessType}`,
+        description: `Urgent ${businessName.toLowerCase()} service`,
+        duration_minutes: 60,
+        base_rate: 200,
+        emergency_multiplier: 1.5,
+        travel_buffer_minutes: 30,
+        is_emergency: true,
+        is_active: true
+      }
+    ];
   }
 }
 
@@ -1393,6 +1417,11 @@ function getBasicServiceTemplate(businessType) {
     auto_repair: [
       { name: "Oil Change", service_key: "oil-change", description: "Quick oil change and filter replacement", duration_minutes: 30, base_rate: 50, emergency_multiplier: 1.0, travel_buffer_minutes: 15, is_emergency: false, is_active: true },
       { name: "Emergency Roadside", service_key: "emergency-roadside", description: "Emergency roadside assistance", duration_minutes: 60, base_rate: 100, emergency_multiplier: 1.5, travel_buffer_minutes: 30, is_emergency: true, is_active: true }
+    ],
+    tax_preparation: [
+      { name: "Individual Tax Return", service_key: "individual-tax-return", description: "Complete individual tax return preparation", duration_minutes: 90, base_rate: 150, emergency_multiplier: 1.0, travel_buffer_minutes: 0, is_emergency: false, is_active: true },
+      { name: "Business Tax Return", service_key: "business-tax-return", description: "Small business tax return preparation", duration_minutes: 120, base_rate: 250, emergency_multiplier: 1.0, travel_buffer_minutes: 0, is_emergency: false, is_active: true },
+      { name: "Tax Consultation", service_key: "tax-consultation", description: "Professional tax advice and planning", duration_minutes: 60, base_rate: 100, emergency_multiplier: 1.0, travel_buffer_minutes: 0, is_emergency: false, is_active: true }
     ]
   };
 
