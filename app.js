@@ -549,6 +549,12 @@ app.post('/voice/process/:businessId', async (req, res) => {
 
     const twiml = new twilio.twiml.VoiceResponse();
 
+    console.log(`🤖 AI Response:`, {
+      action: aiResponse.action,
+      response: aiResponse.response,
+      intent: aiResponse.intent
+    });
+
     if (aiResponse.action === 'book_appointment') {
       // Try to book the appointment
       try {
@@ -686,9 +692,11 @@ RESPONSE FORMAT (JSON):
 }
 
 ACTION GUIDELINES:
-- Use "get_more_info" if you need to ask ANY question that requires a customer response
-- Use "book_appointment" only if you have enough info to actually schedule
-- Use "provide_info" only for simple information that doesn't need a response
+- Use "get_more_info" if you ask ANY question that needs an answer (like "Would you like to schedule?" or "What's your name?")
+- Use "book_appointment" only if you have customer name, service type, and can schedule immediately
+- Use "provide_info" only for statements that don't need any response (like "We're closed" or "Here are our hours")
+
+IMPORTANT: If you ask "Would you like to schedule an appointment?" you MUST use "get_more_info" action!
 
 Keep responses natural, helpful, and under 25 words. Match the business personality.`;
 
