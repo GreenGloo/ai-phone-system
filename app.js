@@ -17,7 +17,7 @@ app.use(cors());
 // IMPORTANT: Root route MUST be defined before static middleware
 app.get('/', (req, res) => {
   console.log('🏠 Root route hit - serving landing page');
-  res.send('Landing page route is working! This should be the landing page.');
+  res.type('text/plain').send('DEBUGGING: If you see this text, the Express route is working. The issue was that calendar interface was being served instead.');
 });
 
 app.use(express.static('public'));
