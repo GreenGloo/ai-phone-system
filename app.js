@@ -16,8 +16,8 @@ app.use(cors());
 
 // IMPORTANT: Root route MUST be defined before static middleware
 app.get('/', (req, res) => {
-  console.log('🏠 Root route hit - serving landing page');
-  res.type('text/plain').send('DEBUGGING: If you see this text, the Express route is working. The issue was that calendar interface was being served instead.');
+  console.log('🚨🚨🚨 URGENT: ROOT ROUTE HIT AT ' + new Date().toISOString() + ' 🚨🚨🚨');
+  res.type('text/plain').send('CLAUDE DEBUGGER 2025: THIS IS THE ACTUAL EXPRESS ROUTE FROM APP.JS FILE. IF YOU SEE CALENDAR INTERFACE, RAILWAY IS NOT RUNNING THE CORRECT FILE.');
 });
 
 app.use(express.static('public'));
