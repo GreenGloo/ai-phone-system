@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Settings - CallCatcher</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .tab-active { @apply bg-blue-600 text-white; }
+        .tab-inactive { @apply bg-gray-200 text-gray-700 hover:bg-gray-300; }
+        .hour-input { width: 80px; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-4">
+                <div class="flex items-center">
+                    <h1 class="text-2xl font-bold text-gray-900">📞 CallCatcher</h1>
+                    <span class="ml-2 text-sm text-gray-600">Business Settings</span>
+                </div>
+                <div class="flex items-center gap-4">
+                    <a href="/dashboard" class="text-gray-600 hover:text-gray-900">Dashboard</a>
+                    <button onclick="logout()" class="text-gray-600 hover:text-gray-900">Logout</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-6xl mx-auto py-8 px-4">
+        <!-- Page Header -->
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-900">Business Settings</h1>
+            <p class="text-gray-600 mt-2">Configure your business information, hours, and AI assistant</p>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="text-center py-8">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <p class="text-gray-600 mt-2">Loading settings...</p>
+        </div>
+
+        <!-- Settings Content -->
+        <div id="settingsContent" class="hidden">
+            <!-- Tab Navigation -->
+            <div class="border-b border-gray-200 mb-8">
+                <nav class="-mb-px flex space-x-8">
+                    <button onclick="showTab('business')" id="tab-business" class="tab-active py-2 px-4 rounded-t-lg font-medium text-sm">
+                        Business Info
+                    </button>
+                    <button onclick="showTab('hours')" id="tab-hours" class="tab-inactive py-2 px-4 rounded-t-lg font-medium text-sm">
+                        Business Hours
+                    </button>
+                    <button onclick="showTab('ai')" id="tab-ai" class="tab-inactive py-2 px-4 rounded-t-lg font-medium text-sm">
+                        AI Assistant
+                    </button>
+                    <button onclick="showTab('contact')" id="tab-contact" class="tab-inactive py-2 px-4 rounded-t-lg font-medium text-sm">
+                        Owner Contact
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Business Info Tab -->
+            <div id="content-business" class="tab-content">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-xl font-semibold mb-6">Business Information</h2>
+                    <form id="businessForm">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Business Name *</label>
+                                <input type="text" id="businessName" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Business Type *</label>
+                                <select id="businessType" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">Select business type</option>
+                                    <option value="bookkeeping">Bookkeeping</option>
+                                    <option value="plumbing">Plumbing</option>
+                                    <option value="electrical">Electrical</option>
+                                    <option value="hvac">HVAC</option>
+                                    <option value="cleaning">Cleaning</option>
+                                    <option value="landscaping">Landscaping</option>
+                                    <option value="auto_repair">Auto Repair</option>
+                                    <option value="tax_preparation">Tax Preparation</option>
+                                    <option value="dental">Dental</option>
+                                    <option value="medical">Medical</option>
+                                    <option value="legal">Legal</option>
+                                    <option value="consulting">Consulting</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mt-6">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Business Description</label>
+                            <textarea id="businessDescription" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Brief description of your business and services..."></textarea>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                                <input type="text" id="address" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">City</label>
+                                <input type="text" id="city" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">State</label>
+                                <input type="text" id="state" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">ZIP Code</label>
+                                <input type="text" id="zipCode" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                        </div>
+
+                        <div class="mt-6">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Website</label>
+                            <input type="url" id="website" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://yourwebsite.com">
+                        </div>
+
+                        <div class="mt-8">
+                            <button type="submit" class="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                Save Business Info
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Business Hours Tab -->
+            <div id="content-hours" class="tab-content hidden">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-xl font-semibold mb-6">Business Hours</h2>
+                    <p class="text-gray-600 mb-6">Set your operating hours for each day of the week. This affects when customers can book appointments.</p>
+                    
+                    <form id="hoursForm">
+                        <div id="businessHours" class="space-y-4">
+                            <!-- Hours will be populated by JavaScript -->
+                        </div>
+
+                        <div class="mt-8">
+                            <button type="submit" class="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                Save Business Hours
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- AI Assistant Tab -->
+            <div id="content-ai" class="tab-content hidden">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-xl font-semibold mb-6">AI Assistant Settings</h2>
+                    
+                    <form id="aiForm">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">AI Personality</label>
+                                <select id="aiPersonality" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="professional">Professional</option>
+                                    <option value="friendly">Friendly</option>
+                                    <option value="urgent">Urgent/Direct</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">AI Voice</label>
+                                <select id="aiVoice" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="Polly.Joanna-Neural">Joanna (Female, US)</option>
+                                    <option value="Polly.Matthew-Neural">Matthew (Male, US)</option>
+                                    <option value="Polly.Amy-Neural">Amy (Female, UK)</option>
+                                    <option value="Polly.Brian-Neural">Brian (Male, UK)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mt-6">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Emergency Message</label>
+                            <textarea id="emergencyMessage" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Message for emergency situations or after-hours calls..."></textarea>
+                        </div>
+
+                        <div class="mt-8">
+                            <button type="submit" class="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                Save AI Settings
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Owner Contact Tab -->
+            <div id="content-contact" class="tab-content hidden">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-xl font-semibold mb-6">Owner Contact Information</h2>
+                    <p class="text-gray-600 mb-6">This information is used for SMS notifications and customer confirmations.</p>
+                    
+                    <form id="contactForm">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">First Name *</label>
+                                <input type="text" id="ownerFirstName" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Last Name *</label>
+                                <input type="text" id="ownerLastName" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                                <input type="email" id="ownerEmail" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
+                                <input type="tel" id="ownerPhone" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="+1234567890">
+                            </div>
+                        </div>
+
+                        <div class="mt-8">
+                            <button type="submit" class="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                Save Contact Info
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Current Phone Number Display -->
+        <div id="phoneNumberInfo" class="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4 hidden">
+            <h3 class="text-lg font-semibold text-blue-900 mb-2">📞 Your CallCatcher Phone Number</h3>
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-blue-800 font-medium" id="currentPhoneNumber">Loading...</p>
+                    <p class="text-blue-600 text-sm">Customers call this number to reach your AI assistant</p>
+                </div>
+                <div>
+                    <button onclick="copyPhoneNumber()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                        Copy Number
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div id="successMessage" class="hidden fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded shadow-lg">
+        Settings saved successfully!
+    </div>
+    <div id="errorMessage" class="hidden fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded shadow-lg">
+        Error saving settings. Please try again.
+    </div>
+
+    <script>
+        let businessData = {};
+        let businessId = null;
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check authentication
+            const token = localStorage.getItem('token');
+            const business = localStorage.getItem('business');
+            
+            if (!token || !business) {
+                window.location.href = '/';
+                return;
+            }
+            
+            businessId = JSON.parse(business).id;
+            loadBusinessSettings();
+        });
+
+        // Tab switching
+        function showTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('[id^="tab-"]').forEach(tab => {
+                tab.classList.remove('tab-active');
+                tab.classList.add('tab-inactive');
+            });
+            
+            // Show selected tab content
+            document.getElementById(`content-${tabName}`).classList.remove('hidden');
+            
+            // Add active class to selected tab
+            document.getElementById(`tab-${tabName}`).classList.remove('tab-inactive');
+            document.getElementById(`tab-${tabName}`).classList.add('tab-active');
+        }
+
+        // Load business settings
+        async function loadBusinessSettings() {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch(`/api/businesses/${businessId}/settings`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load settings');
+                }
+                
+                const data = await response.json();
+                businessData = data.business;
+                
+                populateBusinessForm();
+                populateHoursForm();
+                populateAIForm();
+                populateContactForm();
+                showPhoneNumber();
+                
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('settingsContent').classList.remove('hidden');
+                
+            } catch (error) {
+                console.error('Error loading settings:', error);
+                showError('Failed to load business settings');
+            }
+        }
+
+        // Populate forms with data
+        function populateBusinessForm() {
+            document.getElementById('businessName').value = businessData.name || '';
+            document.getElementById('businessType').value = businessData.business_type || '';
+            document.getElementById('businessDescription').value = businessData.business_description || '';
+            document.getElementById('address').value = businessData.address || '';
+            document.getElementById('city').value = businessData.city || '';
+            document.getElementById('state').value = businessData.state || '';
+            document.getElementById('zipCode').value = businessData.zip_code || '';
+            document.getElementById('website').value = businessData.website || '';
+        }
+
+        function populateHoursForm() {
+            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+            const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+            const hoursContainer = document.getElementById('businessHours');
+            
+            hoursContainer.innerHTML = '';
+            
+            days.forEach((day, index) => {
+                const dayData = businessData.business_hours?.[day] || { enabled: true, start: '08:00', end: '18:00' };
+                
+                const dayRow = document.createElement('div');
+                dayRow.className = 'flex items-center space-x-4 p-4 border border-gray-200 rounded-lg';
+                
+                dayRow.innerHTML = `
+                    <div class="w-24">
+                        <span class="font-medium text-gray-700">${dayNames[index]}</span>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="enabled-${day}" ${dayData.enabled ? 'checked' : ''} 
+                               class="mr-2" onchange="toggleDay('${day}')">
+                        <label for="enabled-${day}" class="text-sm text-gray-600">Open</label>
+                    </div>
+                    <div id="hours-${day}" class="flex items-center space-x-2 ${!dayData.enabled ? 'opacity-50' : ''}">
+                        <input type="time" id="start-${day}" value="${dayData.start}" 
+                               class="hour-input px-2 py-1 border border-gray-300 rounded" ${!dayData.enabled ? 'disabled' : ''}>
+                        <span class="text-gray-600">to</span>
+                        <input type="time" id="end-${day}" value="${dayData.end}" 
+                               class="hour-input px-2 py-1 border border-gray-300 rounded" ${!dayData.enabled ? 'disabled' : ''}>
+                    </div>
+                `;
+                
+                hoursContainer.appendChild(dayRow);
+            });
+        }
+
+        function populateAIForm() {
+            document.getElementById('aiPersonality').value = businessData.ai_personality || 'professional';
+            document.getElementById('aiVoice').value = businessData.ai_voice_id || 'Polly.Joanna-Neural';
+            document.getElementById('emergencyMessage').value = businessData.emergency_message || '';
+        }
+
+        function populateContactForm() {
+            document.getElementById('ownerFirstName').value = businessData.first_name || '';
+            document.getElementById('ownerLastName').value = businessData.last_name || '';
+            document.getElementById('ownerEmail').value = businessData.owner_email || '';
+            document.getElementById('ownerPhone').value = businessData.owner_phone || '';
+        }
+
+        function showPhoneNumber() {
+            if (businessData.phone_number) {
+                document.getElementById('currentPhoneNumber').textContent = businessData.phone_number;
+                document.getElementById('phoneNumberInfo').classList.remove('hidden');
+            }
+        }
+
+        // Toggle day enabled/disabled
+        function toggleDay(day) {
+            const enabled = document.getElementById(`enabled-${day}`).checked;
+            const hoursDiv = document.getElementById(`hours-${day}`);
+            const startInput = document.getElementById(`start-${day}`);
+            const endInput = document.getElementById(`end-${day}`);
+            
+            if (enabled) {
+                hoursDiv.classList.remove('opacity-50');
+                startInput.disabled = false;
+                endInput.disabled = false;
+            } else {
+                hoursDiv.classList.add('opacity-50');
+                startInput.disabled = true;
+                endInput.disabled = true;
+            }
+        }
+
+        // Form submissions
+        document.getElementById('businessForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            await saveBusinessSettings();
+        });
+
+        document.getElementById('hoursForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            await saveBusinessHours();
+        });
+
+        document.getElementById('aiForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            await saveAISettings();
+        });
+
+        document.getElementById('contactForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            await saveContactInfo();
+        });
+
+        // Save functions
+        async function saveBusinessSettings() {
+            try {
+                const formData = {
+                    name: document.getElementById('businessName').value,
+                    business_type: document.getElementById('businessType').value,
+                    business_description: document.getElementById('businessDescription').value,
+                    address: document.getElementById('address').value,
+                    city: document.getElementById('city').value,
+                    state: document.getElementById('state').value,
+                    zip_code: document.getElementById('zipCode').value,
+                    website: document.getElementById('website').value,
+                    business_hours: businessData.business_hours,
+                    ai_personality: businessData.ai_personality,
+                    ai_voice_id: businessData.ai_voice_id,
+                    emergency_message: businessData.emergency_message
+                };
+                
+                await saveSettings(formData);
+                showSuccess();
+                
+            } catch (error) {
+                console.error('Error saving business settings:', error);
+                showError();
+            }
+        }
+
+        async function saveBusinessHours() {
+            try {
+                const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+                const business_hours = {};
+                
+                days.forEach(day => {
+                    business_hours[day] = {
+                        enabled: document.getElementById(`enabled-${day}`).checked,
+                        start: document.getElementById(`start-${day}`).value,
+                        end: document.getElementById(`end-${day}`).value
+                    };
+                });
+                
+                const formData = {
+                    ...businessData,
+                    business_hours: business_hours
+                };
+                
+                await saveSettings(formData);
+                businessData.business_hours = business_hours;
+                showSuccess();
+                
+            } catch (error) {
+                console.error('Error saving business hours:', error);
+                showError();
+            }
+        }
+
+        async function saveAISettings() {
+            try {
+                const formData = {
+                    ...businessData,
+                    ai_personality: document.getElementById('aiPersonality').value,
+                    ai_voice_id: document.getElementById('aiVoice').value,
+                    emergency_message: document.getElementById('emergencyMessage').value
+                };
+                
+                await saveSettings(formData);
+                showSuccess();
+                
+            } catch (error) {
+                console.error('Error saving AI settings:', error);
+                showError();
+            }
+        }
+
+        async function saveContactInfo() {
+            try {
+                const contactData = {
+                    first_name: document.getElementById('ownerFirstName').value,
+                    last_name: document.getElementById('ownerLastName').value,
+                    email: document.getElementById('ownerEmail').value,
+                    phone: document.getElementById('ownerPhone').value
+                };
+                
+                const token = localStorage.getItem('token');
+                const response = await fetch(`/api/businesses/${businessId}/owner-contact`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(contactData)
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to save contact info');
+                }
+                
+                showSuccess();
+                
+            } catch (error) {
+                console.error('Error saving contact info:', error);
+                showError();
+            }
+        }
+
+        // Generic save settings function
+        async function saveSettings(data) {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`/api/businesses/${businessId}/settings`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(data)
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to save settings');
+            }
+            
+            const result = await response.json();
+            businessData = result.business;
+        }
+
+        // Utility functions
+        function copyPhoneNumber() {
+            const phoneNumber = document.getElementById('currentPhoneNumber').textContent;
+            navigator.clipboard.writeText(phoneNumber).then(() => {
+                showSuccess('Phone number copied to clipboard!');
+            });
+        }
+
+        function showSuccess(message = 'Settings saved successfully!') {
+            const successEl = document.getElementById('successMessage');
+            successEl.textContent = message;
+            successEl.classList.remove('hidden');
+            setTimeout(() => {
+                successEl.classList.add('hidden');
+            }, 3000);
+        }
+
+        function showError(message = 'Error saving settings. Please try again.') {
+            const errorEl = document.getElementById('errorMessage');
+            errorEl.textContent = message;
+            errorEl.classList.remove('hidden');
+            setTimeout(() => {
+                errorEl.classList.add('hidden');
+            }, 3000);
+        }
+
+        function logout() {
+            localStorage.clear();
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>

@@ -869,6 +869,149 @@ function calculateAvailableSlots(date, businessHours, existingAppointments, serv
   return slots;
 }
 
+// Business Settings API Endpoints
+app.get('/api/businesses/:businessId/settings', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    // Get complete business information
+    const businessResult = await pool.query(
+      `SELECT b.*, u.phone as owner_phone, u.email as owner_email, u.first_name, u.last_name
+       FROM businesses b 
+       JOIN users u ON b.user_id = u.id 
+       WHERE b.id = $1`,
+      [req.business.id]
+    );
+    
+    if (businessResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+    
+    const business = businessResult.rows[0];
+    
+    // Remove sensitive data
+    delete business.twilio_account_sid;
+    delete business.twilio_auth_token;
+    
+    res.json({
+      success: true,
+      business: business
+    });
+    
+  } catch (error) {
+    console.error('Get business settings error:', error);
+    res.status(500).json({ error: 'Failed to get business settings' });
+  }
+});
+
+app.put('/api/businesses/:businessId/settings', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const {
+      name,
+      business_type,
+      address,
+      city,
+      state,
+      zip_code,
+      website,
+      business_hours,
+      business_description,
+      ai_personality,
+      ai_voice_id,
+      emergency_message
+    } = req.body;
+    
+    // Validate required fields
+    if (!name || !business_type) {
+      return res.status(400).json({ error: 'Business name and type are required' });
+    }
+    
+    // Update business information
+    const result = await pool.query(
+      `UPDATE businesses SET 
+        name = $1,
+        business_type = $2,
+        address = $3,
+        city = $4,
+        state = $5,
+        zip_code = $6,
+        business_hours = $7,
+        business_description = $8,
+        ai_personality = $9,
+        ai_voice_id = $10,
+        emergency_message = $11,
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $12 AND user_id = $13
+       RETURNING *`,
+      [
+        name,
+        business_type,
+        address,
+        city,
+        state,
+        zip_code,
+        business_hours,
+        business_description,
+        ai_personality,
+        ai_voice_id,
+        emergency_message,
+        req.business.id,
+        req.user.userId
+      ]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Business not found or unauthorized' });
+    }
+    
+    console.log(`✅ Business settings updated: ${name}`);
+    
+    res.json({
+      success: true,
+      message: 'Business settings updated successfully',
+      business: result.rows[0]
+    });
+    
+  } catch (error) {
+    console.error('Update business settings error:', error);
+    res.status(500).json({ error: 'Failed to update business settings' });
+  }
+});
+
+// Update owner contact information
+app.put('/api/businesses/:businessId/owner-contact', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { phone, email, first_name, last_name } = req.body;
+    
+    // Update user information
+    const result = await pool.query(
+      `UPDATE users SET 
+        phone = $1,
+        email = $2,
+        first_name = $3,
+        last_name = $4,
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $5
+       RETURNING first_name, last_name, phone, email`,
+      [phone, email, first_name, last_name, req.user.userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    console.log(`✅ Owner contact updated: ${first_name} ${last_name}`);
+    
+    res.json({
+      success: true,
+      message: 'Owner contact information updated successfully',
+      owner: result.rows[0]
+    });
+    
+  } catch (error) {
+    console.error('Update owner contact error:', error);
+    res.status(500).json({ error: 'Failed to update owner contact information' });
+  }
+});
+
 // Helper function for public booking notifications
 async function sendPublicBookingNotifications(businessId, bookingData, appointment) {
   try {
@@ -3098,6 +3241,11 @@ app.delete('/api/businesses/:businessId/phone-numbers/:phoneNumber', authenticat
   }
 });
 
+// Business Settings page
+app.get('/settings', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'settings.html'));
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -3114,5 +3262,6 @@ app.listen(PORT, () => {
   console.log(`🏠 Landing page: /`);
   console.log(`📋 Onboarding: /onboarding`);
   console.log(`📊 Dashboard: /dashboard`);
+  console.log(`⚙️ Settings: /settings`);
   console.log(`💾 Database: ${process.env.DATABASE_URL ? 'Connected' : 'Not configured'}`);
 });
