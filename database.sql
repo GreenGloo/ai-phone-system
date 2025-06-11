@@ -80,6 +80,15 @@ CREATE TABLE businesses (
         "sunday": {"start": "10:00", "end": "16:00", "enabled": false}
     }',
     
+    -- Calendar preferences for appointment scheduling
+    calendar_preferences JSONB DEFAULT '{
+        "appointmentDuration": 60,
+        "bufferTime": 30,
+        "maxDailyAppointments": 8,
+        "preferredSlots": null,
+        "blockOutTimes": []
+    }',
+    
     -- AI Settings
     ai_personality VARCHAR(50) DEFAULT 'professional', -- professional, friendly, urgent
     ai_voice_id VARCHAR(100) DEFAULT 'Polly.Joanna-Neural',

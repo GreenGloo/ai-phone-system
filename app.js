@@ -319,6 +319,62 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// Calendar management endpoints
+app.get('/api/businesses/:businessId/calendar-settings', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT business_hours, calendar_preferences FROM businesses WHERE id = $1',
+      [req.business.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+
+    res.json({
+      businessHours: result.rows[0].business_hours,
+      calendarPreferences: result.rows[0].calendar_preferences || {
+        appointmentDuration: 60,
+        bufferTime: 30,
+        maxDailyAppointments: 8,
+        preferredSlots: null,
+        blockOutTimes: []
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching calendar settings:', error);
+    res.status(500).json({ error: 'Failed to fetch calendar settings' });
+  }
+});
+
+app.put('/api/businesses/:businessId/calendar-settings', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { businessHours, calendarPreferences } = req.body;
+    
+    const result = await pool.query(
+      `UPDATE businesses SET 
+       business_hours = $1, 
+       calendar_preferences = $2,
+       updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3 RETURNING *`,
+      [businessHours, calendarPreferences, req.business.id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+    
+    res.json({
+      success: true,
+      businessHours: result.rows[0].business_hours,
+      calendarPreferences: result.rows[0].calendar_preferences
+    });
+  } catch (error) {
+    console.error('Error updating calendar settings:', error);
+    res.status(500).json({ error: 'Failed to update calendar settings' });
+  }
+});
+
 // Business management endpoints
 app.get('/api/businesses', authenticateToken, async (req, res) => {
   try {
@@ -656,9 +712,15 @@ async function processVoiceForBusiness(req, res) {
           preferredDate = getNextWeekday(today, 5);
         }
         
+        // Get the actual service duration for booking
+        const selectedService = serviceTypes.find(s => s.id === serviceTypeId);
+        const serviceDuration = selectedService ? selectedService.duration_minutes : 60;
+        
+        console.log(`🕐 Booking ${serviceDuration}-minute ${selectedService?.name} appointment`);
+        
         if (preferredDate) {
           console.log(`📅 Customer prefers: ${preferredDate.toDateString()}`);
-          availableSlots = await calendar.getAvailableSlots(preferredDate, 60);
+          availableSlots = await calendar.getAvailableSlots(preferredDate, serviceDuration);
           
           if (availableSlots.length > 0) {
             // Try to match preferred time if mentioned
@@ -681,7 +743,7 @@ async function processVoiceForBusiness(req, res) {
             const checkDate = new Date();
             checkDate.setDate(checkDate.getDate() + i);
             
-            availableSlots = await calendar.getAvailableSlots(checkDate, 60);
+            availableSlots = await calendar.getAvailableSlots(checkDate, serviceDuration);
             
             if (availableSlots.length > 0) {
               appointmentTime = availableSlots[0].start;
@@ -786,11 +848,17 @@ async function processVoiceForBusiness(req, res) {
         const today = new Date();
         let availableDays = [];
         
+        // Get the actual service duration
+        const selectedService = serviceTypes.find(s => s.id === aiResponse.serviceTypeId);
+        const serviceDuration = selectedService ? selectedService.duration_minutes : 60;
+        
+        console.log(`🕐 Service duration: ${serviceDuration} minutes for ${selectedService?.name}`);
+        
         // Check next 7 days for availability
         for (let i = 1; i <= 7; i++) {
           const checkDate = new Date();
           checkDate.setDate(checkDate.getDate() + i);
-          const slots = await calendar.getAvailableSlots(checkDate, 60);
+          const slots = await calendar.getAvailableSlots(checkDate, serviceDuration);
           
           if (slots.length > 0) {
             availableDays.push({
@@ -1068,8 +1136,9 @@ class DatabaseCalendarManager {
           const slotStart = new Date(date);
           slotStart.setHours(hour, minute, 0, 0);
 
-          // Add travel buffer
-          const totalDuration = requestedDuration + 30;
+          // Add travel buffer (reduce for long appointments like bookkeeping)
+          const travelBuffer = requestedDuration > 180 ? 15 : 30; // 15 min buffer for 3+ hour appointments
+          const totalDuration = requestedDuration + travelBuffer;
           const slotEnd = new Date(slotStart.getTime() + totalDuration * 60000);
 
           // Check if slot is within business hours
@@ -1104,6 +1173,7 @@ class DatabaseCalendarManager {
         }
       }
 
+      console.log(`✅ Generated ${slots.length} total slots, showing first 8`);
       return slots.slice(0, 8);
     } catch (error) {
       console.error('Error getting available slots:', error);
