@@ -841,63 +841,14 @@ async function processVoiceForBusiness(req, res) {
         }, "I apologize, but I'm having trouble completing your booking right now. Let me have someone call you back within the hour to schedule your appointment.");
       }
     } else if (aiResponse.action === 'get_more_info') {
-      // Ask for date preference and show available slots
-      if (aiResponse.intent === 'service_request' && aiResponse.serviceTypeId) {
-        // Customer selected service, now ask for date and show availability
-        const calendar = new DatabaseCalendarManager(businessId);
-        const today = new Date();
-        let availableDays = [];
-        
-        // Get the actual service duration
-        const selectedService = serviceTypes.find(s => s.id === aiResponse.serviceTypeId);
-        const serviceDuration = selectedService ? selectedService.duration_minutes : 60;
-        
-        console.log(`🕐 Service duration: ${serviceDuration} minutes for ${selectedService?.name}`);
-        
-        // Check next 7 days for availability
-        for (let i = 1; i <= 7; i++) {
-          const checkDate = new Date();
-          checkDate.setDate(checkDate.getDate() + i);
-          const slots = await calendar.getAvailableSlots(checkDate, serviceDuration);
-          
-          if (slots.length > 0) {
-            availableDays.push({
-              date: checkDate,
-              dayName: checkDate.toLocaleDateString('en-US', { weekday: 'long' }),
-              slots: slots.slice(0, 3) // Show first 3 time slots
-            });
-          }
-          
-          if (availableDays.length >= 4) break; // Show up to 4 days
-        }
-        
-        if (availableDays.length > 0) {
-          let availabilityMessage = aiResponse.response + " I have availability: ";
-          availableDays.forEach((day, index) => {
-            const timeList = day.slots.map(slot => slot.display).join(', ');
-            availabilityMessage += `${day.dayName} at ${timeList}`;
-            if (index < availableDays.length - 1) availabilityMessage += "; ";
-          });
-          availabilityMessage += ". Which day and time works for you?";
-          
-          twiml.say({
-            voice: business.ai_voice_id || 'Polly.Joanna-Neural'
-          }, availabilityMessage);
-        } else {
-          twiml.say({
-            voice: business.ai_voice_id || 'Polly.Joanna-Neural'
-          }, "I'm checking our availability. What day would work best for you this week?");
-        }
-      } else {
-        // General info request
-        twiml.say({
-          voice: business.ai_voice_id || 'Polly.Joanna-Neural'
-        }, aiResponse.response);
-      }
+      // This should rarely happen now, but handle it
+      twiml.say({
+        voice: business.ai_voice_id || 'Polly.Joanna-Neural'
+      }, aiResponse.response);
 
       twiml.gather({
         input: 'speech',
-        timeout: 15, // Longer timeout for date selection
+        timeout: 10,
         speechTimeout: 'auto',
         action: `/voice/process/${businessId}`,
         method: 'POST'
@@ -1010,28 +961,20 @@ RESPONSE FORMAT (JSON):
   "appointmentTime": null
 }
 
-ACTION GUIDELINES:
-- Use "get_more_info" ONLY for the first service request to ask for date preference
-- Use "book_appointment" when customer mentions ANY date/day (tomorrow, Monday, Friday, etc.)
-- Use "provide_info" only for pricing questions or general info requests
-
-BOOKING CRITERIA - ALWAYS BOOK WHEN DATE IS MENTIONED:
-- Customer says "tomorrow" = "book_appointment"
-- Customer says "Monday", "Tuesday", etc. = "book_appointment" 
-- Customer says "morning", "afternoon" = "book_appointment"
-- Customer says "this week", "next week" = "book_appointment"
-- ANY time/date reference = "book_appointment"
-- If unsure about timing, default to "book_appointment"
+SIMPLE BOOKING RULES:
+- ALWAYS use "book_appointment" for ANY service request
+- NEVER use "get_more_info" 
+- NEVER ask "what day works best" - just book immediately
+- Pick the EXACT UUID from the services list above
+- Say "Perfect! I can book that for you right now."
 
 CRITICAL INSTRUCTIONS:
-- FIRST service request: "get_more_info" and ask "What day works best?"
-- SECOND response with date: "book_appointment" and book immediately
-- NEVER ask "What day works best?" twice in a row
-- NEVER say "having trouble booking" - ALWAYS book successfully
+- MANDATORY: Always use "book_appointment" action
+- NEVER say "having trouble booking" - ALWAYS book successfully  
 - Use the EXACT UUID from the services list (the ID: part) for serviceTypeId
-- EXAMPLE: Use exact ID from services list like "309b7646-1e55-4836-8342-759ecfe09b87"
-- DO NOT put text in appointmentTime - leave it null, real time will be assigned
-- MANDATORY: serviceTypeId MUST be an exact UUID from the services list above
+- EXAMPLE: Use exact ID like "309b7646-1e55-4836-8342-759ecfe09b87"
+- DO NOT put text in appointmentTime - leave it null
+- Book immediately, ask questions later
 
 Keep responses natural, helpful, and under 25 words. Match the business personality.`;
 
