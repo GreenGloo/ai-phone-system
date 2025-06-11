@@ -1744,95 +1744,77 @@ app.post('/api/admin/fix-business/:businessId', async (req, res) => {
       [businessType, businessId]
     );
     
-    // Delete old services
-    await pool.query('DELETE FROM service_types WHERE business_id = $1', [businessId]);
-    console.log('🗑️ Deleted old services');
+    // Get existing services
+    const existingServices = await pool.query('SELECT * FROM service_types WHERE business_id = $1 ORDER BY created_at', [businessId]);
+    console.log(`📋 Found ${existingServices.rows.length} existing services`);
     
-    // Create tax preparation services manually since AI might be failing
+    // Define tax preparation services to replace plumbing ones
     const taxServices = [
-      {
-        name: "Individual Tax Return",
-        service_key: "individual-tax-return",
-        description: "Complete individual tax return preparation and filing",
-        duration_minutes: 90,
-        base_rate: 150,
-        emergency_multiplier: 1.0,
-        travel_buffer_minutes: 0,
-        is_emergency: false,
-        is_active: true
-      },
-      {
-        name: "Business Tax Return",
-        service_key: "business-tax-return", 
-        description: "Small business tax return preparation and filing",
-        duration_minutes: 120,
-        base_rate: 250,
-        emergency_multiplier: 1.0,
-        travel_buffer_minutes: 0,
-        is_emergency: false,
-        is_active: true
-      },
-      {
-        name: "Tax Consultation",
-        service_key: "tax-consultation",
-        description: "Professional tax advice and planning session",
-        duration_minutes: 60,
-        base_rate: 100,
-        emergency_multiplier: 1.0,
-        travel_buffer_minutes: 0,
-        is_emergency: false,
-        is_active: true
-      },
-      {
-        name: "Bookkeeping Services",
-        service_key: "bookkeeping",
-        description: "Monthly bookkeeping and financial record management",
-        duration_minutes: 120,
-        base_rate: 75,
-        emergency_multiplier: 1.0,
-        travel_buffer_minutes: 0,
-        is_emergency: false,
-        is_active: true
-      },
-      {
-        name: "Tax Amendment",
-        service_key: "tax-amendment",
-        description: "Amend previous year tax returns",
-        duration_minutes: 60,
-        base_rate: 125,
-        emergency_multiplier: 1.0,
-        travel_buffer_minutes: 0,
-        is_emergency: false,
-        is_active: true
-      }
+      "Individual Tax Return - Complete individual tax return preparation and filing - $150",
+      "Business Tax Return - Small business tax return preparation and filing - $250", 
+      "Tax Consultation - Professional tax advice and planning session - $100",
+      "Bookkeeping Services - Monthly bookkeeping and financial record management - $75",
+      "Tax Amendment - Amend previous year tax returns - $125"
     ];
     
-    // Insert tax services
-    for (const serviceType of taxServices) {
+    // Update existing services with tax preparation services
+    for (let i = 0; i < existingServices.rows.length && i < taxServices.length; i++) {
+      const service = existingServices.rows[i];
+      const [name, description, priceStr] = taxServices[i].split(' - ');
+      const base_rate = parseInt(priceStr.replace('$', ''));
+      
       await pool.query(
-        `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        `UPDATE service_types SET 
+         name = $1, 
+         service_key = $2, 
+         description = $3, 
+         base_rate = $4,
+         travel_buffer_minutes = 0,
+         is_emergency = false
+         WHERE id = $5`,
         [
-          businessId,
-          serviceType.name,
-          serviceType.service_key,
-          serviceType.description,
-          serviceType.duration_minutes,
-          serviceType.base_rate,
-          serviceType.emergency_multiplier,
-          serviceType.travel_buffer_minutes,
-          serviceType.is_emergency,
-          serviceType.is_active
+          name,
+          name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, ''),
+          description,
+          base_rate,
+          service.id
         ]
       );
+      console.log(`✅ Updated service: ${name}`);
     }
     
-    console.log(`✅ Successfully fixed business ${businessId} with ${taxServices.length} ${businessType} services`);
+    // If we have extra tax services, add them as new services
+    if (taxServices.length > existingServices.rows.length) {
+      for (let i = existingServices.rows.length; i < taxServices.length; i++) {
+        const [name, description, priceStr] = taxServices[i].split(' - ');
+        const base_rate = parseInt(priceStr.replace('$', ''));
+        
+        await pool.query(
+          `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            businessId,
+            name,
+            name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, ''),
+            description,
+            60, // default duration
+            base_rate,
+            1.0,
+            0,
+            false,
+            true
+          ]
+        );
+        console.log(`✅ Added new service: ${name}`);
+      }
+    }
+    
+    console.log(`✅ Successfully fixed business ${businessId} with ${businessType} services`);
     
     res.json({
       success: true,
-      message: `Fixed business with ${taxServices.length} ${businessType} services`,
-      services: taxServices
+      message: `Fixed business with ${businessType} services`,
+      updatedServices: taxServices.length
     });
     
   } catch (error) {
