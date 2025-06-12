@@ -119,9 +119,23 @@
                             </div>
                         </div>
 
-                        <div class="mt-6">
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Website</label>
-                            <input type="url" id="website" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://yourwebsite.com">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Website</label>
+                                <input type="url" id="website" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://yourwebsite.com">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Timezone</label>
+                                <select id="timezone" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="America/New_York">Eastern Time (ET)</option>
+                                    <option value="America/Chicago">Central Time (CT)</option>
+                                    <option value="America/Denver">Mountain Time (MT)</option>
+                                    <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                                    <option value="America/Phoenix">Arizona (MST)</option>
+                                    <option value="America/Anchorage">Alaska Time (AKT)</option>
+                                    <option value="Pacific/Honolulu">Hawaii Time (HST)</option>
+                                </select>
+                            </div>
                         </div>
 
                         <div class="mt-8">
@@ -373,6 +387,7 @@
             document.getElementById('state').value = businessData.state || '';
             document.getElementById('zipCode').value = businessData.zip_code || '';
             document.getElementById('website').value = businessData.website || '';
+            document.getElementById('timezone').value = businessData.timezone || 'America/New_York';
         }
 
         function populateHoursForm() {
@@ -481,6 +496,7 @@
                     state: document.getElementById('state').value,
                     zip_code: document.getElementById('zipCode').value,
                     website: document.getElementById('website').value,
+                    timezone: document.getElementById('timezone').value,
                     business_hours: businessData.business_hours || {},
                     ai_personality: businessData.ai_personality || 'professional',
                     ai_voice_id: businessData.ai_voice_id || 'Polly.Joanna-Neural',
@@ -518,6 +534,7 @@
                     state: businessData.state || '',
                     zip_code: businessData.zip_code || '',
                     website: businessData.website || '',
+                    timezone: businessData.timezone || 'America/New_York',
                     business_hours: business_hours,
                     ai_personality: businessData.ai_personality || 'professional',
                     ai_voice_id: businessData.ai_voice_id || 'Polly.Joanna-Neural',
@@ -545,6 +562,7 @@
                     state: businessData.state || '',
                     zip_code: businessData.zip_code || '',
                     website: businessData.website || '',
+                    timezone: businessData.timezone || 'America/New_York',
                     business_hours: businessData.business_hours || {},
                     ai_personality: document.getElementById('aiPersonality').value,
                     ai_voice_id: document.getElementById('aiVoice').value,

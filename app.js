@@ -935,6 +935,7 @@ app.put('/api/businesses/:businessId/settings', authenticateToken, getBusinessCo
       state,
       zip_code,
       website,
+      timezone,
       business_hours,
       business_description,
       ai_personality,
@@ -957,13 +958,14 @@ app.put('/api/businesses/:businessId/settings', authenticateToken, getBusinessCo
         state = $5,
         zip_code = $6,
         website = $7,
-        business_hours = $8,
-        business_description = $9,
-        ai_personality = $10,
-        ai_voice_id = $11,
-        emergency_message = $12,
+        timezone = $8,
+        business_hours = $9,
+        business_description = $10,
+        ai_personality = $11,
+        ai_voice_id = $12,
+        emergency_message = $13,
         updated_at = CURRENT_TIMESTAMP
-       WHERE id = $13 AND user_id = $14
+       WHERE id = $14 AND user_id = $15
        RETURNING *`,
       [
         name,
@@ -973,13 +975,14 @@ app.put('/api/businesses/:businessId/settings', authenticateToken, getBusinessCo
         state,
         zip_code,
         website,
+        timezone,
         business_hours,
         business_description,
         ai_personality,
         ai_voice_id,
         emergency_message,
         req.business.id,
-        req.user.userId
+        req.user.id
       ]
     );
     

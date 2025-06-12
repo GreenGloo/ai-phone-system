@@ -84,8 +84,8 @@ async function processSimpleVoice(req, res) {
         break;
         
       case STATES.GET_TIME:
-        // Parse time preference
-        const timeInfo = parseTimePreference(SpeechResult);
+        // Parse time preference using business timezone
+        const timeInfo = parseTimePreference(SpeechResult, state.business.timezone || 'America/New_York');
         state.appointmentTime = timeInfo;
         
         console.log(`⏰ Customer said: "${SpeechResult}"`);
@@ -186,8 +186,8 @@ function extractName(speech) {
   return 'Customer'; // Fallback
 }
 
-// Enhanced time parsing
-function parseTimePreference(speech) {
+// Enhanced time parsing - now accepts business timezone
+function parseTimePreference(speech, businessTimezone = 'America/New_York') {
   const lower = speech.toLowerCase().replace(/[.,]/g, ''); // Remove punctuation
   const now = new Date();
   
@@ -284,14 +284,28 @@ function parseTimePreference(speech) {
     console.log(`🗓️ Defaulting to tomorrow`);
   }
   
-  // Set the time
-  targetDate.setHours(hour24, 0, 0, 0);
+  // Set the time in business timezone
+  const year = targetDate.getFullYear();
+  const month = targetDate.getMonth();
+  const day = targetDate.getDate();
   
-  // Create description
+  // Create date string and parse with business timezone
+  const dateString = `${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T${hour24.toString().padStart(2, '0')}:00:00`;
+  
+  // Create the appointment time in the business timezone
+  const businessDate = new Date(dateString);
+  // Get the timezone offset for the business timezone
+  const tempDate = new Date().toLocaleString('en-CA', { timeZone: businessTimezone });
+  const businessOffset = new Date().getTimezoneOffset() + (new Date() - new Date(tempDate));
+  
+  targetDate = new Date(businessDate.getTime() - businessOffset);
+  
+  // Create description using business timezone
   const timeDisplay = targetDate.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: true
+    hour12: true,
+    timeZone: businessTimezone
   });
   
   const dayDisplay = dayFound ? 
@@ -340,7 +354,8 @@ async function bookSimpleAppointment(state, businessId) {
     console.log(`📅 Customer requested: "${state.service}"`);
     console.log(`📅 Scheduled start: ${appointmentTime.toISOString()}`);
     console.log(`📅 Scheduled end: ${endTime.toISOString()}`);
-    console.log(`📅 Local time: ${appointmentTime.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+    console.log(`📅 Business timezone: ${state.business.timezone || 'America/New_York'}`);
+    console.log(`📅 Local time: ${appointmentTime.toLocaleString('en-US', { timeZone: state.business.timezone || 'America/New_York' })}`);
     console.log(`📅 Description: ${state.appointmentTime.description}`);
     
     // Insert appointment
