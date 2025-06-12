@@ -88,8 +88,12 @@ async function processSimpleVoice(req, res) {
         const timeInfo = parseTimePreference(SpeechResult);
         state.appointmentTime = timeInfo;
         
+        console.log(`⏰ Customer said: "${SpeechResult}"`);
+        console.log(`⏰ Parsed time: ${timeInfo.description}`);
+        console.log(`⏰ Actual date/time: ${timeInfo.date}`);
+        
         if (timeInfo.success) {
-          twiml.say(`Perfect! I'll book you for ${timeInfo.description}. Let me confirm that appointment for you right now.`);
+          twiml.say(`Perfect! I can book you for ${timeInfo.description}. Is that time good for you?`);
           nextStage = STATES.CONFIRM;
         } else {
           twiml.say('I didn\'t catch the time. Could you say a day like Monday, Tuesday, or tomorrow?');
@@ -98,17 +102,29 @@ async function processSimpleVoice(req, res) {
         break;
         
       case STATES.CONFIRM:
-        // Book the appointment
-        const bookingResult = await bookSimpleAppointment(state, businessId);
+        // Check for confirmation
+        const confirmation = SpeechResult.toLowerCase();
+        console.log(`✅ Customer confirmation: "${SpeechResult}"`);
         
-        if (bookingResult.success) {
-          twiml.say(`Excellent! Your appointment is confirmed for ${bookingResult.timeDescription}. You'll receive a text confirmation. Thank you for calling ${state.business.name}!`);
-          nextStage = STATES.COMPLETE;
+        if (confirmation.includes('yes') || confirmation.includes('yeah') || confirmation.includes('correct') || confirmation.includes('right')) {
+          // Book the appointment
+          const bookingResult = await bookSimpleAppointment(state, businessId);
+          
+          if (bookingResult.success) {
+            twiml.say(`Excellent! Your appointment is confirmed for ${bookingResult.timeDescription}. You'll receive a text confirmation. Thank you for calling ${state.business.name}!`);
+            nextStage = STATES.COMPLETE;
+          } else {
+            twiml.say('I apologize, there was an issue booking your appointment. Let me have someone call you back.');
+          }
+          twiml.hangup();
+          callStates.delete(CallSid); // Clean up
+        } else if (confirmation.includes('no') || confirmation.includes('different') || confirmation.includes('change')) {
+          twiml.say('No problem! What day and time would work better for you?');
+          nextStage = STATES.GET_TIME;
         } else {
-          twiml.say('I apologize, there was an issue booking your appointment. Let me have someone call you back.');
+          twiml.say('I didn\'t catch that. Can you say yes to confirm, or tell me a different time?');
+          // Stay in CONFIRM stage
         }
-        twiml.hangup();
-        callStates.delete(CallSid); // Clean up
         break;
         
       default:
@@ -319,6 +335,13 @@ async function bookSimpleAppointment(state, businessId) {
     const service = serviceResult.rows[0];
     const appointmentTime = state.appointmentTime.date;
     const endTime = new Date(appointmentTime.getTime() + service.duration_minutes * 60000);
+    
+    console.log(`📅 BOOKING DETAILS:`);
+    console.log(`📅 Customer requested: "${state.service}"`);
+    console.log(`📅 Scheduled start: ${appointmentTime.toISOString()}`);
+    console.log(`📅 Scheduled end: ${endTime.toISOString()}`);
+    console.log(`📅 Local time: ${appointmentTime.toLocaleString('en-US', { timeZone: 'America/New_York' })}`);
+    console.log(`📅 Description: ${state.appointmentTime.description}`);
     
     // Insert appointment
     const result = await pool.query(
