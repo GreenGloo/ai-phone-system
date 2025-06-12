@@ -61,32 +61,35 @@ async function processSimpleVoice(req, res) {
     const twiml = new twilio.twiml.VoiceResponse();
     let nextStage = state.stage;
     
+    // Get personality-based responses
+    const responses = getPersonalityResponses(state.business.ai_personality || 'professional');
+    
     // Process based on current stage
     switch (state.stage) {
       case STATES.GREETING:
         // First interaction - ask what they need
-        twiml.say(`Hello, you've reached ${state.business.name}. What service do you need help with?`);
+        twiml.say(responses.greeting.replace('{businessName}', state.business.name));
         nextStage = STATES.GET_SERVICE;
         break;
         
       case STATES.GET_SERVICE:
         // They described their service need
         state.service = SpeechResult;
-        twiml.say('Perfect! I can help you with that. What\'s your name?');
+        twiml.say(responses.serviceConfirm);
         nextStage = STATES.GET_NAME;
         break;
         
       case STATES.GET_NAME:
         // Extract name
         state.customerName = extractName(SpeechResult);
-        twiml.say(`Great ${state.customerName}! What day and time works best for you?`);
+        twiml.say(responses.getName.replace('{customerName}', state.customerName));
         nextStage = STATES.GET_TIME;
         break;
         
       case STATES.GET_TIME:
         // Parse time preference using AI
         try {
-          const timeInfo = await parseTimePreference(SpeechResult, state.business.timezone || 'America/New_York');
+          const timeInfo = await parseTimePreference(SpeechResult, state.business.timezone || 'America/New_York', state.business);
           state.appointmentTime = timeInfo;
           
           console.log(`⏰ Customer said: "${SpeechResult}"`);
@@ -94,10 +97,10 @@ async function processSimpleVoice(req, res) {
           console.log(`⏰ Actual date/time: ${timeInfo.date}`);
           
           if (timeInfo.success) {
-            twiml.say(`Perfect! I can book you for ${timeInfo.description}. Is that time good for you?`);
+            twiml.say(responses.timeConfirm.replace('{timeDescription}', timeInfo.description));
             nextStage = STATES.CONFIRM;
           } else {
-            twiml.say('I didn\'t catch the time. Could you say a day like Monday, Tuesday, or tomorrow?');
+            twiml.say(responses.timeError);
             // Stay in GET_TIME stage
           }
         } catch (error) {
@@ -117,18 +120,20 @@ async function processSimpleVoice(req, res) {
           const bookingResult = await bookSimpleAppointment(state, businessId);
           
           if (bookingResult.success) {
-            twiml.say(`Excellent! Your appointment is confirmed for ${bookingResult.timeDescription}. You'll receive a text confirmation. Thank you for calling ${state.business.name}!`);
+            twiml.say(responses.bookingSuccess
+              .replace('{timeDescription}', bookingResult.timeDescription)
+              .replace('{businessName}', state.business.name));
             nextStage = STATES.COMPLETE;
           } else {
-            twiml.say('I apologize, there was an issue booking your appointment. Let me have someone call you back.');
+            twiml.say(responses.bookingError);
           }
           twiml.hangup();
           callStates.delete(CallSid); // Clean up
         } else if (confirmation.includes('no') || confirmation.includes('different') || confirmation.includes('change')) {
-          twiml.say('No problem! What day and time would work better for you?');
+          twiml.say(responses.timeChange);
           nextStage = STATES.GET_TIME;
         } else {
-          twiml.say('I didn\'t catch that. Can you say yes to confirm, or tell me a different time?');
+          twiml.say(responses.confirmationError);
           // Stay in CONFIRM stage
         }
         break;
@@ -192,8 +197,8 @@ function extractName(speech) {
   return 'Customer'; // Fallback
 }
 
-// AI-powered time parsing using OpenAI
-async function parseTimePreference(speech, businessTimezone = 'America/New_York') {
+// AI-powered time parsing using OpenAI with personality context
+async function parseTimePreference(speech, businessTimezone = 'America/New_York', businessData = {}) {
   console.log(`🤖 AI parsing time from: "${speech}"`);
   
   try {
@@ -209,7 +214,10 @@ async function parseTimePreference(speech, businessTimezone = 'America/New_York'
       hour12: true
     });
 
-    const prompt = `You are a smart appointment scheduler. Parse the customer's time preference and return a specific date and time.
+    const personality = businessData.ai_personality || 'professional';
+    const businessType = businessData.business_type || 'service business';
+
+    const prompt = `You are a smart appointment scheduler for a ${businessType} business with a ${personality} personality. Parse the customer's time preference and return a specific date and time.
 
 Current date/time: ${currentDateTime} (${businessTimezone})
 
@@ -232,7 +240,8 @@ Be intelligent about:
 - "morning" = 9 AM, "afternoon" = 2 PM, "evening" = 6 PM, "lunchtime" = 12 PM
 - "next week" means the following week, not this week
 - If no time specified, default to 2 PM
-- If no day specified, default to tomorrow`;
+- If no day specified, default to tomorrow
+- Consider business type context (e.g., dental appointments might prefer morning slots)`;
 
     const response = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
@@ -476,6 +485,47 @@ Questions? Call ${owner.phone_number}`;
     console.error('SMS notification error:', error);
     // Don't fail the booking if SMS fails
   }
+}
+
+// Get personality-specific responses
+function getPersonalityResponses(personality) {
+  const responses = {
+    professional: {
+      greeting: 'Hello, you\'ve reached {businessName}. How may I assist you with scheduling an appointment today?',
+      serviceConfirm: 'Thank you. I can certainly help you with that. May I have your name please?',
+      getName: 'Thank you, {customerName}. What day and time would work best for your appointment?',
+      timeConfirm: 'Perfect. I can schedule you for {timeDescription}. Would that time work for you?',
+      timeError: 'I apologize, I didn\'t catch the time. Could you please specify a day like Monday, Tuesday, or tomorrow?',
+      bookingSuccess: 'Excellent. Your appointment is confirmed for {timeDescription}. You\'ll receive a text confirmation shortly. Thank you for choosing {businessName}.',
+      bookingError: 'I apologize, there was an issue scheduling your appointment. Let me have someone call you back to assist you.',
+      timeChange: 'Of course. What day and time would work better for you?',
+      confirmationError: 'I didn\'t catch that. Could you please say yes to confirm, or let me know if you\'d like a different time?'
+    },
+    friendly: {
+      greeting: 'Hi there! You\'ve reached {businessName}. I\'d love to help you schedule an appointment! What service are you looking for?',
+      serviceConfirm: 'Awesome! I can totally help you with that. What\'s your name?',
+      getName: 'Great to meet you, {customerName}! What day and time works best for you?',
+      timeConfirm: 'Perfect! I can book you for {timeDescription}. Does that sound good?',
+      timeError: 'Oops, I didn\'t catch that time. Could you tell me again? Like Monday, Tuesday, or maybe tomorrow?',
+      bookingSuccess: 'Fantastic! You\'re all set for {timeDescription}. You\'ll get a text confirmation in just a minute. Thanks so much for calling {businessName}!',
+      bookingError: 'Oh no! Something went wrong with booking. Don\'t worry though - I\'ll have someone call you back to get this sorted out!',
+      timeChange: 'No worries at all! What time would work better for you?',
+      confirmationError: 'Sorry, I didn\'t catch that. Just say yes if that time works, or let me know what would be better!'
+    },
+    urgent: {
+      greeting: 'Hello, {businessName}. What service do you need scheduled?',
+      serviceConfirm: 'Got it. Your name?',
+      getName: 'Alright {customerName}, what day and time?',
+      timeConfirm: 'I can book {timeDescription}. Confirm?',
+      timeError: 'Need a specific time. Monday, Tuesday, tomorrow?',
+      bookingSuccess: 'Confirmed. {timeDescription}. Text coming. Thank you.',
+      bookingError: 'Booking failed. Someone will call you back.',
+      timeChange: 'Different time then?',
+      confirmationError: 'Yes or no? Or tell me a different time.'
+    }
+  };
+  
+  return responses[personality] || responses.professional;
 }
 
 module.exports = { processSimpleVoice };
