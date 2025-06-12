@@ -15,6 +15,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
+// Debug middleware to log all API requests
+app.use('/api', (req, res, next) => {
+  console.log(`🌐 ${req.method} ${req.path} - Headers: ${JSON.stringify(req.headers.authorization ? 'Bearer ***' : 'No auth')}`);
+  next();
+});
+
 // IMPORTANT: Root route MUST be defined before static middleware  
 app.get('/', (req, res) => {
   console.log('🏠 Serving landing page from root route');
@@ -43,21 +49,29 @@ const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
+  console.log(`🔐 authenticateToken - ${req.method} ${req.path} - Token: ${token ? 'Present' : 'Missing'}`);
+
   if (!token) {
+    console.log(`🔐 authenticateToken - No token provided`);
     return res.status(401).json({ error: 'Access token required' });
   }
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    console.log(`🔐 authenticateToken - Decoded userId: ${decoded.userId}`);
+    
     const result = await pool.query('SELECT * FROM users WHERE id = $1', [decoded.userId]);
     
     if (result.rows.length === 0) {
+      console.log(`🔐 authenticateToken - User not found: ${decoded.userId}`);
       return res.status(401).json({ error: 'Invalid token' });
     }
 
+    console.log(`🔐 authenticateToken - User found: ${result.rows[0].email}`);
     req.user = result.rows[0];
     next();
   } catch (error) {
+    console.log(`🔐 authenticateToken - Token verification failed: ${error.message}`);
     return res.status(403).json({ error: 'Invalid token' });
   }
 };
@@ -3265,6 +3279,13 @@ app.get('/health', (req, res) => {
     version: '2.0.0',
     features: ['multi-tenant', 'database', 'authentication', 'billing', 'ai-templates', 'team-management', 'phone-provisioning']
   });
+});
+
+// Catch-all for API routes to debug 404s
+app.use('/api/*', (req, res) => {
+  console.log(`❌ 404 API Route not found: ${req.method} ${req.originalUrl}`);
+  console.log(`❌ Available routes: GET /api/businesses/:id/settings, PUT /api/businesses/:id/settings`);
+  res.status(404).json({ error: 'API route not found', path: req.originalUrl });
 });
 
 const PORT = process.env.PORT || 3000;
