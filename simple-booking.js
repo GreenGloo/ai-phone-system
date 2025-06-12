@@ -203,17 +203,40 @@ function parseTimePreference(speech, businessTimezone = 'America/New_York') {
     /(\d{1,2})\s*(pm|p\.m\.|p m)/i,  // "2 pm", "2 p.m."
     /(\d{1,2}):(\d{2})\s*(am|pm|a\.m\.|p\.m\.)/i, // "7:30 am"
     /(\d{1,2})\s*o'?clock/i, // "7 oclock", "7 o'clock"
+    /at\s+(\d{1,2})\s*(am|pm)/i, // "at 3 pm"
+    /(\d{1,2})\s+in\s+the\s+(morning|afternoon|evening)/i, // "9 in the morning"
   ];
   
   for (const pattern of timePatterns) {
     const match = lower.match(pattern);
     if (match) {
       hour = parseInt(match[1]);
+      
+      // Handle different pattern matches
       if (match[3]) {
-        period = match[3].toLowerCase().includes('p') ? 'pm' : 'am';
+        // Pattern with time in match[3] (like 7:30 am)
+        if (match[3].toLowerCase().includes('morning')) {
+          period = 'am';
+        } else if (match[3].toLowerCase().includes('afternoon')) {
+          period = 'pm';
+        } else if (match[3].toLowerCase().includes('evening')) {
+          period = 'pm';
+        } else {
+          period = match[3].toLowerCase().includes('p') ? 'pm' : 'am';
+        }
       } else if (match[2]) {
-        period = match[2].toLowerCase().includes('p') ? 'pm' : 'am';
+        // Pattern with period in match[2]
+        if (match[2].toLowerCase().includes('morning')) {
+          period = 'am';
+        } else if (match[2].toLowerCase().includes('afternoon')) {
+          period = 'pm';
+        } else if (match[2].toLowerCase().includes('evening')) {
+          period = 'pm';
+        } else {
+          period = match[2].toLowerCase().includes('p') ? 'pm' : 'am';
+        }
       }
+      
       console.log(`🕐 Found time: ${hour} ${period}`);
       break;
     }
@@ -249,15 +272,26 @@ function parseTimePreference(speech, businessTimezone = 'America/New_York') {
   // Find the target date
   let targetDate = new Date(now);
   
-  // Check for specific days
+  // Check for specific days (including next week context)
   const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   let dayFound = false;
+  let isNextWeek = lower.includes('next week') || lower.includes('next monday') || 
+                   lower.includes('next tuesday') || lower.includes('next wednesday') ||
+                   lower.includes('next thursday') || lower.includes('next friday') ||
+                   lower.includes('next saturday') || lower.includes('next sunday');
   
   for (let i = 0; i < days.length; i++) {
     if (lower.includes(days[i])) {
-      targetDate = getNextWeekday(now, i + 1);
+      if (isNextWeek) {
+        // Force next week for this day
+        targetDate = getNextWeekday(now, i + 1, true);
+        console.log(`🗓️ Found NEXT WEEK ${days[i]}`);
+      } else {
+        // Regular next occurrence
+        targetDate = getNextWeekday(now, i + 1);
+        console.log(`🗓️ Found day: ${days[i]}`);
+      }
       dayFound = true;
-      console.log(`🗓️ Found day: ${days[i]}`);
       break;
     }
   }
@@ -284,21 +318,12 @@ function parseTimePreference(speech, businessTimezone = 'America/New_York') {
     console.log(`🗓️ Defaulting to tomorrow`);
   }
   
-  // Set the time in business timezone
-  const year = targetDate.getFullYear();
-  const month = targetDate.getMonth();
-  const day = targetDate.getDate();
+  // Set the time in business timezone - simplified approach
+  targetDate.setHours(hour24, 0, 0, 0);
   
-  // Create date string and parse with business timezone
-  const dateString = `${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T${hour24.toString().padStart(2, '0')}:00:00`;
-  
-  // Create the appointment time in the business timezone
-  const businessDate = new Date(dateString);
-  // Get the timezone offset for the business timezone
-  const tempDate = new Date().toLocaleString('en-CA', { timeZone: businessTimezone });
-  const businessOffset = new Date().getTimezoneOffset() + (new Date() - new Date(tempDate));
-  
-  targetDate = new Date(businessDate.getTime() - businessOffset);
+  // For now, treat the date as local business time
+  // TODO: Implement proper timezone handling based on business settings
+  console.log(`🕐 Setting appointment for: ${targetDate.toString()}`);
   
   // Create description using business timezone
   const timeDisplay = targetDate.toLocaleTimeString('en-US', {
@@ -325,11 +350,20 @@ function parseTimePreference(speech, businessTimezone = 'America/New_York') {
   };
 }
 
-function getNextWeekday(date, targetDay) {
+function getNextWeekday(date, targetDay, forceNextWeek = false) {
   const currentDay = date.getDay();
-  const daysUntilTarget = (targetDay - currentDay + 7) % 7;
+  let daysUntilTarget = (targetDay - currentDay + 7) % 7;
+  
+  if (forceNextWeek) {
+    // Always go to next week
+    daysUntilTarget = daysUntilTarget === 0 ? 7 : daysUntilTarget + 7;
+  } else {
+    // Regular logic - if today is the target day, go to next week
+    daysUntilTarget = daysUntilTarget === 0 ? 7 : daysUntilTarget;
+  }
+  
   const targetDate = new Date(date);
-  targetDate.setDate(date.getDate() + (daysUntilTarget === 0 ? 7 : daysUntilTarget));
+  targetDate.setDate(date.getDate() + daysUntilTarget);
   return targetDate;
 }
 
@@ -347,7 +381,19 @@ async function bookSimpleAppointment(state, businessId) {
     }
     
     const service = serviceResult.rows[0];
+    
+    // Validate appointment time
+    if (!state.appointmentTime || !state.appointmentTime.date) {
+      console.error('❌ Invalid appointment time:', state.appointmentTime);
+      throw new Error('Invalid appointment time data');
+    }
+    
     const appointmentTime = state.appointmentTime.date;
+    if (!(appointmentTime instanceof Date) || isNaN(appointmentTime.getTime())) {
+      console.error('❌ Invalid date object:', appointmentTime);
+      throw new Error('Invalid appointment date');
+    }
+    
     const endTime = new Date(appointmentTime.getTime() + service.duration_minutes * 60000);
     
     console.log(`📅 BOOKING DETAILS:`);
