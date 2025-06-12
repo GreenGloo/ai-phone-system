@@ -3269,6 +3269,44 @@ app.delete('/api/businesses/:businessId/phone-numbers/:phoneNumber', authenticat
   }
 });
 
+// Update appointment status (for marking past appointments as completed)
+app.put('/api/businesses/:businessId/appointments/:appointmentId', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const { status } = req.body;
+    
+    // Validate status
+    const validStatuses = ['scheduled', 'completed', 'cancelled', 'no_show'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid appointment status' });
+    }
+    
+    const result = await pool.query(
+      `UPDATE appointments SET 
+        status = $1,
+        updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND business_id = $3
+       RETURNING *`,
+      [status, appointmentId, req.business.id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+    
+    console.log(`✅ Appointment ${appointmentId} status updated to: ${status}`);
+    
+    res.json({
+      success: true,
+      appointment: result.rows[0]
+    });
+    
+  } catch (error) {
+    console.error('Update appointment error:', error);
+    res.status(500).json({ error: 'Failed to update appointment' });
+  }
+});
+
 // Business Settings page
 app.get('/settings', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'settings.html'));

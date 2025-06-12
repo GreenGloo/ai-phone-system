@@ -579,6 +579,7 @@
                     const appointmentsResponse = await fetch(`/api/businesses/${businessData.id}/appointments`, { headers });
                     if (appointmentsResponse.ok) {
                         appointments = await appointmentsResponse.json();
+                        await updatePastAppointments(); // Update past appointments status
                         renderRecentAppointments();
                         updateStats();
                     }
@@ -634,8 +635,9 @@
                 return;
             }
 
-            // Sort by most recent and take first 5
+            // Filter to show only scheduled/active appointments, sort by most recent and take first 5
             const recentAppointments = appointments
+                .filter(apt => apt.status === 'scheduled' || apt.status === 'confirmed')
                 .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
                 .slice(0, 5);
 
@@ -782,6 +784,8 @@
         }
 
         async function loadNotifications() {
+            let notifications = [];
+            
             try {
                 // Load real notifications from recent appointments
                 const today = new Date();
@@ -793,7 +797,7 @@
                     return aptDate >= yesterday;
                 });
                 
-                const notifications = recentAppointments.map((apt, index) => ({
+                notifications = recentAppointments.map((apt, index) => ({
                     id: apt.id || index,
                     type: 'new_booking',
                     message: `New appointment: ${apt.customer_name} - ${apt.service_name}`,
@@ -801,10 +805,10 @@
                     read: false
                 }));
                 
-                // Add a few mock notifications if no real ones
+                // Add a system notification if no real ones
                 if (notifications.length === 0) {
                     notifications.push({
-                        id: 'mock-1',
+                        id: 'system-1',
                         type: 'system',
                         message: 'CallCatcher system is active and ready',
                         time: '1 hour ago',
@@ -813,7 +817,13 @@
                 }
             } catch (error) {
                 console.error('Error loading notifications:', error);
-                notifications = [];
+                notifications = [{
+                    id: 'error-1',
+                    type: 'system',
+                    message: 'CallCatcher system is active',
+                    time: 'Now',
+                    read: true
+                }];
             }
 
             renderNotifications(notifications);
@@ -829,6 +839,45 @@
             if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
             if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
             return `${Math.floor(diffInSeconds / 86400)} days ago`;
+        }
+
+        async function updatePastAppointments() {
+            try {
+                const now = new Date();
+                const pastAppointments = appointments.filter(apt => {
+                    const aptEndTime = new Date(apt.end_time);
+                    return aptEndTime < now && apt.status === 'scheduled';
+                });
+
+                console.log(`Found ${pastAppointments.length} past appointments to update`);
+
+                // Update past appointments to completed status
+                for (const apt of pastAppointments) {
+                    try {
+                        const token = localStorage.getItem('token');
+                        const response = await fetch(`/api/businesses/${businessData.id}/appointments/${apt.id}`, {
+                            method: 'PUT',
+                            headers: {
+                                'Authorization': `Bearer ${token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                status: 'completed'
+                            })
+                        });
+
+                        if (response.ok) {
+                            // Update local data
+                            apt.status = 'completed';
+                            console.log(`Updated appointment ${apt.id} to completed`);
+                        }
+                    } catch (error) {
+                        console.error(`Error updating appointment ${apt.id}:`, error);
+                    }
+                }
+            } catch (error) {
+                console.error('Error updating past appointments:', error);
+            }
         }
 
         function renderNotifications(notifications) {
