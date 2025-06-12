@@ -6,8 +6,17 @@
     <title>Business Settings - CallCatcher</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <style>
-        .tab-active { @apply bg-blue-600 text-white; }
-        .tab-inactive { @apply bg-gray-200 text-gray-700 hover:bg-gray-300; }
+        .tab-active { 
+            background-color: #2563eb; 
+            color: white; 
+        }
+        .tab-inactive { 
+            background-color: #e5e7eb; 
+            color: #374151; 
+        }
+        .tab-inactive:hover { 
+            background-color: #d1d5db; 
+        }
         .hour-input { width: 80px; }
     </style>
 </head>
@@ -22,7 +31,7 @@
                 </div>
                 <div class="flex items-center gap-4">
                     <a href="/dashboard" class="text-gray-600 hover:text-gray-900">Dashboard</a>
-                    <button onclick="logout()" class="text-gray-600 hover:text-gray-900">Logout</button>
+                    <button id="logoutBtn" class="text-gray-600 hover:text-gray-900">Logout</button>
                 </div>
             </div>
         </div>
@@ -46,16 +55,16 @@
             <!-- Tab Navigation -->
             <div class="border-b border-gray-200 mb-8">
                 <nav class="-mb-px flex space-x-8">
-                    <button onclick="showTab('business')" id="tab-business" class="tab-active py-2 px-4 rounded-t-lg font-medium text-sm">
+                    <button data-tab="business" id="tab-business" class="tab-button tab-active py-2 px-4 rounded-t-lg font-medium text-sm">
                         Business Info
                     </button>
-                    <button onclick="showTab('hours')" id="tab-hours" class="tab-inactive py-2 px-4 rounded-t-lg font-medium text-sm">
+                    <button data-tab="hours" id="tab-hours" class="tab-button tab-inactive py-2 px-4 rounded-t-lg font-medium text-sm">
                         Business Hours
                     </button>
-                    <button onclick="showTab('ai')" id="tab-ai" class="tab-inactive py-2 px-4 rounded-t-lg font-medium text-sm">
+                    <button data-tab="ai" id="tab-ai" class="tab-button tab-inactive py-2 px-4 rounded-t-lg font-medium text-sm">
                         AI Assistant
                     </button>
-                    <button onclick="showTab('contact')" id="tab-contact" class="tab-inactive py-2 px-4 rounded-t-lg font-medium text-sm">
+                    <button data-tab="contact" id="tab-contact" class="tab-button tab-inactive py-2 px-4 rounded-t-lg font-medium text-sm">
                         Owner Contact
                     </button>
                 </nav>
@@ -255,7 +264,7 @@
                     <p class="text-blue-600 text-sm">Customers call this number to reach your AI assistant</p>
                 </div>
                 <div>
-                    <button onclick="copyPhoneNumber()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                    <button id="copyPhoneBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
                         Copy Number
                     </button>
                 </div>
@@ -268,10 +277,10 @@
             <div class="text-sm space-y-2">
                 <p><strong>Business ID:</strong> <span id="debugBusinessId">Loading...</span></p>
                 <p><strong>Authentication:</strong> <span id="debugAuth">Checking...</span></p>
-                <button onclick="testAPI()" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 text-sm">
+                <button id="testAPIBtn" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 text-sm">
                     Test API Connection
                 </button>
-                <button onclick="testSettings()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm ml-2">
+                <button id="testSettingsBtn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm ml-2">
                     Test Settings Update
                 </button>
                 <div id="debugResults" class="mt-2 text-xs bg-white p-2 border rounded hidden"></div>
@@ -303,11 +312,28 @@
             }
             
             businessId = JSON.parse(business).id;
+            
+            // Add tab click event listeners
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.addEventListener('click', function() {
+                    const tabName = this.getAttribute('data-tab');
+                    showTab(tabName);
+                });
+            });
+            
+            // Add debug button event listeners
+            document.getElementById('testAPIBtn')?.addEventListener('click', testAPI);
+            document.getElementById('testSettingsBtn')?.addEventListener('click', testSettings);
+            document.getElementById('logoutBtn')?.addEventListener('click', logout);
+            document.getElementById('copyPhoneBtn')?.addEventListener('click', copyPhoneNumber);
+            
             loadBusinessSettings();
         });
 
         // Tab switching
         function showTab(tabName) {
+            console.log('🔄 Switching to tab:', tabName);
+            
             // Hide all tab contents
             document.querySelectorAll('.tab-content').forEach(content => {
                 content.classList.add('hidden');
@@ -320,11 +346,23 @@
             });
             
             // Show selected tab content
-            document.getElementById(`content-${tabName}`).classList.remove('hidden');
+            const contentElement = document.getElementById(`content-${tabName}`);
+            if (contentElement) {
+                contentElement.classList.remove('hidden');
+                console.log('✅ Showed content for tab:', tabName);
+            } else {
+                console.error('❌ Content element not found for tab:', tabName);
+            }
             
             // Add active class to selected tab
-            document.getElementById(`tab-${tabName}`).classList.remove('tab-inactive');
-            document.getElementById(`tab-${tabName}`).classList.add('tab-active');
+            const tabElement = document.getElementById(`tab-${tabName}`);
+            if (tabElement) {
+                tabElement.classList.remove('tab-inactive');
+                tabElement.classList.add('tab-active');
+                console.log('✅ Activated tab button:', tabName);
+            } else {
+                console.error('❌ Tab button not found for tab:', tabName);
+            }
         }
 
         // Load business settings
@@ -409,7 +447,7 @@
                     </div>
                     <div class="flex items-center">
                         <input type="checkbox" id="enabled-${day}" ${dayData.enabled ? 'checked' : ''} 
-                               class="mr-2" onchange="toggleDay('${day}')">
+                               class="mr-2 toggle-day" data-day="${day}">
                         <label for="enabled-${day}" class="text-sm text-gray-600">Open</label>
                     </div>
                     <div id="hours-${day}" class="flex items-center space-x-2 ${!dayData.enabled ? 'opacity-50' : ''}">
@@ -422,6 +460,14 @@
                 `;
                 
                 hoursContainer.appendChild(dayRow);
+            });
+            
+            // Add event listeners for day toggles
+            document.querySelectorAll('.toggle-day').forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    const day = this.getAttribute('data-day');
+                    toggleDay(day);
+                });
             });
         }
 
