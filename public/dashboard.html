@@ -536,8 +536,10 @@
                 document.getElementById('business-name').textContent = business.name;
             }
             
-            if (business.phoneNumber) {
-                document.getElementById('phone-number').textContent = formatPhoneNumber(business.phoneNumber);
+            if (business.phone_number) {
+                document.getElementById('phone-number').textContent = formatPhoneNumber(business.phone_number);
+            } else {
+                console.log('No phone number found in business data:', business);
             }
             
             if (business.plan) {
@@ -600,13 +602,13 @@
             );
             
             const todayRevenue = todayAppointments.reduce((sum, apt) => 
-                sum + (apt.estimated_revenue || 0), 0
+                sum + (parseFloat(apt.estimated_revenue) || 0), 0
             );
             
             // Update UI
             document.getElementById('today-calls').textContent = todayAppointments.length;
             document.getElementById('appointments-booked').textContent = todayAppointments.length;
-            document.getElementById('today-revenue').textContent = `$${todayRevenue}`;
+            document.getElementById('today-revenue').textContent = `$${todayRevenue.toFixed(2)}`;
             
             // Calculate conversion rate (simplified)
             const conversionRate = todayAppointments.length > 0 ? 
@@ -780,26 +782,53 @@
         }
 
         async function loadNotifications() {
-            // Mock notifications for demo
-            const notifications = [
-                {
-                    id: 1,
+            try {
+                // Load real notifications from recent appointments
+                const today = new Date();
+                const yesterday = new Date(today);
+                yesterday.setDate(yesterday.getDate() - 1);
+                
+                const recentAppointments = appointments.filter(apt => {
+                    const aptDate = new Date(apt.created_at || apt.start_time);
+                    return aptDate >= yesterday;
+                });
+                
+                const notifications = recentAppointments.map((apt, index) => ({
+                    id: apt.id || index,
                     type: 'new_booking',
-                    message: 'New appointment booked with John Smith',
-                    time: '2 minutes ago',
+                    message: `New appointment: ${apt.customer_name} - ${apt.service_name}`,
+                    time: getTimeAgo(apt.created_at || apt.start_time),
                     read: false
-                },
-                {
-                    id: 2,
-                    type: 'call_missed',
-                    message: 'Missed call from (555) 123-4567',
-                    time: '15 minutes ago',
-                    read: false
+                }));
+                
+                // Add a few mock notifications if no real ones
+                if (notifications.length === 0) {
+                    notifications.push({
+                        id: 'mock-1',
+                        type: 'system',
+                        message: 'CallCatcher system is active and ready',
+                        time: '1 hour ago',
+                        read: true
+                    });
                 }
-            ];
+            } catch (error) {
+                console.error('Error loading notifications:', error);
+                notifications = [];
+            }
 
             renderNotifications(notifications);
             updateNotificationBadge(notifications);
+        }
+
+        function getTimeAgo(dateString) {
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffInSeconds = Math.floor((now - date) / 1000);
+            
+            if (diffInSeconds < 60) return 'Just now';
+            if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
+            if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
+            return `${Math.floor(diffInSeconds / 86400)} days ago`;
         }
 
         function renderNotifications(notifications) {
@@ -1033,7 +1062,7 @@
         }
 
         function showSettings() {
-            alert('⚙️ Settings coming soon!\n\nThis will include business settings, notifications, and account preferences.');
+            window.location.href = '/settings';
         }
 
         // Team Management Functions
