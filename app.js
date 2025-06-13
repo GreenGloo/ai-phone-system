@@ -912,7 +912,7 @@ app.put('/api/businesses/:businessId/notifications/:notificationId/read', authen
 });
 
 // SIMPLE BOOKING ENDPOINT - Redesigned for reliability
-app.post('/voice/simple/:businessId', voiceRateLimit, processSimpleVoice);
+app.post('/voice/simple/:businessId', voiceRateLimit, handleVoiceCall);
 
 // PUBLIC BOOKING CALENDAR - For customers to book manually
 app.get('/book/:businessId', async (req, res) => {
