@@ -250,17 +250,17 @@ async function processSimpleVoice(req, res) {
               twiml.say(responses.timeConfirm.replace('{timeDescription}', timeInfo.description));
               nextStage = STATES.CONFIRM;
             } else {
-              // Time is NOT available - find alternatives immediately
+              // Time is NOT available - find alternatives immediately WITHOUT mentioning the unavailable time
               console.log(`❌ Customer requested ${timeInfo.description} but it's not available`);
               const alternatives = await suggestAlternativeTimes(businessId, timeInfo.date, 60);
               
               if (alternatives.length > 0) {
                 const altDescriptions = alternatives.map(alt => alt.description).join(' or ');
-                twiml.say(`${timeInfo.description} is already booked. How about ${altDescriptions} instead?`);
+                twiml.say(`I have ${altDescriptions} available. Does that work for you?`);
                 state.suggestedAlternatives = alternatives;
                 nextStage = STATES.CONFIRM_ALTERNATIVE;
               } else {
-                twiml.say(`${timeInfo.description} is not available. What other day and time would work for you?`);
+                twiml.say(`I don't have anything available then. What other day and time would work for you?`);
                 // Stay in GET_TIME stage
               }
             }
@@ -293,11 +293,11 @@ async function processSimpleVoice(req, res) {
               
               if (alternatives.length > 0) {
                 const altDescriptions = alternatives.map(alt => alt.description).join(' or ');
-                twiml.say(`${fallbackTime.description} is already booked. How about ${altDescriptions} instead?`);
+                twiml.say(`I have ${altDescriptions} available. Does that work for you?`);
                 state.suggestedAlternatives = alternatives;
                 nextStage = STATES.CONFIRM_ALTERNATIVE;
               } else {
-                twiml.say(`${fallbackTime.description} is not available. What other day and time would work for you?`);
+                twiml.say(`I don't have anything available then. What other day and time would work for you?`);
                 // Stay in GET_TIME stage
               }
             }
