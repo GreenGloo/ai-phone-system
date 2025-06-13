@@ -9,7 +9,6 @@ const OpenAI = require('openai');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const cors = require('cors');
 const path = require('path');
-const { processSimpleVoice } = require('./simple-booking');
 
 const app = express();
 app.use(express.json());
