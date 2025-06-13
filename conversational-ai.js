@@ -146,16 +146,22 @@ async function getAvailableSlots(businessId) {
       return [];
     }
     
-    // Get available slots from pre-generated calendar - FULL YEAR AVAILABILITY
+    // Get available slots from pre-generated calendar - DISTRIBUTED ACROSS FULL YEAR
     const slotsResult = await pool.query(`
+      WITH daily_slots AS (
+        SELECT slot_start, slot_end,
+               ROW_NUMBER() OVER (PARTITION BY DATE(slot_start) ORDER BY slot_start) as slot_rank
+        FROM calendar_slots
+        WHERE business_id = $1
+        AND is_available = true
+        AND is_blocked = false
+        AND slot_start >= NOW()
+      )
       SELECT slot_start, slot_end
-      FROM calendar_slots
-      WHERE business_id = $1
-      AND is_available = true
-      AND is_blocked = false
-      AND slot_start >= NOW()
+      FROM daily_slots
+      WHERE slot_rank <= 3  -- Show up to 3 slots per day
       ORDER BY slot_start
-      LIMIT 100
+      LIMIT 200
     `, [businessId]);
     
     if (slotsResult.rows.length === 0) {
