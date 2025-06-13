@@ -577,6 +577,78 @@ app.delete('/api/businesses/:businessId/service-types/:serviceId', authenticateT
 // Voice endpoint with business context - NEW SMART AI SYSTEM
 app.post('/voice/incoming/:businessId', handleVoiceCall);
 
+// Migration endpoint to fix calendar system
+app.post('/admin/migrate-calendar', async (req, res) => {
+  try {
+    console.log('🔧 Running calendar database migration via HTTP...');
+    
+    const fs = require('fs');
+    const migrationSQL = fs.readFileSync('./fix-calendar-database.sql', 'utf8');
+    await pool.query(migrationSQL);
+    
+    console.log('✅ Database migration completed');
+    
+    // Generate real slots for Tom's Garage
+    const businessId = '8fea02b5-850a-4167-913b-a12043c65d17';
+    const business = await pool.query('SELECT business_hours FROM businesses WHERE id = $1', [businessId]);
+    
+    if (business.rows.length > 0) {
+      const business_hours = business.rows[0].business_hours;
+      
+      // Clear existing slots
+      await pool.query('DELETE FROM calendar_slots WHERE business_id = $1', [businessId]);
+      
+      // Generate slots for next 30 days
+      const slots = [];
+      const now = new Date();
+      
+      for (let day = 0; day < 30; day++) {
+        const currentDate = new Date(now);
+        currentDate.setDate(now.getDate() + day);
+        
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const dayName = dayNames[currentDate.getDay()];
+        
+        const dayHours = business_hours[dayName];
+        if (!dayHours || !dayHours.enabled) continue;
+        
+        const [startHour] = dayHours.start.split(':').map(Number);
+        const [endHour] = dayHours.end.split(':').map(Number);
+        
+        for (let hour = startHour; hour < endHour; hour++) {
+          const slotStart = new Date(currentDate);
+          slotStart.setHours(hour, 0, 0, 0);
+          
+          if (day === 0 && slotStart <= now) continue;
+          
+          const slotEnd = new Date(slotStart.getTime() + 60 * 60000);
+          
+          await pool.query(
+            'INSERT INTO calendar_slots (business_id, slot_start, slot_end) VALUES ($1, $2, $3)',
+            [businessId, slotStart.toISOString(), slotEnd.toISOString()]
+          );
+          
+          slots.push({ start: slotStart.toISOString(), end: slotEnd.toISOString() });
+        }
+      }
+      
+      console.log(`✅ Generated ${slots.length} REAL calendar slots for Toms Garage`);
+      
+      res.json({
+        success: true,
+        message: `Calendar migration completed. Generated ${slots.length} real calendar slots.`,
+        sampleSlots: slots.slice(0, 5)
+      });
+    } else {
+      res.json({ success: false, message: 'Business not found' });
+    }
+    
+  } catch (error) {
+    console.error('❌ Migration error:', error);
+    res.json({ success: false, error: error.message });
+  }
+});
+
 // OLD SARAH CODE COMMENTED OUT
 /*
     // Log the call
