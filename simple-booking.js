@@ -99,26 +99,40 @@ async function processSimpleVoice(req, res) {
         break;
         
       case STATES.GET_TIME:
-        // Parse time preference using AI
+        // Parse time preference using AI with fallback
+        console.log(`⏰ Customer said: "${SpeechResult}"`);
+        
         try {
           const timeInfo = await parseTimePreference(SpeechResult, state.business.timezone || 'America/New_York', state.business);
-          state.appointmentTime = timeInfo;
           
-          console.log(`⏰ Customer said: "${SpeechResult}"`);
-          console.log(`⏰ Parsed time: ${timeInfo.description}`);
-          console.log(`⏰ Actual date/time: ${timeInfo.date}`);
-          
-          if (timeInfo.success) {
+          if (timeInfo && timeInfo.success) {
+            state.appointmentTime = timeInfo;
+            console.log(`⏰ Parsed time: ${timeInfo.description}`);
+            console.log(`⏰ Actual date/time: ${timeInfo.date}`);
+            
             twiml.say(responses.timeConfirm.replace('{timeDescription}', timeInfo.description));
             nextStage = STATES.CONFIRM;
           } else {
-            twiml.say(responses.timeError);
+            console.log('⚠️ AI parsing failed, using simple fallback');
+            twiml.say('Could you be more specific? For example, say "tomorrow at 2 PM" or "Monday morning"?');
             // Stay in GET_TIME stage
           }
         } catch (error) {
-          console.error('Time parsing error:', error);
-          twiml.say('I\'m having trouble understanding the time. Could you say it differently?');
-          // Stay in GET_TIME stage
+          console.error('❌ Time parsing error:', error.message);
+          
+          // Use simple fallback parser immediately
+          console.log('🔄 Using simple fallback parser');
+          const fallbackTime = parseTimePreferenceSimple(SpeechResult, state.business.timezone || 'America/New_York');
+          
+          if (fallbackTime && fallbackTime.success) {
+            state.appointmentTime = fallbackTime;
+            console.log(`⏰ Fallback parsed: ${fallbackTime.description}`);
+            twiml.say(responses.timeConfirm.replace('{timeDescription}', fallbackTime.description));
+            nextStage = STATES.CONFIRM;
+          } else {
+            twiml.say('Could you say the day and time? For example, "tomorrow at 2 PM"?');
+            // Stay in GET_TIME stage
+          }
         }
         break;
         
@@ -169,9 +183,9 @@ async function processSimpleVoice(req, res) {
       // Add gather for next input
       twiml.gather({
         input: 'speech',
-        timeout: 10,
+        timeout: 15,
         speechTimeout: 'auto',
-        action: `/voice/simple/${businessId}`,
+        action: `/`,
         method: 'POST'
       });
       
@@ -266,12 +280,20 @@ Be intelligent about:
 - Consider business type context (e.g., dental appointments might prefer morning slots)
 - ALWAYS use reasonable business hours between 7 AM and 8 PM`;
 
+    // Add timeout to prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+    
     const response = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 200,
       temperature: 0.1
+    }, {
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
 
     const aiResponse = response.choices[0].message.content.trim();
     console.log(`🤖 AI response: ${aiResponse}`);
@@ -319,34 +341,72 @@ function parseTimePreferenceSimple(speech, businessTimezone = 'America/New_York'
   const lower = speech.toLowerCase().replace(/[.,]/g, '');
   const now = new Date();
   
-  // Simple fallback - just try to find a time and default to tomorrow
-  let hour = 14; // Default 2 PM
+  console.log(`🔄 Simple parser processing: "${lower}"`);
   
-  if (lower.includes('morning') || lower.includes('am')) {
-    hour = 9;
-  } else if (lower.includes('evening')) {
-    hour = 18;
+  // Default to tomorrow
+  let targetDate = new Date(now);
+  targetDate.setDate(targetDate.getDate() + 1);
+  
+  // Handle day references
+  if (lower.includes('today')) {
+    targetDate = new Date(now);
+  } else if (lower.includes('tomorrow')) {
+    targetDate.setDate(targetDate.getDate()); // already set above
+  } else if (lower.includes('monday')) {
+    targetDate = getNextWeekday(now, 1);
+  } else if (lower.includes('tuesday')) {
+    targetDate = getNextWeekday(now, 2);
+  } else if (lower.includes('wednesday')) {
+    targetDate = getNextWeekday(now, 3);
+  } else if (lower.includes('thursday')) {
+    targetDate = getNextWeekday(now, 4);
+  } else if (lower.includes('friday')) {
+    targetDate = getNextWeekday(now, 5);
   }
   
-  // Look for numbers
+  // Default time based on context
+  let hour = 14; // Default 2 PM
+  
+  if (lower.includes('morning')) {
+    hour = 9; // 9 AM
+  } else if (lower.includes('afternoon')) {
+    hour = 14; // 2 PM
+  } else if (lower.includes('evening')) {
+    hour = 17; // 5 PM
+  } else if (lower.includes('lunch')) {
+    hour = 12; // 12 PM
+  }
+  
+  // Look for specific numbers
   const numberMatch = lower.match(/(\d{1,2})/);
   if (numberMatch) {
     const num = parseInt(numberMatch[1]);
     if (num >= 1 && num <= 12) {
-      hour = lower.includes('pm') || lower.includes('afternoon') || lower.includes('evening') ? 
-            (num === 12 ? 12 : num + 12) : 
-            (num === 12 ? 0 : num);
+      if (lower.includes('pm') || lower.includes('afternoon') || lower.includes('evening')) {
+        hour = (num === 12 ? 12 : num + 12);
+      } else if (lower.includes('am') || lower.includes('morning')) {
+        hour = (num === 12 ? 0 : num);
+      } else {
+        // Assume PM for business hours if no AM/PM specified
+        hour = (num === 12 ? 12 : num + 12);
+      }
     }
   }
   
-  const targetDate = new Date(now);
-  targetDate.setDate(targetDate.getDate() + 1); // Default to tomorrow
+  // Ensure reasonable business hours
+  if (hour < 7) hour = 9;  // No earlier than 9 AM
+  if (hour > 20) hour = 17; // No later than 5 PM
+  
   targetDate.setHours(hour, 0, 0, 0);
+  
+  const description = `${targetDate.getDate() === now.getDate() + 1 ? 'tomorrow' : targetDate.toLocaleDateString('en-US', { weekday: 'long' })} at ${targetDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+  
+  console.log(`✅ Simple parser result: ${description}`);
   
   return {
     success: true,
     date: targetDate,
-    description: `tomorrow at ${targetDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+    description: description
   };
 }
 
