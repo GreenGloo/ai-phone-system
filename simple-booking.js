@@ -417,10 +417,10 @@ IMPORTANT BUSINESS HOUR RULES:
 - For ambiguous times like "1" or "one", assume PM during business hours (1:00 PM not 1:00 AM)
 
 Examples:
-- "tomorrow at 3" → {"date": "2025-06-13", "time": "15:00", "period": "PM", "description": "tomorrow at 3:00 PM"}
-- "next Monday morning" → {"date": "2025-06-16", "time": "09:00", "period": "AM", "description": "Monday at 9:00 AM"}
-- "this coming Wednesday around lunchtime" → {"date": "2025-06-18", "time": "12:00", "period": "PM", "description": "Wednesday at 12:00 PM"}
-- "tomorrow at 1" → {"date": "2025-06-13", "time": "13:00", "period": "PM", "description": "tomorrow at 1:00 PM"}
+- "tomorrow at 3" → tomorrow's date with "15:00", "PM", "tomorrow at 3:00 PM"
+- "next Monday morning" → next Monday's date with "09:00", "AM", "Monday at 9:00 AM"  
+- "this afternoon" → today's date with "14:00", "PM", "this afternoon at 2:00 PM"
+- "tomorrow at 1" → tomorrow's date with "13:00", "PM", "tomorrow at 1:00 PM"
 
 Be intelligent about:
 - "next week" means the following week, not this week
@@ -623,7 +623,7 @@ async function checkCalendarAvailability(businessId, startTime, endTime) {
     }
     
     // Check business hours (if configured)
-    const dayOfWeek = startTime.toLocaleDateString('en-US', { weekday: 'lowercase' });
+    const dayOfWeek = startTime.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
     const businessHours = await getBusinessHours(businessId, dayOfWeek);
     
     if (businessHours && !businessHours.isOpen) {
