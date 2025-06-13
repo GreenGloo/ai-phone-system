@@ -128,9 +128,27 @@ function calculateResponseTiming(messageLength, emotion, personality) {
   return Math.max(0.2, Math.min(2.0, baseDelay)); // Keep between 0.2-2 seconds
 }
 
-// Get available appointment slots
+// Get available appointment slots using REAL business calendar system
 async function getAvailableSlots(businessId) {
   try {
+    console.log(`📅 Getting REAL calendar availability for business ${businessId}`);
+    
+    // Get business info with calendar preferences and business hours
+    const businessResult = await pool.query(`
+      SELECT business_hours, calendar_preferences 
+      FROM businesses 
+      WHERE id = $1
+    `, [businessId]);
+    
+    if (businessResult.rows.length === 0) {
+      console.error('❌ Business not found for calendar');
+      return [];
+    }
+    
+    const { business_hours, calendar_preferences } = businessResult.rows[0];
+    console.log(`🏢 Business Hours:`, business_hours);
+    console.log(`📋 Calendar Preferences:`, calendar_preferences);
+    
     // Get existing appointments
     const existingAppointments = await pool.query(`
       SELECT start_time, end_time 
@@ -147,32 +165,59 @@ async function getAvailableSlots(businessId) {
       end: new Date(apt.end_time)
     }));
     
-    // Generate available slots for next 7 days (full week)
+    console.log(`📋 Found ${bookedSlots.length} existing appointments`);
+    
+    // Generate available slots using REAL business hours
     const availableSlots = [];
     const now = new Date();
+    const appointmentDuration = calendar_preferences?.appointmentDuration || 60;
+    const bufferTime = calendar_preferences?.bufferTime || 30;
+    const maxDaily = calendar_preferences?.maxDailyAppointments || 8;
     
     for (let day = 0; day < 7; day++) {
       const currentDate = new Date(now);
       currentDate.setDate(now.getDate() + day);
+      const dayName = currentDate.toLocaleDateString('en-US', { weekday: 'lowercase' });
       
-      // Business hours: 9 AM to 5 PM
-      for (let hour = 9; hour < 17; hour++) {
+      // Get business hours for this day
+      const dayHours = business_hours[dayName];
+      if (!dayHours || !dayHours.enabled) {
+        console.log(`📅 ${dayName} is closed`);
+        continue;
+      }
+      
+      const [startHour, startMinute] = dayHours.start.split(':').map(Number);
+      const [endHour, endMinute] = dayHours.end.split(':').map(Number);
+      
+      console.log(`📅 ${dayName}: ${dayHours.start} - ${dayHours.end}`);
+      
+      let dailySlotCount = 0;
+      
+      // Generate slots within business hours
+      for (let hour = startHour; hour < endHour; hour++) {
         for (let minute = 0; minute < 60; minute += 30) {
+          if (dailySlotCount >= maxDaily) break;
+          
           const slotStart = new Date(currentDate);
           slotStart.setHours(hour, minute, 0, 0);
+          
+          // Skip if past end time
+          if (hour === endHour && minute >= endMinute) break;
           
           // Skip past times for today
           if (day === 0 && slotStart <= now) continue;
           
-          const slotEnd = new Date(slotStart.getTime() + 60 * 60000); // 1 hour slot
+          const slotEnd = new Date(slotStart.getTime() + appointmentDuration * 60000);
           
-          // Check if slot conflicts with existing appointments
-          const hasConflict = bookedSlots.some(booked => 
-            (slotStart < booked.end && slotEnd > booked.start)
-          );
+          // Check if slot conflicts with existing appointments (including buffer)
+          const hasConflict = bookedSlots.some(booked => {
+            const bufferStart = new Date(booked.start.getTime() - bufferTime * 60000);
+            const bufferEnd = new Date(booked.end.getTime() + bufferTime * 60000);
+            return (slotStart < bufferEnd && slotEnd > bufferStart);
+          });
           
           if (!hasConflict) {
-            const dayName = day === 0 ? 'today' : day === 1 ? 'tomorrow' : currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+            const dayLabel = day === 0 ? 'today' : day === 1 ? 'tomorrow' : currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
             const timeStr = slotStart.toLocaleTimeString('en-US', { 
               hour: 'numeric', 
               minute: '2-digit',
@@ -180,20 +225,24 @@ async function getAvailableSlots(businessId) {
             });
             
             availableSlots.push({
-              day: dayName,
+              day: dayLabel,
               time: timeStr,
               datetime: slotStart.toISOString()
             });
+            
+            dailySlotCount++;
           }
         }
+        if (dailySlotCount >= maxDaily) break;
       }
     }
     
-    return availableSlots.slice(0, 20); // Return first 20 available slots
+    console.log(`📅 Generated ${availableSlots.length} available slots using REAL business calendar`);
+    return availableSlots.slice(0, 20);
     
   } catch (error) {
-    console.error('Error getting availability:', error);
-    return []; // Return empty array on error
+    console.error('❌ Error getting REAL calendar availability:', error);
+    return [];
   }
 }
 
