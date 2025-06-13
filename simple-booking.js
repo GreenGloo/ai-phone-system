@@ -14,8 +14,83 @@ const openai = new OpenAI({
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
 
-// Simple conversation state management
-const callStates = new Map(); // callSid -> state
+// Enhanced call state management with TTL and cleanup
+class CallStateManager {
+  constructor() {
+    this.callStates = new Map();
+    this.stateExpiry = new Map();
+    this.maxCallDuration = 30 * 60 * 1000; // 30 minutes max
+    
+    // Cleanup expired states every 5 minutes
+    setInterval(() => this.cleanupExpiredStates(), 5 * 60 * 1000);
+    
+    console.log('📞 CallStateManager initialized with automatic cleanup');
+  }
+  
+  setState(callSid, state) {
+    this.callStates.set(callSid, state);
+    this.stateExpiry.set(callSid, Date.now() + this.maxCallDuration);
+    console.log(`📞 Set state for call ${callSid}, expires in ${this.maxCallDuration/1000/60} minutes`);
+  }
+  
+  getState(callSid) {
+    if (this.isExpired(callSid)) {
+      this.deleteState(callSid);
+      console.log(`⏰ Call ${callSid} state expired and cleaned up`);
+      return null;
+    }
+    return this.callStates.get(callSid);
+  }
+  
+  deleteState(callSid) {
+    this.callStates.delete(callSid);
+    this.stateExpiry.delete(callSid);
+    console.log(`🗑️ Deleted state for call ${callSid}`);
+  }
+  
+  cleanupExpiredStates() {
+    const now = Date.now();
+    let cleanedCount = 0;
+    
+    for (const [callSid, expiry] of this.stateExpiry.entries()) {
+      if (now > expiry) {
+        this.deleteState(callSid);
+        cleanedCount++;
+      }
+    }
+    
+    if (cleanedCount > 0) {
+      console.log(`🧹 Cleaned up ${cleanedCount} expired call states`);
+    }
+    
+    // Log memory usage
+    const metrics = this.getMetrics();
+    console.log(`📊 Call State Metrics - Active: ${metrics.activeStates}, Memory: ${metrics.memoryUsageMB}MB`);
+  }
+  
+  isExpired(callSid) {
+    const expiry = this.stateExpiry.get(callSid);
+    return expiry && Date.now() > expiry;
+  }
+  
+  getMetrics() {
+    const memUsage = process.memoryUsage();
+    return {
+      activeStates: this.callStates.size,
+      memoryUsageMB: Math.round(memUsage.heapUsed / 1024 / 1024),
+      oldestStateAge: this.getOldestStateAge()
+    };
+  }
+  
+  getOldestStateAge() {
+    if (this.stateExpiry.size === 0) return 0;
+    const now = Date.now();
+    const oldestExpiry = Math.min(...Array.from(this.stateExpiry.values()));
+    return Math.round((this.maxCallDuration - (oldestExpiry - now)) / 1000); // Age in seconds
+  }
+}
+
+const callStateManager = new CallStateManager();
 
 // Conversation states
 const STATES = {
@@ -37,7 +112,7 @@ async function processSimpleVoice(req, res) {
     console.log(`📞 Call ${CallSid}: "${SpeechResult}"`);
     
     // Get or create call state
-    let state = callStates.get(CallSid) || {
+    let state = callStateManager.getState(CallSid) || {
       stage: STATES.GREETING,
       business: null,
       service: null,
@@ -155,7 +230,7 @@ async function processSimpleVoice(req, res) {
             twiml.say(responses.bookingError);
           }
           twiml.hangup();
-          callStates.delete(CallSid); // Clean up
+          callStateManager.deleteState(CallSid); // Clean up
         } else if (confirmation.includes('no') || confirmation.includes('different') || confirmation.includes('change') || confirmation.includes('earlier') || confirmation.includes('later')) {
           twiml.say(responses.timeChange);
           nextStage = STATES.GET_TIME;
@@ -170,7 +245,7 @@ async function processSimpleVoice(req, res) {
       default:
         twiml.say('Thank you for calling. Goodbye!');
         twiml.hangup();
-        callStates.delete(CallSid);
+        callStateManager.deleteState(CallSid);
         break;
     }
     
@@ -178,7 +253,7 @@ async function processSimpleVoice(req, res) {
     if (nextStage !== STATES.COMPLETE) {
       state.stage = nextStage;
       state.attempts++;
-      callStates.set(CallSid, state);
+      callStateManager.setState(CallSid, state);
       
       // Add gather for next input
       twiml.gather({

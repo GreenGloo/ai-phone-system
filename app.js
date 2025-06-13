@@ -15,6 +15,51 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
+// Basic rate limiting for voice endpoints
+const voiceRequestTracker = new Map(); // Track requests per phone number
+const VOICE_RATE_LIMIT = 20; // Max 20 calls per minute per phone number
+const RATE_WINDOW = 60 * 1000; // 1 minute window
+
+function voiceRateLimit(req, res, next) {
+  const phoneNumber = req.body.From || req.ip;
+  const now = Date.now();
+  
+  if (!voiceRequestTracker.has(phoneNumber)) {
+    voiceRequestTracker.set(phoneNumber, { count: 1, firstRequest: now });
+    return next();
+  }
+  
+  const tracker = voiceRequestTracker.get(phoneNumber);
+  
+  // Reset window if expired
+  if (now - tracker.firstRequest > RATE_WINDOW) {
+    tracker.count = 1;
+    tracker.firstRequest = now;
+    return next();
+  }
+  
+  // Check rate limit
+  if (tracker.count >= VOICE_RATE_LIMIT) {
+    console.warn(`🚨 Voice rate limit exceeded for ${phoneNumber}`);
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.say('Sorry, too many calls. Please try again in a few minutes.');
+    return res.type('text/xml').send(twiml.toString());
+  }
+  
+  tracker.count++;
+  next();
+}
+
+// Clean up rate limiting tracker every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [phone, tracker] of voiceRequestTracker.entries()) {
+    if (now - tracker.firstRequest > RATE_WINDOW * 2) {
+      voiceRequestTracker.delete(phone);
+    }
+  }
+}, 5 * 60 * 1000);
+
 // Debug middleware to log all API requests
 app.use('/api', (req, res, next) => {
   console.log(`🌐 ${req.method} ${req.path} - Headers: ${JSON.stringify(req.headers.authorization ? 'Bearer ***' : 'No auth')}`);
@@ -32,12 +77,48 @@ app.use(express.static('public'));
 // Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  // Performance optimizations
+  max: 20, // Maximum pool size
+  min: 5,  // Minimum pool size
+  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
+  connectionTimeoutMillis: 10000, // Return error after 10 seconds if connection cannot be established
+  statement_timeout: 30000, // 30 second query timeout
+  query_timeout: 30000,
+  // Connection health checks
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
 });
 
 // Initialize services
 const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Database health monitoring
+async function setupDatabaseMonitoring() {
+  // Connection health check every 30 seconds
+  setInterval(async () => {
+    try {
+      const start = Date.now();
+      await pool.query('SELECT 1');
+      const duration = Date.now() - start;
+      
+      if (duration > 5000) { // Warn if query takes > 5 seconds
+        console.warn(`🐌 Slow database response: ${duration}ms`);
+      }
+      
+      // Log pool stats every 5 minutes
+      if (Date.now() % (5 * 60 * 1000) < 30000) {
+        console.log(`📊 DB Pool - Total: ${pool.totalCount}, Idle: ${pool.idleCount}, Waiting: ${pool.waitingCount}`);
+      }
+    } catch (error) {
+      console.error('🔥 Database health check failed:', error.message);
+    }
+  }, 30000);
+}
+
+// Start monitoring
+setupDatabaseMonitoring();
 
 // JWT secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
@@ -632,7 +713,7 @@ app.post('/voice/process', async (req, res) => {
 });
 
 // ROOT VOICE HANDLER - Routes calls to correct business
-app.post('/', async (req, res) => {
+app.post('/', voiceRateLimit, async (req, res) => {
   try {
     const { Called } = req.body;
     console.log(`📞 Incoming call to number: ${Called}`);
@@ -666,7 +747,7 @@ app.post('/', async (req, res) => {
 });
 
 // SIMPLE BOOKING ENDPOINT - Redesigned for reliability
-app.post('/voice/simple/:businessId', processSimpleVoice);
+app.post('/voice/simple/:businessId', voiceRateLimit, processSimpleVoice);
 
 // PUBLIC BOOKING CALENDAR - For customers to book manually
 app.get('/book/:businessId', async (req, res) => {
