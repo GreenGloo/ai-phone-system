@@ -523,18 +523,18 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     console.log(`📞 INTELLIGENT BOOKING INITIATED - Data:`, aiResponse.data);
     
     // Intelligent booking confirmation based on personality and emotional state
-    const confirmationMessage = generateBookingConfirmation(aiResponse.data, personality, emotions);
+    const confirmationMessage = generateBookingConfirmation(aiResponse.data, conversation.personality, conversation.emotionalState);
     console.log(`🎯 Booking confirmation: "${confirmationMessage}"`);
     
     // Apply natural speech enhancement to confirmation
-    const enhancedConfirmation = enhanceNaturalSpeech(confirmationMessage, personality, emotions);
+    const enhancedConfirmation = enhanceNaturalSpeech(confirmationMessage, conversation.personality, conversation.emotionalState);
     twiml.say(enhancedConfirmation);
     
     // Process the booking with enhanced error handling
     try {
       if (services.length === 0) {
         console.error('❌ No services found for business');
-        const errorMessage = generateServiceErrorMessage(personality, emotions);
+        const errorMessage = generateServiceErrorMessage(conversation.personality, conversation.emotionalState);
         twiml.say(errorMessage);
         shouldContinue = false;
       } else {
@@ -546,22 +546,22 @@ async function holdConversation(res, business, callSid, from, speech, businessId
         console.log(`📞 Enhanced booking result:`, booking);
         
         if (booking.success) {
-          const successMessage = generateBookingSuccessMessage(aiResponse.data, personality, emotions, selectedService);
-          const enhancedSuccess = enhanceNaturalSpeech(successMessage, personality, emotions);
+          const successMessage = generateBookingSuccessMessage(aiResponse.data, conversation.personality, conversation.emotionalState, selectedService);
+          const enhancedSuccess = enhanceNaturalSpeech(successMessage, conversation.personality, conversation.emotionalState);
           twiml.say(enhancedSuccess);
           twiml.hangup();
           shouldContinue = false;
           conversations.delete(callSid);
         } else {
           console.error('❌ Booking failed:', booking.error);
-          const failureMessage = generateBookingFailureMessage(personality, emotions);
+          const failureMessage = generateBookingFailureMessage(conversation.personality, conversation.emotionalState);
           twiml.say(failureMessage);
           shouldContinue = false;
         }
       }
     } catch (error) {
       console.error('❌ Booking error:', error);
-      const errorMessage = generateSystemErrorMessage(personality, emotions);
+      const errorMessage = generateSystemErrorMessage(conversation.personality, conversation.emotionalState);
       twiml.say(errorMessage);
       shouldContinue = false;
     }
