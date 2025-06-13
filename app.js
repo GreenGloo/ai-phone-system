@@ -1053,7 +1053,7 @@ app.put('/api/businesses/:businessId/owner-contact', authenticateToken, getBusin
         updated_at = CURRENT_TIMESTAMP
        WHERE id = $5
        RETURNING first_name, last_name, phone, email`,
-      [phone, email, first_name, last_name, req.user.userId]
+      [phone, email, first_name, last_name, req.user.id]
     );
     
     if (result.rows.length === 0) {
