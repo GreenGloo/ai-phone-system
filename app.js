@@ -3,6 +3,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
+const { processSimpleVoice } = require('./simple-booking');
 const twilio = require('twilio');
 const OpenAI = require('openai');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -1667,8 +1668,8 @@ function generateBookingPageHTML(business, services) {
 </html>`;
 }
 
-// Voice processing endpoint for AI conversations
-app.post('/voice/process/:businessId', processVoiceForBusiness);
+// Voice processing endpoint for AI conversations - using working simple booking logic
+app.post('/voice/process/:businessId', processSimpleVoice);
 
 async function processVoiceForBusiness(req, res) {
   try {
