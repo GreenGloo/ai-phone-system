@@ -631,6 +631,40 @@ app.post('/voice/process', async (req, res) => {
   }
 });
 
+// ROOT VOICE HANDLER - Routes calls to correct business
+app.post('/', async (req, res) => {
+  try {
+    const { Called } = req.body;
+    console.log(`📞 Incoming call to number: ${Called}`);
+    
+    // Find business by phone number
+    const businessResult = await pool.query(
+      'SELECT id FROM businesses WHERE phone_number = $1 AND status = $2',
+      [Called, 'active']
+    );
+    
+    if (businessResult.rows.length === 0) {
+      console.log(`❌ No business found for phone number: ${Called}`);
+      const twiml = new twilio.twiml.VoiceResponse();
+      twiml.say('Sorry, this number is not configured. Please contact support.');
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
+    const businessId = businessResult.rows[0].id;
+    console.log(`✅ Routing call to business: ${businessId}`);
+    
+    // Forward to the simple booking handler
+    req.params = { businessId };
+    return processSimpleVoice(req, res);
+    
+  } catch (error) {
+    console.error('Error routing voice call:', error);
+    const twiml = new twilio.twiml.VoiceResponse();
+    twiml.say('Sorry, there was a technical issue. Please try calling back.');
+    res.type('text/xml').send(twiml.toString());
+  }
+});
+
 // SIMPLE BOOKING ENDPOINT - Redesigned for reliability
 app.post('/voice/simple/:businessId', processSimpleVoice);
 
