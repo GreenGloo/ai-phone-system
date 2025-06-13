@@ -287,6 +287,12 @@ async function processSimpleVoice(req, res) {
               nextStage = STATES.COMPLETE;
               twiml.hangup();
               callStateManager.deleteState(CallSid); // Clean up
+            } else if (bookingResult.hasAlternatives) {
+              // Handle alternative time suggestions - continue conversation
+              console.log(`📅 Offering alternatives, continuing conversation`);
+              twiml.say(bookingResult.error);
+              nextStage = STATES.GET_TIME; // Go back to time selection
+              // DON'T hang up - wait for customer response
             } else {
               twiml.say(responses.bookingError);
               twiml.hangup();
@@ -816,6 +822,14 @@ async function bookSimpleAppointment(state, businessId) {
       if (alternatives.length > 0) {
         const altDescriptions = alternatives.map(alt => alt.description).join(' or ');
         errorMessage += ` How about ${altDescriptions} instead?`;
+        
+        // Return special result instead of throwing - this allows conversation to continue
+        return {
+          success: false,
+          error: errorMessage,
+          hasAlternatives: true,
+          alternatives: alternatives
+        };
       }
       
       throw new Error(errorMessage);
