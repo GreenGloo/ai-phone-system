@@ -596,13 +596,19 @@
 
                 // Load appointments if we have business ID
                 if (businessData.id) {
+                    console.log(`📋 Loading appointments for business: ${businessData.id}`);
                     const appointmentsResponse = await fetch(`/api/businesses/${businessData.id}/appointments`, { headers });
                     if (appointmentsResponse.ok) {
                         appointments = await appointmentsResponse.json();
+                        console.log(`📋 Loaded ${appointments.length} appointments`);
                         await updatePastAppointments(); // Update past appointments status
                         renderRecentAppointments();
                         updateStats();
+                    } else {
+                        console.error(`❌ Failed to load appointments for business ${businessData.id}`);
                     }
+                } else {
+                    console.error(`❌ No business ID available for loading appointments`);
                 }
 
                 // Load notifications

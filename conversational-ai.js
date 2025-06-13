@@ -209,8 +209,23 @@ async function holdConversation(res, business, callSid, from, speech, businessId
         twiml.say('I\'m having trouble accessing our services. Let me have someone call you back.');
         shouldContinue = false;
       } else {
-        console.log(`📞 Attempting to book with service: ${services[0].name}`);
-        const booking = await bookAppointment(conversation, businessId, services[0], aiResponse.data);
+        // Find the correct service based on AI's identification
+        let selectedService = services[0]; // fallback
+        if (aiResponse.data.service) {
+          const matchedService = services.find(s => 
+            s.name.toLowerCase().includes(aiResponse.data.service.toLowerCase()) ||
+            aiResponse.data.service.toLowerCase().includes(s.name.toLowerCase())
+          );
+          if (matchedService) {
+            selectedService = matchedService;
+            console.log(`🎯 Matched AI service "${aiResponse.data.service}" to "${selectedService.name}"`);
+          } else {
+            console.log(`⚠️ No exact match for "${aiResponse.data.service}", using first service: ${selectedService.name}`);
+          }
+        }
+        
+        console.log(`📞 Attempting to book with service: ${selectedService.name}`);
+        const booking = await bookAppointment(conversation, businessId, selectedService, aiResponse.data);
         console.log(`📞 Booking result:`, booking);
         
         if (booking.success) {
