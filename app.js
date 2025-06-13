@@ -1045,14 +1045,8 @@ app.post('/api/book/:businessId', async (req, res) => {
       ]
     );
     
-    // Send notifications (reuse the SMS function)
-    await sendPublicBookingNotifications(businessId, {
-      customerName,
-      customerPhone,
-      service: service.name,
-      appointmentTime: appointmentDateTime,
-      notes: notes || ''
-    }, result.rows[0]);
+    // SMS notifications disabled - using website notifications only
+    console.log('📧 SMS disabled - appointment created without SMS notifications');
     
     console.log('✅ Public booking successful:', result.rows[0].id);
     
