@@ -109,7 +109,7 @@ async function processSimpleVoice(req, res) {
   const businessId = req.params.businessId;
   
   try {
-    console.log(`📞 Call ${CallSid}: "${SpeechResult}"`);
+    console.log(`📞 Call ${CallSid}: "${SpeechResult || 'INITIAL_CALL'}"`);
     
     // Get or create call state
     let state = callStateManager.getState(CallSid) || {
@@ -121,6 +121,58 @@ async function processSimpleVoice(req, res) {
       appointmentTime: null,
       attempts: 0
     };
+    
+    // Handle initial call setup (when SpeechResult is undefined)
+    if (!SpeechResult && state.stage === STATES.GREETING && state.attempts === 0) {
+      console.log(`🎤 Initial call setup for ${CallSid}`);
+      const twiml = new twilio.twiml.VoiceResponse();
+      
+      // Get business info first
+      const businessResult = await pool.query(
+        'SELECT * FROM businesses WHERE id = $1',
+        [businessId]
+      );
+      
+      if (businessResult.rows.length === 0) {
+        twiml.say('Sorry, this business is not available.');
+        return res.type('text/xml').send(twiml.toString());
+      }
+      
+      state.business = businessResult.rows[0];
+      const responses = getPersonalityResponses(state.business.ai_personality || 'professional');
+      
+      // Start the conversation
+      twiml.say(responses.greeting.replace('{businessName}', state.business.name));
+      
+      // Set up gather for the first real input
+      twiml.gather({
+        input: 'speech',
+        timeout: 15,
+        speechTimeout: 'auto',
+        action: `/voice/simple/${businessId}`,
+        method: 'POST'
+      });
+      
+      twiml.say('I didn\'t hear you. Let me have someone call you back.');
+      twiml.hangup();
+      
+      // Update state
+      state.stage = STATES.GET_SERVICE;
+      state.attempts = 1;
+      callStateManager.setState(CallSid, state);
+      
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
+    // Skip processing if no speech input (but not initial call)
+    if (!SpeechResult) {
+      console.log(`⚠️ No speech result for call ${CallSid}, stage: ${state.stage}`);
+      const twiml = new twilio.twiml.VoiceResponse();
+      twiml.say('I didn\'t hear anything. Please try calling back.');
+      twiml.hangup();
+      callStateManager.deleteState(CallSid);
+      return res.type('text/xml').send(twiml.toString());
+    }
     
     // Get business info
     if (!state.business) {
@@ -234,12 +286,16 @@ async function processSimpleVoice(req, res) {
             callStateManager.deleteState(CallSid); // Clean up
           } catch (error) {
             // Handle calendar conflicts by asking for different time
-            console.log(`📅 Booking conflict: ${error.message}`);
+            console.error(`❌ BOOKING ERROR for ${CallSid}:`, error.message);
+            console.error(`❌ Full error stack:`, error.stack);
+            console.error(`❌ State at error:`, JSON.stringify(state, null, 2));
             
             if (error.message.includes('already an appointment') || error.message.includes('closed on') || error.message.includes('only open from')) {
+              console.log(`📅 Calendar conflict detected, asking for different time`);
               twiml.say(error.message);
               nextStage = STATES.GET_TIME; // Go back to time selection
             } else {
+              console.error(`🚨 CRITICAL BOOKING ERROR - hanging up: ${error.message}`);
               twiml.say(responses.bookingError);
               twiml.hangup();
               callStateManager.deleteState(CallSid);
@@ -274,7 +330,7 @@ async function processSimpleVoice(req, res) {
         input: 'speech',
         timeout: 15,
         speechTimeout: 'auto',
-        action: `/`,
+        action: `/voice/simple/${businessId}`,
         method: 'POST'
       });
       
@@ -286,10 +342,14 @@ async function processSimpleVoice(req, res) {
     res.type('text/xml').send(twiml.toString());
     
   } catch (error) {
-    console.error('Simple booking error:', error);
+    console.error(`🚨 CRITICAL VOICE PROCESSING ERROR for ${CallSid}:`, error.message);
+    console.error(`🚨 Full error stack:`, error.stack);
+    console.error(`🚨 Request body:`, JSON.stringify(req.body, null, 2));
+    
     const twiml = new twilio.twiml.VoiceResponse();
     twiml.say('Sorry, there was a technical issue. Please try calling back.');
     twiml.hangup();
+    callStateManager.deleteState(CallSid);
     res.type('text/xml').send(twiml.toString());
   }
 }
