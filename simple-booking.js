@@ -303,11 +303,13 @@ async function processSimpleVoice(req, res) {
               twiml.say(error.message);
               nextStage = STATES.GET_TIME; // Go back to time selection
               // DON'T hang up - continue conversation to get new time
+              // DON'T re-throw the error - it's handled
             } else {
               console.error(`🚨 CRITICAL BOOKING ERROR - hanging up: ${error.message}`);
               twiml.say(responses.bookingError);
               twiml.hangup();
               callStateManager.deleteState(CallSid);
+              return res.type('text/xml').send(twiml.toString()); // Exit early for critical errors
             }
           }
         } else if (confirmation.includes('no') || confirmation.includes('different') || confirmation.includes('change') || confirmation.includes('earlier') || confirmation.includes('later')) {
