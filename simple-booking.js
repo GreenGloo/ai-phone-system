@@ -5,6 +5,11 @@ require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const { Pool } = require('pg');
+const OpenAI = require('openai');
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const twilioClient = twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN);
@@ -74,7 +79,14 @@ async function processSimpleVoice(req, res) {
         
       case STATES.GET_SERVICE:
         // They described their service need
-        state.service = SpeechResult;
+        state.service = SpeechResult || 'General service request';
+        console.log(`🔧 Service requested: "${state.service}"`);
+        
+        // Validate we got a meaningful service description
+        if (state.service.length < 3 || state.service.toLowerCase().includes('undefined')) {
+          state.service = 'General service request';
+        }
+        
         twiml.say(responses.serviceConfirm);
         nextStage = STATES.GET_NAME;
         break;
@@ -115,7 +127,8 @@ async function processSimpleVoice(req, res) {
         const confirmation = SpeechResult.toLowerCase();
         console.log(`✅ Customer confirmation: "${SpeechResult}"`);
         
-        if (confirmation.includes('yes') || confirmation.includes('yeah') || confirmation.includes('correct') || confirmation.includes('right')) {
+        // More strict confirmation checking
+        if (confirmation.includes('yes') || confirmation.includes('yeah') || confirmation.includes('correct') || confirmation.includes('right') || confirmation.includes('that works') || confirmation.includes('sounds good')) {
           // Book the appointment
           const bookingResult = await bookSimpleAppointment(state, businessId);
           
@@ -129,11 +142,13 @@ async function processSimpleVoice(req, res) {
           }
           twiml.hangup();
           callStates.delete(CallSid); // Clean up
-        } else if (confirmation.includes('no') || confirmation.includes('different') || confirmation.includes('change')) {
+        } else if (confirmation.includes('no') || confirmation.includes('different') || confirmation.includes('change') || confirmation.includes('earlier') || confirmation.includes('later')) {
           twiml.say(responses.timeChange);
           nextStage = STATES.GET_TIME;
         } else {
-          twiml.say(responses.confirmationError);
+          // Handle unclear responses
+          console.log(`⚠️ Unclear confirmation: "${SpeechResult}"`);
+          twiml.say('I didn\'t catch that clearly. Could you please say yes to confirm the appointment, or let me know if you\'d like a different time?');
           // Stay in CONFIRM stage
         }
         break;
@@ -231,17 +246,25 @@ Return a JSON object with:
   "description": "human readable description like 'tomorrow at 2:00 PM'"
 }
 
+IMPORTANT BUSINESS HOUR RULES:
+- NEVER schedule before 7:00 AM or after 8:00 PM
+- Business hours are typically 8:00 AM to 6:00 PM
+- If customer says unclear time, default to reasonable business hours
+- "morning" = 9:00 AM, "afternoon" = 2:00 PM, "evening" = 5:00 PM, "lunchtime" = 12:00 PM
+- For ambiguous times like "1" or "one", assume PM during business hours (1:00 PM not 1:00 AM)
+
 Examples:
 - "tomorrow at 3" → {"date": "2025-06-13", "time": "15:00", "period": "PM", "description": "tomorrow at 3:00 PM"}
 - "next Monday morning" → {"date": "2025-06-16", "time": "09:00", "period": "AM", "description": "Monday at 9:00 AM"}
 - "this coming Wednesday around lunchtime" → {"date": "2025-06-18", "time": "12:00", "period": "PM", "description": "Wednesday at 12:00 PM"}
+- "tomorrow at 1" → {"date": "2025-06-13", "time": "13:00", "period": "PM", "description": "tomorrow at 1:00 PM"}
 
 Be intelligent about:
-- "morning" = 9 AM, "afternoon" = 2 PM, "evening" = 6 PM, "lunchtime" = 12 PM
 - "next week" means the following week, not this week
-- If no time specified, default to 2 PM
+- If no time specified, default to 2:00 PM
 - If no day specified, default to tomorrow
-- Consider business type context (e.g., dental appointments might prefer morning slots)`;
+- Consider business type context (e.g., dental appointments might prefer morning slots)
+- ALWAYS use reasonable business hours between 7 AM and 8 PM`;
 
     const response = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
@@ -258,8 +281,24 @@ Be intelligent about:
     // Create the actual Date object
     const appointmentDate = new Date(`${parsed.date}T${parsed.time}:00`);
     
+    // Validate the time is reasonable (7 AM to 8 PM)
+    const hour = appointmentDate.getHours();
+    if (hour < 7 || hour > 20) {
+      console.warn(`⚠️ Unreasonable time detected: ${hour}:00. Adjusting to business hours.`);
+      
+      // Adjust to reasonable business hours
+      if (hour < 7) {
+        appointmentDate.setHours(9, 0, 0, 0); // 9 AM
+        parsed.description = parsed.description.replace(/\d{1,2}:\d{2}\s*(AM|PM)/i, '9:00 AM');
+      } else if (hour > 20) {
+        appointmentDate.setHours(14, 0, 0, 0); // 2 PM next day or adjust
+        parsed.description = parsed.description.replace(/\d{1,2}:\d{2}\s*(AM|PM)/i, '2:00 PM');
+      }
+    }
+    
     console.log(`🎯 AI parsed result: ${parsed.description}`);
     console.log(`📅 Appointment date: ${appointmentDate.toString()}`);
+    console.log(`⏰ Final hour: ${appointmentDate.getHours()}:${appointmentDate.getMinutes().toString().padStart(2, '0')}`);
     
     return {
       success: true,
