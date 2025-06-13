@@ -181,11 +181,14 @@ ${serviceList}
 SMART RULES:
 1. If customer mentions ANY time preference (tomorrow, afternoon, morning, specific time): action = "suggest_time" immediately
 2. If customer confirms/agrees (yes, sure, that works, sounds good): action = "book_appointment"  
-3. If customer is frustrated/complaining ("doesn't work", "broken", cursing): Reset and ask for service + time
-4. Only use "get_info" if you truly need more information
+3. If customer wants earlier time ("earlier", "sooner", "today", "ASAP", "emergency"): action = "suggest_time", timePreference = "earlier"
+4. If customer is frustrated/complaining ("doesn't work", "broken", cursing): Reset and ask for service + time
+5. Only use "get_info" if you truly need more information
 
 EXAMPLES:
 - "tomorrow afternoon" → action: "suggest_time", timePreference: "afternoon"
+- "can we do it earlier?" → action: "suggest_time", timePreference: "earlier"
+- "I need it today" → action: "suggest_time", timePreference: "today"
 - "windshield wipers broken" + time mentioned → action: "suggest_time"  
 - "sure" or "that works" → action: "book_appointment"
 - "doesn't work" or frustrated language → action: "get_info", ask what's wrong and when they want service
@@ -227,6 +230,49 @@ async function findAvailableTime(businessId, timePreference) {
   
   const today = new Date();
   const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  
+  // Handle "earlier" or "today" requests
+  if (timePreference === 'earlier' || timePreference === 'today') {
+    console.log(`⚡ Customer wants earlier/today - checking today first`);
+    
+    // Check remaining hours today first
+    const currentHour = today.getHours();
+    for (let hour = Math.max(currentHour + 1, 8); hour <= 18; hour++) {
+      const checkTime = new Date(today);
+      checkTime.setHours(hour, 0, 0, 0);
+      
+      if (await isTimeAvailable(businessId, checkTime)) {
+        return {
+          startTime: checkTime,
+          description: checkTime.toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit', 
+            hour12: true 
+          }) + ' today'
+        };
+      }
+    }
+    
+    // If nothing today, check early tomorrow
+    for (let hour = 8; hour <= 11; hour++) {
+      const checkTime = new Date(tomorrow);
+      checkTime.setHours(hour, 0, 0, 0);
+      
+      if (await isTimeAvailable(businessId, checkTime)) {
+        return {
+          startTime: checkTime,
+          description: checkTime.toLocaleTimeString('en-US', { 
+            weekday: 'long',
+            hour: 'numeric', 
+            minute: '2-digit', 
+            hour12: true 
+          })
+        };
+      }
+    }
+    
+    return null;
+  }
   
   // Define time ranges based on preference
   let timeRanges = [];
