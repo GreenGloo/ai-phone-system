@@ -760,6 +760,17 @@ Respond in JSON:
   } catch (error) {
     console.error('Human-like AI Error:', error);
     
+    // If Claude succeeded but we hit an error in post-processing, use Claude's response
+    if (aiContent && typeof aiContent === 'string') {
+      try {
+        const claudeResponse = JSON.parse(aiContent);
+        console.log('🔄 Using Claude response despite post-processing error');
+        return claudeResponse;
+      } catch (parseError) {
+        console.error('Claude response parse error:', parseError);
+      }
+    }
+    
     // Enhanced fallback with Claude vs OpenAI context
     console.error(`${USE_CLAUDE ? 'Claude' : 'OpenAI'} API Error:`, error);
     
