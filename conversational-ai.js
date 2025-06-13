@@ -128,35 +128,43 @@ function calculateResponseTiming(messageLength, emotion, personality) {
   return Math.max(0.2, Math.min(2.0, baseDelay)); // Keep between 0.2-2 seconds
 }
 
-// REAL calendar availability only - no fake slots
-
-// Get available appointment slots using REAL business calendar system
+// Get available appointment slots from PRE-GENERATED calendar
 async function getAvailableSlots(businessId) {
   try {
-    console.log(`📅 Getting REAL calendar availability for business ${businessId}`);
+    console.log(`📅 Getting PRE-GENERATED calendar slots for business ${businessId}`);
     
-    // Get business info with calendar preferences and business hours
-    const businessResult = await pool.query(`
-      SELECT business_hours, calendar_preferences 
-      FROM businesses 
-      WHERE id = $1
+    // Check if calendar_slots table exists, if not use basic method
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'calendar_slots'
+      );
+    `);
+    
+    if (!tableCheck.rows[0].exists) {
+      console.log('📅 calendar_slots table does not exist yet - using basic availability');
+      return getBasicAvailability(businessId);
+    }
+    
+    // Get available slots from pre-generated calendar
+    const slotsResult = await pool.query(`
+      SELECT slot_start, slot_end
+      FROM calendar_slots
+      WHERE business_id = $1
+      AND is_available = true
+      AND is_blocked = false
+      AND slot_start >= NOW()
+      AND slot_start <= NOW() + INTERVAL '7 days'
+      ORDER BY slot_start
+      LIMIT 20
     `, [businessId]);
     
-    if (businessResult.rows.length === 0) {
-      console.error('❌ Business not found for calendar');
+    if (slotsResult.rows.length === 0) {
+      console.log('📅 No pre-generated slots found - business may need calendar setup');
       return [];
     }
     
-    const { business_hours, calendar_preferences } = businessResult.rows[0];
-    console.log(`🏢 Raw Business Hours:`, JSON.stringify(business_hours));
-    console.log(`📋 Raw Calendar Preferences:`, JSON.stringify(calendar_preferences));
-    
-    if (!business_hours) {
-      console.error('❌ No business_hours configured in database');
-      return [];
-    }
-    
-    // Get existing appointments
+    // Check against existing appointments
     const existingAppointments = await pool.query(`
       SELECT start_time, end_time 
       FROM appointments 
@@ -164,99 +172,115 @@ async function getAvailableSlots(businessId) {
       AND status IN ('scheduled', 'confirmed')
       AND start_time >= NOW()
       AND start_time <= NOW() + INTERVAL '7 days'
-      ORDER BY start_time
     `, [businessId]);
     
-    const bookedSlots = existingAppointments.rows.map(apt => ({
+    const bookedTimes = existingAppointments.rows.map(apt => ({
       start: new Date(apt.start_time),
       end: new Date(apt.end_time)
     }));
     
-    console.log(`📋 Found ${bookedSlots.length} existing appointments`);
+    // Filter out slots that conflict with appointments
+    const availableSlots = slotsResult.rows
+      .filter(slot => {
+        const slotStart = new Date(slot.slot_start);
+        const slotEnd = new Date(slot.slot_end);
+        
+        return !bookedTimes.some(booked => 
+          (slotStart < booked.end && slotEnd > booked.start)
+        );
+      })
+      .map(slot => {
+        const slotStart = new Date(slot.slot_start);
+        const now = new Date();
+        const daysDiff = Math.floor((slotStart - now) / (1000 * 60 * 60 * 24));
+        
+        let dayLabel;
+        if (daysDiff === 0) dayLabel = 'today';
+        else if (daysDiff === 1) dayLabel = 'tomorrow';
+        else dayLabel = slotStart.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+        
+        const timeStr = slotStart.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        });
+        
+        return {
+          day: dayLabel,
+          time: timeStr,
+          datetime: slotStart.toISOString()
+        };
+      });
     
-    // Generate available slots using REAL business hours
-    const availableSlots = [];
-    const now = new Date();
-    const appointmentDuration = calendar_preferences?.appointmentDuration || 60;
-    const bufferTime = calendar_preferences?.bufferTime || 30;
-    const maxDaily = calendar_preferences?.maxDailyAppointments || 8;
-    
-    for (let day = 0; day < 7; day++) {
-      const currentDate = new Date(now);
-      currentDate.setDate(now.getDate() + day);
-      
-      // Get day name in correct format for database lookup
-      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-      const dayName = dayNames[currentDate.getDay()];
-      
-      console.log(`📅 Checking ${dayName} (day ${currentDate.getDay()})`);
-      
-      // Get business hours for this day
-      const dayHours = business_hours[dayName];
-      if (!dayHours || !dayHours.enabled) {
-        console.log(`📅 ${dayName} is closed or not enabled`);
-        continue;
-      }
-      
-      const [startHour, startMinute] = dayHours.start.split(':').map(Number);
-      const [endHour, endMinute] = dayHours.end.split(':').map(Number);
-      
-      console.log(`📅 ${dayName}: ${dayHours.start} - ${dayHours.end}`);
-      
-      let dailySlotCount = 0;
-      
-      // Generate slots within business hours
-      for (let hour = startHour; hour < endHour; hour++) {
-        for (let minute = 0; minute < 60; minute += 30) {
-          if (dailySlotCount >= maxDaily) break;
-          
-          const slotStart = new Date(currentDate);
-          slotStart.setHours(hour, minute, 0, 0);
-          
-          // Skip if past end time
-          if (hour === endHour && minute >= endMinute) break;
-          
-          // Skip past times for today
-          if (day === 0 && slotStart <= now) continue;
-          
-          const slotEnd = new Date(slotStart.getTime() + appointmentDuration * 60000);
-          
-          // Check if slot conflicts with existing appointments (including buffer)
-          const hasConflict = bookedSlots.some(booked => {
-            const bufferStart = new Date(booked.start.getTime() - bufferTime * 60000);
-            const bufferEnd = new Date(booked.end.getTime() + bufferTime * 60000);
-            return (slotStart < bufferEnd && slotEnd > bufferStart);
-          });
-          
-          if (!hasConflict) {
-            const dayLabel = day === 0 ? 'today' : day === 1 ? 'tomorrow' : currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-            const timeStr = slotStart.toLocaleTimeString('en-US', { 
-              hour: 'numeric', 
-              minute: '2-digit',
-              hour12: true 
-            });
-            
-            availableSlots.push({
-              day: dayLabel,
-              time: timeStr,
-              datetime: slotStart.toISOString()
-            });
-            
-            dailySlotCount++;
-          }
-        }
-        if (dailySlotCount >= maxDaily) break;
-      }
-    }
-    
-    console.log(`📅 Generated ${availableSlots.length} available slots using REAL business calendar`);
-    return availableSlots.slice(0, 20);
+    console.log(`📅 Found ${availableSlots.length} available slots from pre-generated calendar`);
+    return availableSlots;
     
   } catch (error) {
-    console.error('❌ Error getting REAL calendar availability:', error);
-    console.error('❌ Stack trace:', error.stack);
+    console.error('❌ Error getting calendar slots:', error);
     return [];
   }
+}
+
+// Basic availability method for when calendar_slots doesn't exist yet
+async function getBasicAvailability(businessId) {
+  console.log('📅 Using basic availability calculation');
+  
+  // Get business hours
+  const businessResult = await pool.query(`
+    SELECT business_hours, calendar_preferences 
+    FROM businesses 
+    WHERE id = $1
+  `, [businessId]);
+  
+  if (businessResult.rows.length === 0) return [];
+  
+  const { business_hours, calendar_preferences } = businessResult.rows[0];
+  if (!business_hours) return [];
+  
+  const availableSlots = [];
+  const now = new Date();
+  const appointmentDuration = calendar_preferences?.appointmentDuration || 60;
+  
+  // Generate basic slots for next 3 days
+  for (let day = 0; day < 3; day++) {
+    const currentDate = new Date(now);
+    currentDate.setDate(now.getDate() + day);
+    
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const dayName = dayNames[currentDate.getDay()];
+    
+    const dayHours = business_hours[dayName];
+    if (!dayHours || !dayHours.enabled) continue;
+    
+    const [startHour, startMinute] = dayHours.start.split(':').map(Number);
+    const [endHour, endMinute] = dayHours.end.split(':').map(Number);
+    
+    for (let hour = startHour; hour < endHour; hour++) {
+      for (let minute = 0; minute < 60; minute += 60) { // Every hour
+        const slotStart = new Date(currentDate);
+        slotStart.setHours(hour, minute, 0, 0);
+        
+        if (day === 0 && slotStart <= now) continue;
+        if (hour === endHour && minute >= endMinute) break;
+        
+        const dayLabel = day === 0 ? 'today' : day === 1 ? 'tomorrow' : currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+        const timeStr = slotStart.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        });
+        
+        availableSlots.push({
+          day: dayLabel,
+          time: timeStr,
+          datetime: slotStart.toISOString()
+        });
+      }
+    }
+  }
+  
+  console.log(`📅 Generated ${availableSlots.length} basic availability slots`);
+  return availableSlots.slice(0, 10);
 }
 
 async function handleVoiceCall(req, res) {
