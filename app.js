@@ -1907,13 +1907,7 @@ async function processVoiceForBusiness(req, res) {
   }
 }
 
-// Catch-all voice endpoint for debugging (must be after specific routes)
-app.post('/voice/*', (req, res) => {
-  console.log('📞 Voice request (catch-all):', req.path, req.body);
-  const twiml = new twilio.twiml.VoiceResponse();
-  twiml.say(`Hello, this is CallCatcher. You called ${req.path}. The system is being configured. Please try again shortly.`);
-  res.type('text/xml').send(twiml.toString());
-});
+// Catch-all voice endpoint removed - was interfering with smart booking
 
 // Helper function to get next occurrence of a weekday
 function getNextWeekday(date, targetDay) {

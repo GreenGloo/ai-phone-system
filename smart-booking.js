@@ -18,15 +18,18 @@ async function handleVoiceCall(req, res) {
   const businessId = req.params.businessId;
   
   try {
-    console.log(`📞 Call ${CallSid}: "${SpeechResult || 'INITIAL'}"`);
+    console.log(`🚀 SMART BOOKING: Call ${CallSid}: "${SpeechResult || 'INITIAL'}" for business ${businessId}`);
+    console.log(`📋 Full request body:`, req.body);
     
     // Get business info
     const businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
     if (businessResult.rows.length === 0) {
+      console.log(`❌ Business not found: ${businessId}`);
       return sendTwiml(res, 'Sorry, this business is not available.');
     }
     
     const business = businessResult.rows[0];
+    console.log(`✅ Business found: ${business.name}`);
     
     // Handle initial call (no speech yet)
     if (!SpeechResult) {
