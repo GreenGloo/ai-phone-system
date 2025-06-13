@@ -147,11 +147,11 @@ async function getAvailableSlots(businessId) {
       end: new Date(apt.end_time)
     }));
     
-    // Generate available slots for next 3 days
+    // Generate available slots for next 7 days (full week)
     const availableSlots = [];
     const now = new Date();
     
-    for (let day = 0; day < 3; day++) {
+    for (let day = 0; day < 7; day++) {
       const currentDate = new Date(now);
       currentDate.setDate(now.getDate() + day);
       
@@ -172,7 +172,7 @@ async function getAvailableSlots(businessId) {
           );
           
           if (!hasConflict) {
-            const dayName = day === 0 ? 'today' : day === 1 ? 'tomorrow' : currentDate.toLocaleDateString('en-US', { weekday: 'long' });
+            const dayName = day === 0 ? 'today' : day === 1 ? 'tomorrow' : currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
             const timeStr = slotStart.toLocaleTimeString('en-US', { 
               hour: 'numeric', 
               minute: '2-digit',
@@ -631,12 +631,18 @@ async function getHumanLikeResponse(speech, conversation, business, services, av
     `${h.speaker}: ${h.message}`
   ).join('\n');
   
-  const availableSlots = availability.slice(0, 5).map(slot => 
+  const availableSlots = availability.slice(0, 10).map(slot => 
     `${slot.day} ${slot.time} (${slot.datetime})`
   ).join(', ');
   
   // Claude-optimized prompt - superior instruction following and context understanding
+  const currentDate = new Date();
+  const todayStr = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const currentTime = currentDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  
   const claudePrompt = `You are an expert booking assistant for ${business.name}, a professional automotive garage.
+
+CURRENT DATE/TIME: ${todayStr} at ${currentTime}
 
 CUSTOMER INPUT: "${speech}"
 
@@ -649,7 +655,8 @@ CRITICAL BOOKING INSTRUCTIONS:
 • Speech recognition errors: "CID" = "oil change", "old change" = "oil change"
 • ANY service mention = immediately offer specific times and push for booking
 • Customer saying "yes"/"okay"/"sounds good"/"that works" = book the appointment NOW with action: "book_appointment"
-• When offering times, ALWAYS include a specific appointmentDatetime in ISO format
+• ONLY suggest times from the AVAILABLE APPOINTMENT SLOTS list above - never make up dates!
+• When offering times, ALWAYS use the exact appointmentDatetime from the available slots
 • Be conversational but ALWAYS drive toward booking an appointment
 • Oil changes are most common - assume unclear requests are oil changes
 
