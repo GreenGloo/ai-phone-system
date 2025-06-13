@@ -154,7 +154,7 @@ async function getAvailableSlots(businessId) {
       AND is_available = true
       AND is_blocked = false
       AND slot_start >= NOW()
-      AND slot_start <= NOW() + INTERVAL '7 days'
+      AND slot_start <= NOW() + INTERVAL '30 days'
       ORDER BY slot_start
       LIMIT 20
     `, [businessId]);
@@ -171,7 +171,7 @@ async function getAvailableSlots(businessId) {
       WHERE business_id = $1 
       AND status IN ('scheduled', 'confirmed')
       AND start_time >= NOW()
-      AND start_time <= NOW() + INTERVAL '7 days'
+      AND start_time <= NOW() + INTERVAL '30 days'
     `, [businessId]);
     
     const bookedTimes = existingAppointments.rows.map(apt => ({

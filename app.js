@@ -598,11 +598,11 @@ app.post('/admin/migrate-calendar', async (req, res) => {
       // Clear existing slots
       await pool.query('DELETE FROM calendar_slots WHERE business_id = $1', [businessId]);
       
-      // Generate slots for next 30 days
+      // Generate slots for next 365 days (full year)
       const slots = [];
       const now = new Date();
       
-      for (let day = 0; day < 30; day++) {
+      for (let day = 0; day < 365; day++) {
         const currentDate = new Date(now);
         currentDate.setDate(now.getDate() + day);
         
