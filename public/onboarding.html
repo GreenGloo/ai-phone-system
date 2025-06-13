@@ -373,9 +373,8 @@
             
             businessData = { ...user, ...business };
             
-            if (business.phoneNumber) {
-                document.getElementById('assigned-phone').textContent = formatPhoneNumber(business.phoneNumber);
-            }
+            // Phone number will be selected during onboarding Step 4
+            console.log('📞 Business phone number status:', business.phoneNumber || 'No phone number - will select in Step 4');
             
             if (business.plan) {
                 document.getElementById('selected-plan').textContent = capitalizeFirst(business.plan);
@@ -564,13 +563,21 @@
         }
 
         function showStep(step) {
+            console.log(`📱 Showing step ${step}`);
+            
             // Hide all steps
             document.querySelectorAll('.step-content').forEach(content => {
                 content.classList.add('hidden');
             });
             
             // Show current step
-            document.getElementById(`step-content-${step}`).classList.remove('hidden');
+            const stepElement = document.getElementById(`step-content-${step}`);
+            if (stepElement) {
+                stepElement.classList.remove('hidden');
+                console.log(`📱 ✅ Step ${step} content displayed`);
+            } else {
+                console.error(`📱 ❌ Step ${step} content not found!`);
+            }
             
             // Update progress
             updateProgress();
@@ -617,8 +624,12 @@
         }
 
         function testCall() {
-            const phoneNumber = document.getElementById('assigned-phone').textContent;
-            alert(`📞 Test your AI system:\n\nCall: ${phoneNumber}\n\nSay: "I need a plumber for my kitchen sink"\n\nThe AI will offer available appointment times and book the appointment automatically!`);
+            const phoneNumber = selectedPhoneNumber || businessData.selectedPhoneNumber;
+            if (phoneNumber) {
+                alert(`📞 Test your AI system:\n\nCall: ${formatPhoneNumber(phoneNumber)}\n\nSay: "I need a plumber for my kitchen sink"\n\nThe AI will offer available appointment times and book the appointment automatically!`);
+            } else {
+                alert('📞 Please select a phone number first!');
+            }
         }
 
         function setupPayment() {
