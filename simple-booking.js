@@ -197,6 +197,9 @@ async function processSimpleVoice(req, res) {
     const responses = getPersonalityResponses(state.business.ai_personality || 'professional');
     
     // Process based on current stage
+    console.log(`🔄 Processing stage: ${state.stage} for call ${CallSid}`);
+    console.log(`📝 Speech input: "${SpeechResult}"`);
+    
     switch (state.stage) {        
       case STATES.GET_SERVICE:
         // They described their service need
@@ -307,9 +310,11 @@ async function processSimpleVoice(req, res) {
         break;
         
       default:
-        twiml.say('Thank you for calling. Goodbye!');
-        twiml.hangup();
-        callStateManager.deleteState(CallSid);
+        console.log(`⚠️ UNEXPECTED STATE: ${state.stage} for call ${CallSid}`);
+        console.log(`📞 State dump:`, JSON.stringify(state, null, 2));
+        twiml.say('I apologize for the confusion. Let me start over. How can I help you today?');
+        state.stage = STATES.GET_SERVICE;
+        nextStage = STATES.GET_SERVICE;
         break;
     }
     
