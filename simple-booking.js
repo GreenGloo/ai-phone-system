@@ -100,6 +100,7 @@ const STATES = {
   GET_PHONE: 'get_phone',
   GET_TIME: 'get_time',
   CONFIRM: 'confirm',
+  CONFIRM_ALTERNATIVE: 'confirm_alternative',
   COMPLETE: 'complete'
 };
 
@@ -297,7 +298,10 @@ async function processSimpleVoice(req, res) {
               // Handle alternative time suggestions - continue conversation
               console.log(`📅 Offering alternatives, continuing conversation`);
               twiml.say(bookingResult.error);
-              nextStage = STATES.GET_TIME; // Go back to time selection
+              
+              // SAVE THE ALTERNATIVES and go to special confirmation state
+              state.suggestedAlternatives = bookingResult.alternatives;
+              nextStage = STATES.CONFIRM_ALTERNATIVE;
               // DON'T hang up - wait for customer response
             } else {
               twiml.say(responses.bookingError);
@@ -332,6 +336,38 @@ async function processSimpleVoice(req, res) {
           console.log(`⚠️ Unclear confirmation: "${SpeechResult}"`);
           twiml.say('I didn\'t catch that clearly. Could you please say yes to confirm the appointment, or let me know if you\'d like a different time?');
           // Stay in CONFIRM stage
+        }
+        break;
+        
+      case STATES.CONFIRM_ALTERNATIVE:
+        // Customer is responding to alternative time suggestions
+        const altConfirmation = SpeechResult.toLowerCase();
+        console.log(`✅ Alternative confirmation: "${SpeechResult}"`);
+        
+        // Check if they're accepting the suggested alternative
+        const isAccepting = altConfirmation.includes('yes') || altConfirmation.includes('yeah') || altConfirmation.includes('yep') || 
+                           altConfirmation.includes('sure') || altConfirmation.includes('ok') || altConfirmation.includes('okay') ||
+                           altConfirmation.includes('that works') || altConfirmation.includes('sounds good') || altConfirmation.includes('perfect') ||
+                           altConfirmation.includes('book it') || altConfirmation.includes('4') || altConfirmation.includes('four');
+        
+        if (isAccepting && state.suggestedAlternatives && state.suggestedAlternatives.length > 0) {
+          // Book the FIRST suggested alternative (usually the best one)
+          const selectedAlternative = state.suggestedAlternatives[0];
+          console.log(`📅 Customer accepted alternative: ${selectedAlternative.description}`);
+          
+          // Update state with the selected alternative time
+          state.appointmentTime = {
+            date: selectedAlternative.startTime,
+            description: selectedAlternative.description
+          };
+          
+          // Confirm this specific time
+          twiml.say(`Perfect! I'll book you for ${selectedAlternative.description}. Is that correct?`);
+          nextStage = STATES.CONFIRM;
+        } else {
+          // They declined or want something else
+          twiml.say('What day and time would work better for you?');
+          nextStage = STATES.GET_TIME;
         }
         break;
         
