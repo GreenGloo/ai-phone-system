@@ -770,9 +770,10 @@
                 }
                 
                 const data = await response.json();
-                availableNumbers = data.availableNumbers || [];
+                availableNumbers = data.availableNumbers || data || []; // Handle both old and new format
                 
                 console.log(`📞 Found ${availableNumbers.length} available numbers`);
+                console.log(`📞 Search info:`, data.searchInfo || 'No search info available');
                 
                 // Hide loading, show results
                 document.getElementById('loading-numbers').classList.add('hidden');

@@ -979,9 +979,10 @@
                 }
                 
                 const data = await response.json();
-                settingsAvailableNumbers = data.availableNumbers || [];
+                settingsAvailableNumbers = data.availableNumbers || data || []; // Handle both old and new format
                 
                 console.log(`📞 Found ${settingsAvailableNumbers.length} available numbers`);
+                console.log(`📞 Search info:`, data.searchInfo || 'No search info available');
                 
                 // Hide loading, show results
                 document.getElementById('phone-search-loading').classList.add('hidden');

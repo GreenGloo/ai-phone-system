@@ -3440,6 +3440,8 @@ app.get('/api/businesses/:businessId/available-phone-numbers', authenticateToken
   try {
     const { areaCode, country = 'US' } = req.query;
     
+    console.log(`📞 Searching for phone numbers - Area Code: ${areaCode}, Country: ${country}`);
+    
     // Search for available phone numbers
     const searchParams = {
       limit: 20,
@@ -3451,11 +3453,36 @@ app.get('/api/businesses/:businessId/available-phone-numbers', authenticateToken
       searchParams.areaCode = areaCode;
     }
     
+    console.log(`📞 Twilio search params:`, searchParams);
+    
     const availableNumbers = await twilioClient.availablePhoneNumbers(country)
       .local
       .list(searchParams);
+      
+    console.log(`📞 Twilio returned ${availableNumbers.length} numbers for area code ${areaCode}`);
     
-    const formattedNumbers = availableNumbers.map(number => ({
+    // If no numbers found with area code, try without area code restriction  
+    let fallbackNumbers = [];
+    if (availableNumbers.length === 0 && areaCode) {
+      console.log(`📞 No numbers found for area code ${areaCode}, trying fallback search without area code...`);
+      
+      const fallbackParams = {
+        limit: 10,
+        voiceEnabled: true,
+        smsEnabled: true
+        // No area code restriction
+      };
+      
+      fallbackNumbers = await twilioClient.availablePhoneNumbers(country)
+        .local
+        .list(fallbackParams);
+        
+      console.log(`📞 Fallback search returned ${fallbackNumbers.length} numbers`);
+    }
+    
+    const numbersToUse = availableNumbers.length > 0 ? availableNumbers : fallbackNumbers;
+    
+    const formattedNumbers = numbersToUse.map(number => ({
       phoneNumber: number.phoneNumber,
       friendlyName: number.friendlyName,
       locality: number.locality,
@@ -3465,7 +3492,16 @@ app.get('/api/businesses/:businessId/available-phone-numbers', authenticateToken
       twilioPrice: '$5.00' // Note: actual Twilio cost but included in subscription
     }));
     
-    res.json(formattedNumbers);
+    res.json({
+      availableNumbers: formattedNumbers,
+      searchInfo: {
+        requestedAreaCode: areaCode,
+        originalResults: availableNumbers.length,
+        fallbackResults: fallbackNumbers.length,
+        totalReturned: formattedNumbers.length,
+        usedFallback: availableNumbers.length === 0 && fallbackNumbers.length > 0
+      }
+    });
   } catch (error) {
     console.error('Error fetching available numbers:', error);
     res.status(500).json({ error: 'Failed to fetch available phone numbers' });
