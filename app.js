@@ -3,7 +3,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
-const { processSimpleVoice } = require('./simple-booking');
+const { handleVoiceCall } = require('./smart-booking');
 const twilio = require('twilio');
 const OpenAI = require('openai');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -574,8 +574,8 @@ app.delete('/api/businesses/:businessId/service-types/:serviceId', authenticateT
   }
 });
 
-// Voice endpoint with business context - redirect to simple booking
-app.post('/voice/incoming/:businessId', processSimpleVoice);
+// Voice endpoint with business context - NEW SMART AI SYSTEM
+app.post('/voice/incoming/:businessId', handleVoiceCall);
 
 // OLD SARAH CODE COMMENTED OUT
 /*
