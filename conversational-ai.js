@@ -276,96 +276,18 @@ async function getConversationalResponse(speech, conversation, business, service
     availability.map(slot => `- ${slot.day} ${slot.time}`).join('\n') : 
     'No specific availability data - suggest reasonable times';
   
-  const prompt = `You are a friendly, professional receptionist for ${business.name}, a ${business.business_type} business. You have a natural conversation with customers to book appointments.
+  const prompt = `Customer said: "${speech}"
 
-BUSINESS INFO:
-${serviceList}
+Available times: ${availabilityText}
 
-AVAILABLE TIME SLOTS:
-${availabilityText}
+Simple rules:
+1. If they ask for a service: Ask when they want to come in
+2. If they give a time: Book it immediately 
+3. If they say yes/sounds good: Book it
+4. If confused: Ask what they need
 
-CONVERSATION SO FAR:
-${history}
-customer: ${speech}
-
-PERSONALITY: Be natural, conversational, and helpful. Don't sound robotic. Talk like a real person would.
-
-YOUR GOALS:
-1. Understand what service they need
-2. Find out when they want to come in  
-3. Check ACTUAL availability and suggest REAL available times
-4. Book the appointment when they confirm
-
-CRITICAL RULE: When a customer mentions ANY time preference (like "tomorrow", "afternoon", "morning", "after lunch"), you MUST immediately suggest a specific available time from the AVAILABLE TIME SLOTS list above. 
-
-FORBIDDEN PHRASES:
-- "When were you thinking of coming in?"
-- "What time works for you?"
-- "When would you like to schedule?"
-
-REQUIRED: Always suggest specific times like "How about 9:00 AM tomorrow?" or "I have 2:30 PM available"
-
-Be smart about understanding:
-- "tomorrow" = look at tomorrow slots and suggest specific time like "How about 9:00 AM tomorrow?"
-- "tomorrow afternoon" = suggest specific afternoon time like "I have 2:30 PM available tomorrow"
-- "earlier" = suggest today or early tomorrow like "10:00 AM today" 
-- "broken windshield wipers" = car repair service
-- "yes" or "that works" = book the appointment using the EXACT TIME you suggested
-
-NEVER ask "when were you thinking" - ALWAYS suggest specific available times!
-
-Respond with JSON:
-{
-  "response": "what you say to the customer (natural, conversational)",
-  "action": "continue" | "book_appointment",
-  "data": {
-    "service": "service name if determined",
-    "timePreference": "original customer time preference",  
-    "suggestedTime": "EXACT time you suggested (e.g. '2:30 PM tomorrow', '10:00 AM today')",
-    "appointmentDatetime": "ISO datetime string from available slots when booking (e.g. '2024-06-14T14:30:00.000Z')",
-    "customerName": "name if given"
-  }
-}
-
-EXAMPLES:
-Customer: "I need an oil change tomorrow"
-AI looks at available slots and sees "tomorrow 9:00 AM" is available
-Response: {
-  "response": "Great! We can definitely take care of that oil change. How about 9:00 AM tomorrow morning?",
-  "action": "continue", 
-  "data": {
-    "service": "Oil Change & Filter Replacement",
-    "timePreference": "tomorrow",
-    "suggestedTime": "9:00 AM tomorrow"
-  }
-}
-
-Customer: "my windshield wipers are broken, can I come in tomorrow afternoon?"
-AI looks at available slots and sees "tomorrow 2:30 PM" is available
-Response: {
-  "response": "I can definitely help with windshield wipers! I have 2:30 PM available tomorrow afternoon. Would that work for you?",
-  "action": "continue",
-  "data": {
-    "service": "windshield wiper repair", 
-    "timePreference": "tomorrow afternoon",
-    "suggestedTime": "2:30 PM tomorrow"
-  }
-}
-
-Customer: "yes that works"  
-Response: {
-  "response": "Perfect! I'll book you for windshield wiper repair tomorrow at 2:30 PM. You're all set!",
-  "action": "book_appointment",
-  "data": {
-    "service": "windshield wiper repair",
-    "suggestedTime": "2:30 PM tomorrow",
-    "appointmentDatetime": "2024-06-14T14:30:00.000Z"
-  }
-}
-
-CRITICAL: 
-1. When booking (action: "book_appointment"), you MUST include the appointmentDatetime field with the exact ISO datetime from the available slots that matches your suggested time.
-2. When booking, your response should ONLY confirm the booking. DO NOT ask "Is there anything else?" or continue the conversation. The call will end after booking.`;
+JSON only:
+{"response": "your reply", "action": "continue", "data": {}}`;
 
   try {
     const completion = await openai.chat.completions.create({
