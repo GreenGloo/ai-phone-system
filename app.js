@@ -3516,6 +3516,20 @@ app.post('/api/businesses/:businessId/purchase-phone-number', authenticateToken,
       return res.status(400).json({ error: 'Phone number is required' });
     }
     
+    console.log(`📞 Purchasing phone number ${phoneNumber} for business ${req.business.name}`);
+    console.log(`📞 Current business phone: ${req.business.phone_number || 'None'}`);
+    
+    // If business already has a phone number, release it first
+    if (req.business.phone_number && req.business.twilio_phone_sid) {
+      console.log(`📞 Releasing old phone number ${req.business.phone_number}`);
+      try {
+        await twilioClient.incomingPhoneNumbers(req.business.twilio_phone_sid).remove();
+        console.log(`📞 ✅ Old phone number released successfully`);
+      } catch (releaseError) {
+        console.error(`📞 ⚠️ Failed to release old number (continuing anyway):`, releaseError.message);
+      }
+    }
+    
     // Purchase the phone number from Twilio
     const purchasedNumber = await twilioClient.incomingPhoneNumbers.create({
       phoneNumber: phoneNumber,
@@ -3548,6 +3562,15 @@ app.post('/api/businesses/:businessId/purchase-phone-number', authenticateToken,
     
   } catch (error) {
     console.error('Error purchasing phone number:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      phoneNumber: req.body.phoneNumber,
+      businessId: req.business.id,
+      businessName: req.business.name
+    });
+    
     res.status(500).json({ 
       error: 'Failed to purchase phone number',
       details: error.message 
