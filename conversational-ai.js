@@ -569,11 +569,11 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     console.log(`💬 Continuing conversation with: "${aiResponse.response}"`);
     
     // Apply natural speech enhancements
-    const enhancedResponse = enhanceNaturalSpeech(aiResponse.response, personality, emotions);
+    const enhancedResponse = enhanceNaturalSpeech(aiResponse.response, conversation.personality, conversation.emotionalState);
     console.log(`🎭 Enhanced speech: "${enhancedResponse}"`);
     
     // Calculate natural response timing
-    const responseDelay = calculateResponseTiming(speech.length, emotions, personality);
+    const responseDelay = calculateResponseTiming(speech.length, conversation.emotionalState, conversation.personality);
     console.log(`⏱️ Natural response delay: ${responseDelay}s`);
     
     // Add slight pause for natural timing (Twilio supports pause)
@@ -582,7 +582,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     }
     
     // Say the enhanced response with personality-matched voice settings
-    const voiceSettings = getVoiceSettings(personality, emotions);
+    const voiceSettings = getVoiceSettings(conversation.personality, conversation.emotionalState);
     twiml.say(enhancedResponse, voiceSettings);
   }
   
@@ -597,11 +597,11 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     };
     
     // Adjust parameters based on emotional state and conversation stage
-    if (emotions.includes('frustrated')) {
+    if (conversation.emotionalState.includes('frustrated')) {
       gatherParams.timeout = 20; // Faster response for frustrated customers
-    } else if (emotions.includes('confused')) {
+    } else if (conversation.emotionalState.includes('confused')) {
       gatherParams.timeout = 35; // More time for confused customers to respond
-    } else if (interactionCount > 5) {
+    } else if (conversation.interactionCount > 5) {
       gatherParams.timeout = 20; // Shorter timeout for extended conversations
     }
     
@@ -610,11 +610,11 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     // Natural timeout messages based on emotional state and personality
     let timeoutMessage = 'I didn\'t catch that. Let me have someone call you right back to make sure we take care of you.';
     
-    if (emotions.includes('frustrated')) {
+    if (conversation.emotionalState.includes('frustrated')) {
       timeoutMessage = 'I want to make sure I help you properly - let me have someone call you back right away.';
-    } else if (emotions.includes('urgent')) {
+    } else if (conversation.emotionalState.includes('urgent')) {
       timeoutMessage = 'I don\'t want to keep you waiting - someone will call you back immediately.';
-    } else if (personality.tone === 'casual and conversational') {
+    } else if (conversation.personality.tone === 'casual and conversational') {
       timeoutMessage = 'Hmm, I think we might have lost connection. We\'ll call you right back!';
     }
     
@@ -754,7 +754,7 @@ Respond in JSON:
     }
     
     console.log(`🤖 Human-like AI: "${response.response}" | Action: ${response.action}`);
-    console.log(`🤖 Emotional awareness: ${emotions.join(', ') || 'neutral'}`);
+    console.log(`🤖 Emotional awareness: ${conversation?.emotionalState?.join(', ') || 'neutral'}`);
     return response;
     
   } catch (error) {
