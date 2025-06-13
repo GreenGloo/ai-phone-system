@@ -146,22 +146,16 @@ async function getAvailableSlots(businessId) {
       return [];
     }
     
-    // Get available slots from pre-generated calendar - DISTRIBUTED ACROSS FULL YEAR
+    // Get available slots from pre-generated calendar - ALL SLOTS AVAILABLE
     const slotsResult = await pool.query(`
-      WITH daily_slots AS (
-        SELECT slot_start, slot_end,
-               ROW_NUMBER() OVER (PARTITION BY DATE(slot_start) ORDER BY slot_start) as slot_rank
-        FROM calendar_slots
-        WHERE business_id = $1
-        AND is_available = true
-        AND is_blocked = false
-        AND slot_start >= NOW()
-      )
       SELECT slot_start, slot_end
-      FROM daily_slots
-      WHERE slot_rank <= 3  -- Show up to 3 slots per day
+      FROM calendar_slots
+      WHERE business_id = $1
+      AND is_available = true
+      AND is_blocked = false
+      AND slot_start >= NOW()
       ORDER BY slot_start
-      LIMIT 200
+      LIMIT 300
     `, [businessId]);
     
     if (slotsResult.rows.length === 0) {
@@ -663,21 +657,8 @@ async function getHumanLikeResponse(speech, conversation, business, services, av
     `${h.speaker}: ${h.message}`
   ).join('\n');
   
-  // Show a better sample of available slots including future dates
-  const nearTermSlots = availability.slice(0, 6); // Next few days
-  const midTermSlots = availability.filter(slot => {
-    const date = new Date(slot.datetime);
-    const daysOut = Math.floor((date - new Date()) / (1000 * 60 * 60 * 24));
-    return daysOut >= 7 && daysOut <= 30;
-  }).slice(0, 6); // Next few weeks
-  const longTermSlots = availability.filter(slot => {
-    const date = new Date(slot.datetime);
-    const daysOut = Math.floor((date - new Date()) / (1000 * 60 * 60 * 24));
-    return daysOut > 30;
-  }).slice(0, 6); // Future months
-  
-  const sampleSlots = [...nearTermSlots, ...midTermSlots, ...longTermSlots];
-  const availableSlots = sampleSlots.map(slot => 
+  // Show comprehensive availability - enough to cover 2+ months  
+  const availableSlots = availability.slice(0, 120).map(slot => 
     `${slot.day} ${slot.time} (${slot.datetime})`
   ).join(', ');
   
