@@ -574,55 +574,11 @@ app.delete('/api/businesses/:businessId/service-types/:serviceId', authenticateT
   }
 });
 
-// Voice endpoint with business context
-app.post('/voice/incoming/:businessId', async (req, res) => {
-  try {
-    const { businessId } = req.params;
-    const { CallSid, From, To } = req.body;
+// Voice endpoint with business context - redirect to simple booking
+app.post('/voice/incoming/:businessId', processSimpleVoice);
 
-    console.log(`📞 Incoming call for business ${businessId}: ${From} → ${To}`);
-
-    // Get business details with error handling
-    let businessResult;
-    try {
-      businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
-    } catch (dbError) {
-      console.error('Database connection error:', dbError);
-      // Fallback response when database is down
-      const twiml = new twilio.twiml.VoiceResponse();
-      twiml.say('Hello, thank you for calling. Our system is temporarily unavailable. Please try calling back in a few minutes or leave a voicemail.');
-      return res.type('text/xml').send(twiml.toString());
-    }
-    
-    if (businessResult.rows.length === 0) {
-      console.error('Business not found:', businessId);
-      const twiml = new twilio.twiml.VoiceResponse();
-      twiml.say('This phone number is not currently active. Please check the number and try again.');
-      return res.type('text/xml').send(twiml.toString());
-    }
-
-    const business = businessResult.rows[0];
-
-    // Check subscription status
-    const subscriptionResult = await pool.query(
-      'SELECT * FROM subscriptions WHERE business_id = $1 ORDER BY created_at DESC LIMIT 1',
-      [businessId]
-    );
-
-    if (subscriptionResult.rows.length === 0 || subscriptionResult.rows[0].status === 'cancelled') {
-      const twiml = new twilio.twiml.VoiceResponse();
-      twiml.say('This service is currently unavailable. Please try again later.');
-      return res.type('text/xml').send(twiml.toString());
-    }
-
-    // Get service types for this business
-    const serviceTypesResult = await pool.query(
-      'SELECT * FROM service_types WHERE business_id = $1 AND is_active = true',
-      [businessId]
-    );
-
-    const serviceTypes = serviceTypesResult.rows;
-
+// OLD SARAH CODE COMMENTED OUT
+/*
     // Log the call
     await pool.query(
       `INSERT INTO call_logs (business_id, call_sid, from_number, to_number, call_status)
@@ -678,7 +634,7 @@ app.post('/voice/incoming/:businessId', async (req, res) => {
     twiml.say('Hello, thank you for calling. We are experiencing technical difficulties. Please try again in a few minutes.');
     res.type('text/xml').send(twiml.toString());
   }
-});
+*/
 
 // Legacy voice processing endpoint (fallback for old webhooks)
 app.post('/voice/process', async (req, res) => {

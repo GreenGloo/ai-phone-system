@@ -265,8 +265,17 @@ async function processSimpleVoice(req, res) {
         const confirmation = SpeechResult.toLowerCase();
         console.log(`✅ Customer confirmation: "${SpeechResult}"`);
         
-        // More strict confirmation checking
-        if (confirmation.includes('yes') || confirmation.includes('yeah') || confirmation.includes('correct') || confirmation.includes('right') || confirmation.includes('that works') || confirmation.includes('sounds good')) {
+        // AI-powered confirmation checking - understand natural language
+        const isConfirming = confirmation.includes('yes') || confirmation.includes('yeah') || confirmation.includes('yep') || 
+                           confirmation.includes('correct') || confirmation.includes('right') || confirmation.includes('perfect') ||
+                           confirmation.includes('that works') || confirmation.includes('sounds good') || confirmation.includes('great') ||
+                           confirmation.includes('ok') || confirmation.includes('okay') || confirmation.includes('sure') ||
+                           confirmation.includes('book it') || confirmation.includes('schedule it') || confirmation.includes('confirm') ||
+                           confirmation.includes('good') || confirmation.includes('fine') || confirmation.includes('alright') ||
+                           confirmation.includes('go ahead') || confirmation.includes('do it') || confirmation.includes('lets do it') ||
+                           confirmation.includes('that time') || confirmation.includes('works for me') || confirmation.includes('sounds great');
+        
+        if (isConfirming) {
           // Book the appointment
           try {
             const bookingResult = await bookSimpleAppointment(state, businessId);
