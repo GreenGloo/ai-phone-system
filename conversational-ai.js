@@ -142,8 +142,8 @@ async function getAvailableSlots(businessId) {
     `);
     
     if (!tableCheck.rows[0].exists) {
-      console.log('📅 calendar_slots table does not exist yet - using basic availability');
-      return getBasicAvailability(businessId);
+      console.error('📅 calendar_slots table does not exist - NO FAKE SLOTS');
+      return [];
     }
     
     // Get available slots from pre-generated calendar
@@ -221,89 +221,7 @@ async function getAvailableSlots(businessId) {
   }
 }
 
-// Basic availability method for when calendar_slots doesn't exist yet
-async function getBasicAvailability(businessId) {
-  console.log('📅 Using basic availability calculation');
-  
-  // Get business hours (handle missing calendar_preferences column)
-  let businessResult;
-  try {
-    businessResult = await pool.query(`
-      SELECT business_hours, calendar_preferences 
-      FROM businesses 
-      WHERE id = $1
-    `, [businessId]);
-  } catch (error) {
-    if (error.message.includes('calendar_preferences')) {
-      console.log('📅 calendar_preferences column missing - using business_hours only');
-      businessResult = await pool.query(`
-        SELECT business_hours 
-        FROM businesses 
-        WHERE id = $1
-      `, [businessId]);
-      // Add default calendar preferences
-      if (businessResult.rows.length > 0) {
-        businessResult.rows[0].calendar_preferences = {
-          appointmentDuration: 60,
-          bufferTime: 30,
-          maxDailyAppointments: 8
-        };
-      }
-    } else {
-      throw error;
-    }
-  }
-  
-  if (businessResult.rows.length === 0) return [];
-  
-  const { business_hours, calendar_preferences } = businessResult.rows[0];
-  if (!business_hours) return [];
-  
-  const availableSlots = [];
-  const now = new Date();
-  const appointmentDuration = calendar_preferences?.appointmentDuration || 60;
-  
-  // Generate basic slots for next 3 days
-  for (let day = 0; day < 3; day++) {
-    const currentDate = new Date(now);
-    currentDate.setDate(now.getDate() + day);
-    
-    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const dayName = dayNames[currentDate.getDay()];
-    
-    const dayHours = business_hours[dayName];
-    if (!dayHours || !dayHours.enabled) continue;
-    
-    const [startHour, startMinute] = dayHours.start.split(':').map(Number);
-    const [endHour, endMinute] = dayHours.end.split(':').map(Number);
-    
-    for (let hour = startHour; hour < endHour; hour++) {
-      for (let minute = 0; minute < 60; minute += 60) { // Every hour
-        const slotStart = new Date(currentDate);
-        slotStart.setHours(hour, minute, 0, 0);
-        
-        if (day === 0 && slotStart <= now) continue;
-        if (hour === endHour && minute >= endMinute) break;
-        
-        const dayLabel = day === 0 ? 'today' : day === 1 ? 'tomorrow' : currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-        const timeStr = slotStart.toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
-          minute: '2-digit',
-          hour12: true 
-        });
-        
-        availableSlots.push({
-          day: dayLabel,
-          time: timeStr,
-          datetime: slotStart.toISOString()
-        });
-      }
-    }
-  }
-  
-  console.log(`📅 Generated ${availableSlots.length} basic availability slots`);
-  return availableSlots.slice(0, 10);
-}
+// NO MORE FAKE SLOTS - REAL CALENDAR ONLY
 
 async function handleVoiceCall(req, res) {
   console.log(`🔥 CONVERSATIONAL AI CALLED: ${new Date().toISOString()}`);
