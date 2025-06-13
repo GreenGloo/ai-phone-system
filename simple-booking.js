@@ -285,11 +285,13 @@ async function processSimpleVoice(req, res) {
                 .replace('{timeDescription}', bookingResult.timeDescription)
                 .replace('{businessName}', state.business.name));
               nextStage = STATES.COMPLETE;
+              twiml.hangup();
+              callStateManager.deleteState(CallSid); // Clean up
             } else {
               twiml.say(responses.bookingError);
+              twiml.hangup();
+              callStateManager.deleteState(CallSid);
             }
-            twiml.hangup();
-            callStateManager.deleteState(CallSid); // Clean up
           } catch (error) {
             // Handle calendar conflicts by asking for different time
             console.error(`❌ BOOKING ERROR for ${CallSid}:`, error.message);
@@ -300,6 +302,7 @@ async function processSimpleVoice(req, res) {
               console.log(`📅 Calendar conflict detected, asking for different time`);
               twiml.say(error.message);
               nextStage = STATES.GET_TIME; // Go back to time selection
+              // DON'T hang up - continue conversation to get new time
             } else {
               console.error(`🚨 CRITICAL BOOKING ERROR - hanging up: ${error.message}`);
               twiml.say(responses.bookingError);
