@@ -128,46 +128,7 @@ function calculateResponseTiming(messageLength, emotion, personality) {
   return Math.max(0.2, Math.min(2.0, baseDelay)); // Keep between 0.2-2 seconds
 }
 
-// Fallback slot generation if business calendar isn't configured
-function generateFallbackSlots() {
-  console.log('📅 Generating fallback appointment slots (9 AM - 5 PM)');
-  const availableSlots = [];
-  const now = new Date();
-  
-  for (let day = 0; day < 7; day++) {
-    const currentDate = new Date(now);
-    currentDate.setDate(now.getDate() + day);
-    
-    // Skip weekends for fallback
-    if (currentDate.getDay() === 0 || currentDate.getDay() === 6) continue;
-    
-    for (let hour = 9; hour < 17; hour++) {
-      for (let minute = 0; minute < 60; minute += 60) { // Every hour
-        const slotStart = new Date(currentDate);
-        slotStart.setHours(hour, minute, 0, 0);
-        
-        // Skip past times for today
-        if (day === 0 && slotStart <= now) continue;
-        
-        const dayLabel = day === 0 ? 'today' : day === 1 ? 'tomorrow' : currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-        const timeStr = slotStart.toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
-          minute: '2-digit',
-          hour12: true 
-        });
-        
-        availableSlots.push({
-          day: dayLabel,
-          time: timeStr,
-          datetime: slotStart.toISOString()
-        });
-      }
-    }
-  }
-  
-  console.log(`📅 Generated ${availableSlots.length} fallback slots`);
-  return availableSlots.slice(0, 20);
-}
+// REAL calendar availability only - no fake slots
 
 // Get available appointment slots using REAL business calendar system
 async function getAvailableSlots(businessId) {
@@ -182,19 +143,17 @@ async function getAvailableSlots(businessId) {
     `, [businessId]);
     
     if (businessResult.rows.length === 0) {
-      console.error('❌ Business not found for calendar - using fallback hours');
-      // Fallback to basic business hours if business not found
-      return generateFallbackSlots();
+      console.error('❌ Business not found for calendar');
+      return [];
     }
     
     const { business_hours, calendar_preferences } = businessResult.rows[0];
-    console.log(`🏢 Business Hours:`, business_hours);
-    console.log(`📋 Calendar Preferences:`, calendar_preferences);
+    console.log(`🏢 Raw Business Hours:`, JSON.stringify(business_hours));
+    console.log(`📋 Raw Calendar Preferences:`, JSON.stringify(calendar_preferences));
     
-    // Fallback if business_hours is null or empty
-    if (!business_hours || Object.keys(business_hours).length === 0) {
-      console.warn('⚠️ No business hours configured - using fallback');
-      return generateFallbackSlots();
+    if (!business_hours) {
+      console.error('❌ No business_hours configured in database');
+      return [];
     }
     
     // Get existing appointments
@@ -225,12 +184,17 @@ async function getAvailableSlots(businessId) {
     for (let day = 0; day < 7; day++) {
       const currentDate = new Date(now);
       currentDate.setDate(now.getDate() + day);
-      const dayName = currentDate.toLocaleDateString('en-US', { weekday: 'lowercase' });
+      
+      // Get day name in correct format for database lookup
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const dayName = dayNames[currentDate.getDay()];
+      
+      console.log(`📅 Checking ${dayName} (day ${currentDate.getDay()})`);
       
       // Get business hours for this day
       const dayHours = business_hours[dayName];
       if (!dayHours || !dayHours.enabled) {
-        console.log(`📅 ${dayName} is closed`);
+        console.log(`📅 ${dayName} is closed or not enabled`);
         continue;
       }
       
@@ -290,8 +254,8 @@ async function getAvailableSlots(businessId) {
     
   } catch (error) {
     console.error('❌ Error getting REAL calendar availability:', error);
-    console.log('🔄 Falling back to basic availability slots');
-    return generateFallbackSlots();
+    console.error('❌ Stack trace:', error.stack);
+    return [];
   }
 }
 
