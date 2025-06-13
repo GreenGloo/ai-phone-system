@@ -156,7 +156,7 @@ async function processSimpleVoice(req, res) {
       twiml.say('I didn\'t hear you. Let me have someone call you back.');
       twiml.hangup();
       
-      // Update state
+      // Update state - skip GREETING stage since we already greeted
       state.stage = STATES.GET_SERVICE;
       state.attempts = 1;
       callStateManager.setState(CallSid, state);
@@ -197,13 +197,7 @@ async function processSimpleVoice(req, res) {
     const responses = getPersonalityResponses(state.business.ai_personality || 'professional');
     
     // Process based on current stage
-    switch (state.stage) {
-      case STATES.GREETING:
-        // First interaction - ask what they need
-        twiml.say(responses.greeting.replace('{businessName}', state.business.name));
-        nextStage = STATES.GET_SERVICE;
-        break;
-        
+    switch (state.stage) {        
       case STATES.GET_SERVICE:
         // They described their service need
         state.service = SpeechResult || 'General service request';
