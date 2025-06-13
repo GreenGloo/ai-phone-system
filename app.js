@@ -762,22 +762,60 @@ app.post('/api/test-sms/:businessId', authenticateToken, getBusinessContext, asy
       });
     }
     
+    // Normalize phone number to E.164 format
+    let normalizedPhone = testPhone || req.user.phone;
+    if (normalizedPhone && !normalizedPhone.startsWith('+')) {
+      // Remove all non-digits
+      normalizedPhone = normalizedPhone.replace(/\D/g, '');
+      // Add +1 for US numbers
+      if (normalizedPhone.length === 10) {
+        normalizedPhone = `+1${normalizedPhone}`;
+      } else if (normalizedPhone.length === 11 && normalizedPhone.startsWith('1')) {
+        normalizedPhone = `+${normalizedPhone}`;
+      }
+    }
+    
+    console.log(`📱 Normalized phone: ${normalizedPhone}`);
+    
     const message = testMessage || 'TEST MESSAGE from CallCatcher - SMS is working!';
     
     const sms = await twilioClient.messages.create({
       body: message,
       from: req.business.phone_number,
-      to: testPhone || req.user.phone
+      to: normalizedPhone
     });
     
     console.log(`📱 ✅ Test SMS sent successfully: ${sms.sid}`);
+    console.log(`📱 SMS Status: ${sms.status}`);
+    console.log(`📱 SMS Direction: ${sms.direction}`);
+    console.log(`📱 SMS Price: ${sms.price}`);
+    
+    // Check SMS status after a short delay
+    setTimeout(async () => {
+      try {
+        const updatedSms = await twilioClient.messages(sms.sid).fetch();
+        console.log(`📱 SMS Status Update: ${updatedSms.status}`);
+        console.log(`📱 SMS Error Code: ${updatedSms.errorCode || 'None'}`);
+        console.log(`📱 SMS Error Message: ${updatedSms.errorMessage || 'None'}`);
+      } catch (fetchError) {
+        console.error('📱 ❌ Error fetching SMS status:', fetchError);
+      }
+    }, 5000);
     
     res.json({
       success: true,
       message: 'SMS sent successfully',
       smsId: sms.sid,
       from: req.business.phone_number,
-      to: testPhone || req.user.phone
+      to: normalizedPhone,
+      status: sms.status,
+      twilioResponse: {
+        sid: sms.sid,
+        status: sms.status,
+        direction: sms.direction,
+        price: sms.price,
+        uri: sms.uri
+      }
     });
     
   } catch (error) {
@@ -785,7 +823,79 @@ app.post('/api/test-sms/:businessId', authenticateToken, getBusinessContext, asy
     res.status(500).json({
       error: 'SMS test failed',
       details: error.message,
-      code: error.code
+      code: error.code,
+      moreInfo: error.moreInfo || 'Check Twilio console for details'
+    });
+  }
+});
+
+// TWILIO CONFIGURATION CHECK ENDPOINT
+app.get('/api/twilio-status/:businessId', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    console.log(`📞 Checking Twilio configuration for business: ${req.business.id}`);
+    
+    // Check if phone number is configured
+    if (!req.business.phone_number) {
+      return res.json({
+        configured: false,
+        error: 'No business phone number configured',
+        businessId: req.business.id
+      });
+    }
+    
+    // Try to fetch phone number details from Twilio
+    const phoneNumber = req.business.phone_number;
+    console.log(`📞 Checking Twilio phone number: ${phoneNumber}`);
+    
+    try {
+      const twilioNumber = await twilioClient.incomingPhoneNumbers.list({
+        phoneNumber: phoneNumber
+      });
+      
+      console.log(`📞 Twilio phone number search results:`, twilioNumber.length);
+      
+      if (twilioNumber.length === 0) {
+        return res.json({
+          configured: false,
+          error: 'Phone number not found in Twilio account',
+          phoneNumber: phoneNumber,
+          suggestion: 'Check if phone number is purchased and configured in Twilio Console'
+        });
+      }
+      
+      const numberDetails = twilioNumber[0];
+      console.log(`📞 Phone number capabilities:`, {
+        sms: numberDetails.capabilities.sms,
+        voice: numberDetails.capabilities.voice,
+        mms: numberDetails.capabilities.mms
+      });
+      
+      res.json({
+        configured: true,
+        phoneNumber: phoneNumber,
+        capabilities: numberDetails.capabilities,
+        friendlyName: numberDetails.friendlyName,
+        voiceUrl: numberDetails.voiceUrl,
+        smsUrl: numberDetails.smsUrl,
+        twilioSid: numberDetails.sid
+      });
+      
+    } catch (twilioError) {
+      console.error('📞 ❌ Twilio API error:', twilioError);
+      res.json({
+        configured: false,
+        error: 'Unable to verify phone number with Twilio',
+        details: twilioError.message,
+        code: twilioError.code,
+        suggestion: 'Check Twilio API credentials and phone number configuration'
+      });
+    }
+    
+  } catch (error) {
+    console.error('📞 ❌ Configuration check error:', error);
+    res.status(500).json({
+      error: 'Configuration check failed',
+      details: error.message
     });
   }
 });
