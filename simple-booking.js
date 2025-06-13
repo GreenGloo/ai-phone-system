@@ -237,12 +237,33 @@ async function processSimpleVoice(req, res) {
           const timeInfo = await parseTimePreference(SpeechResult, state.business.timezone || 'America/New_York', state.business);
           
           if (timeInfo && timeInfo.success) {
-            state.appointmentTime = timeInfo;
             console.log(`⏰ Parsed time: ${timeInfo.description}`);
             console.log(`⏰ Actual date/time: ${timeInfo.date}`);
             
-            twiml.say(responses.timeConfirm.replace('{timeDescription}', timeInfo.description));
-            nextStage = STATES.CONFIRM;
+            // CHECK AVAILABILITY BEFORE SUGGESTING THE TIME
+            const endTime = new Date(timeInfo.date.getTime() + 60 * 60000); // Default 1 hour service
+            const availabilityCheck = await checkCalendarAvailability(businessId, timeInfo.date, endTime);
+            
+            if (availabilityCheck.available) {
+              // Time is available - proceed normally
+              state.appointmentTime = timeInfo;
+              twiml.say(responses.timeConfirm.replace('{timeDescription}', timeInfo.description));
+              nextStage = STATES.CONFIRM;
+            } else {
+              // Time is NOT available - find alternatives immediately
+              console.log(`❌ Customer requested ${timeInfo.description} but it's not available`);
+              const alternatives = await suggestAlternativeTimes(businessId, timeInfo.date, 60);
+              
+              if (alternatives.length > 0) {
+                const altDescriptions = alternatives.map(alt => alt.description).join(' or ');
+                twiml.say(`${timeInfo.description} is already booked. How about ${altDescriptions} instead?`);
+                state.suggestedAlternatives = alternatives;
+                nextStage = STATES.CONFIRM_ALTERNATIVE;
+              } else {
+                twiml.say(`${timeInfo.description} is not available. What other day and time would work for you?`);
+                // Stay in GET_TIME stage
+              }
+            }
           } else {
             console.log('⚠️ AI parsing failed, using simple fallback');
             twiml.say('Could you be more specific? For example, say "tomorrow at 2 PM" or "Monday morning"?');
@@ -256,10 +277,30 @@ async function processSimpleVoice(req, res) {
           const fallbackTime = parseTimePreferenceSimple(SpeechResult, state.business.timezone || 'America/New_York');
           
           if (fallbackTime && fallbackTime.success) {
-            state.appointmentTime = fallbackTime;
             console.log(`⏰ Fallback parsed: ${fallbackTime.description}`);
-            twiml.say(responses.timeConfirm.replace('{timeDescription}', fallbackTime.description));
-            nextStage = STATES.CONFIRM;
+            
+            // CHECK AVAILABILITY FOR FALLBACK TIME TOO
+            const endTime = new Date(fallbackTime.date.getTime() + 60 * 60000);
+            const availabilityCheck = await checkCalendarAvailability(businessId, fallbackTime.date, endTime);
+            
+            if (availabilityCheck.available) {
+              state.appointmentTime = fallbackTime;
+              twiml.say(responses.timeConfirm.replace('{timeDescription}', fallbackTime.description));
+              nextStage = STATES.CONFIRM;
+            } else {
+              console.log(`❌ Fallback time ${fallbackTime.description} also not available`);
+              const alternatives = await suggestAlternativeTimes(businessId, fallbackTime.date, 60);
+              
+              if (alternatives.length > 0) {
+                const altDescriptions = alternatives.map(alt => alt.description).join(' or ');
+                twiml.say(`${fallbackTime.description} is already booked. How about ${altDescriptions} instead?`);
+                state.suggestedAlternatives = alternatives;
+                nextStage = STATES.CONFIRM_ALTERNATIVE;
+              } else {
+                twiml.say(`${fallbackTime.description} is not available. What other day and time would work for you?`);
+                // Stay in GET_TIME stage
+              }
+            }
           } else {
             twiml.say('Could you say the day and time? For example, "tomorrow at 2 PM"?');
             // Stay in GET_TIME stage
