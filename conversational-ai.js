@@ -632,7 +632,7 @@ async function getHumanLikeResponse(speech, conversation, business, services, av
   ).join('\n');
   
   const availableSlots = availability.slice(0, 5).map(slot => 
-    `${slot.day} ${slot.time}`
+    `${slot.day} ${slot.time} (${slot.datetime})`
   ).join(', ');
   
   // Claude-optimized prompt - superior instruction following and context understanding
@@ -648,9 +648,15 @@ AVAILABLE APPOINTMENT SLOTS: ${availableSlots}
 CRITICAL BOOKING INSTRUCTIONS:
 • Speech recognition errors: "CID" = "oil change", "old change" = "oil change"
 • ANY service mention = immediately offer specific times and push for booking
-• Customer saying "yes"/"okay"/"sounds good" = book the appointment NOW
+• Customer saying "yes"/"okay"/"sounds good"/"that works" = book the appointment NOW with action: "book_appointment"
+• When offering times, ALWAYS include a specific appointmentDatetime in ISO format
 • Be conversational but ALWAYS drive toward booking an appointment
 • Oil changes are most common - assume unclear requests are oil changes
+
+BOOKING EXAMPLES:
+Customer: "oil change" → action: "continue", offer specific times like "I can get you in tomorrow at 4:00 PM or Sunday at 10:00 AM"
+Customer: "yes" or "4 PM works" or "tomorrow sounds good" → action: "book_appointment" with exact appointmentDatetime like "2025-06-14T16:00:00.000Z"
+Customer: "that works" → action: "book_appointment" using the previously suggested time
 
 RESPONSE FORMAT (JSON only):
 {
@@ -658,8 +664,8 @@ RESPONSE FORMAT (JSON only):
   "action": "continue" or "book_appointment",
   "data": {
     "service": "oil change",
-    "suggestedTime": "today 2:00 PM", 
-    "appointmentDatetime": "2025-06-13T14:00:00Z"
+    "suggestedTime": "tomorrow 4:00 PM", 
+    "appointmentDatetime": "2025-06-14T16:00:00.000Z"
   }
 }`;
 
