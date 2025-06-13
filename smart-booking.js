@@ -72,12 +72,29 @@ function handleInitialCall(res, business, callSid, from, businessId) {
 }
 
 async function processWithAI(res, business, callSid, from, speech, businessId) {
-  const state = activeStates.get(callSid) || {
+  let state = activeStates.get(callSid) || {
     stage: 'greeting',
     business: business,
     customerPhone: from,
     attempts: 0
   };
+  
+  // Reset if customer is clearly frustrated or starting over
+  const frustrated = speech.toLowerCase().includes('doesn\'t work') || 
+                    speech.toLowerCase().includes('don\'t work') ||
+                    speech.toLowerCase().includes('broken') ||
+                    speech.toLowerCase().includes('fix') ||
+                    speech.toLowerCase().includes('fuck');
+                    
+  if (frustrated) {
+    console.log(`😤 Customer seems frustrated, resetting conversation`);
+    state = {
+      stage: 'gathering_info',
+      business: business,
+      customerPhone: from,
+      attempts: 0
+    };
+  }
   
   console.log(`🤖 AI Processing: "${speech}" | Stage: ${state.stage}`);
   
@@ -163,15 +180,17 @@ ${serviceList}
 
 SMART RULES:
 1. If customer mentions ANY time preference (tomorrow, afternoon, morning, specific time): action = "suggest_time" immediately
-2. If customer confirms/agrees (yes, sure, that works, sounds good): action = "book_appointment"
-3. Only use "get_info" if you truly need more information
+2. If customer confirms/agrees (yes, sure, that works, sounds good): action = "book_appointment"  
+3. If customer is frustrated/complaining ("doesn't work", "broken", cursing): Reset and ask for service + time
+4. Only use "get_info" if you truly need more information
 
 EXAMPLES:
 - "tomorrow afternoon" → action: "suggest_time", timePreference: "afternoon"
 - "windshield wipers broken" + time mentioned → action: "suggest_time"  
 - "sure" or "that works" → action: "book_appointment"
+- "doesn't work" or frustrated language → action: "get_info", ask what's wrong and when they want service
 
-BE SMART: Don't ask for more info if you have enough to book an appointment.
+BE SMART: If customer is frustrated, start fresh. Don't ask for more info if you have enough to book.
 
 Respond with JSON:
 {
