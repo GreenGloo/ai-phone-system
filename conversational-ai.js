@@ -441,19 +441,17 @@ async function bookAppointment(conversation, businessId, service, data) {
     try {
       await pool.query(`
         INSERT INTO notifications (
-          business_id, type, title, message, metadata, created_at
-        ) VALUES ($1, $2, $3, $4, $5, NOW())
+          business_id, type, title, message, metadata, created_at, read
+        ) VALUES ($1, $2, $3, $4, $5, NOW(), $6)
       `, [
         businessId,
-        'new_appointment',
-        'New Phone Booking',
-        `New appointment scheduled via AI phone system: ${service.name} at ${appointmentTime.toLocaleString()}`,
+        'new_booking',
+        'New Appointment Booked',
+        `Customer booked ${service.name} for ${appointmentTime.toLocaleDateString('en-US')} at ${appointmentTime.toLocaleTimeString('en-US')}`,
         JSON.stringify({
-          appointmentId: appointmentId,
-          customerPhone: conversation.customerPhone,
-          service: service.name,
-          source: 'conversational_ai'
-        })
+          appointmentId: appointmentId
+        }),
+        false
       ]);
       console.log(`📧 Notification created for appointment ${appointmentId}`);
     } catch (notificationError) {
