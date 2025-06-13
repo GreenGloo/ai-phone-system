@@ -149,7 +149,7 @@ async function processSimpleVoice(req, res) {
         input: 'speech',
         timeout: 15,
         speechTimeout: 'auto',
-        action: `/voice/simple/${businessId}`,
+        action: `/voice/process/${businessId}`,
         method: 'POST'
       });
       
@@ -324,7 +324,7 @@ async function processSimpleVoice(req, res) {
         input: 'speech',
         timeout: 15,
         speechTimeout: 'auto',
-        action: `/voice/simple/${businessId}`,
+        action: `/voice/process/${businessId}`,
         method: 'POST'
       });
       
