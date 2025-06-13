@@ -153,15 +153,22 @@ async function getAIResponse(speech, state, business, services) {
 
 Current conversation stage: ${state.stage}
 Customer said: "${speech}"
+Previous context: ${JSON.stringify(state)}
 
 Available services:
 ${serviceList}
 
-RULES:
-1. If customer asks for service but no time mentioned: action = "get_info", ask for their preferred time
-2. If customer mentions time preference: action = "suggest_time", include timePreference
-3. If customer confirms a suggested time: action = "book_appointment"
-4. Be natural and helpful
+SMART RULES:
+1. If customer mentions ANY time preference (tomorrow, afternoon, morning, specific time): action = "suggest_time" immediately
+2. If customer confirms/agrees (yes, sure, that works, sounds good): action = "book_appointment"
+3. Only use "get_info" if you truly need more information
+
+EXAMPLES:
+- "tomorrow afternoon" → action: "suggest_time", timePreference: "afternoon"
+- "windshield wipers broken" + time mentioned → action: "suggest_time"  
+- "sure" or "that works" → action: "book_appointment"
+
+BE SMART: Don't ask for more info if you have enough to book an appointment.
 
 Respond with JSON:
 {
@@ -175,7 +182,7 @@ Respond with JSON:
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.3,
+      temperature: 0.1,
       max_tokens: 200
     });
     
@@ -186,8 +193,9 @@ Respond with JSON:
   } catch (error) {
     console.error('AI Error:', error);
     return {
-      action: 'get_info',
-      response: 'I\'d be happy to help you. What service do you need and when would you like to schedule it?'
+      action: 'suggest_time',
+      response: 'I can help you with that. Let me find an available time.',
+      timePreference: 'afternoon'
     };
   }
 }
