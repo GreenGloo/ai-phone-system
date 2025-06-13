@@ -225,12 +225,34 @@ async function getAvailableSlots(businessId) {
 async function getBasicAvailability(businessId) {
   console.log('📅 Using basic availability calculation');
   
-  // Get business hours
-  const businessResult = await pool.query(`
-    SELECT business_hours, calendar_preferences 
-    FROM businesses 
-    WHERE id = $1
-  `, [businessId]);
+  // Get business hours (handle missing calendar_preferences column)
+  let businessResult;
+  try {
+    businessResult = await pool.query(`
+      SELECT business_hours, calendar_preferences 
+      FROM businesses 
+      WHERE id = $1
+    `, [businessId]);
+  } catch (error) {
+    if (error.message.includes('calendar_preferences')) {
+      console.log('📅 calendar_preferences column missing - using business_hours only');
+      businessResult = await pool.query(`
+        SELECT business_hours 
+        FROM businesses 
+        WHERE id = $1
+      `, [businessId]);
+      // Add default calendar preferences
+      if (businessResult.rows.length > 0) {
+        businessResult.rows[0].calendar_preferences = {
+          appointmentDuration: 60,
+          bufferTime: 30,
+          maxDailyAppointments: 8
+        };
+      }
+    } else {
+      throw error;
+    }
+  }
   
   if (businessResult.rows.length === 0) return [];
   
