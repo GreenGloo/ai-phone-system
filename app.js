@@ -746,6 +746,50 @@ app.post('/', voiceRateLimit, async (req, res) => {
   }
 });
 
+// SMS TEST ENDPOINT - For debugging SMS issues
+app.post('/api/test-sms/:businessId', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { testMessage, testPhone } = req.body;
+    
+    console.log(`📱 Testing SMS for business: ${req.business.id}`);
+    console.log(`📱 Business phone: ${req.business.phone_number}`);
+    console.log(`📱 Test phone: ${testPhone}`);
+    
+    if (!req.business.phone_number) {
+      return res.status(400).json({ 
+        error: 'No business phone number configured for SMS',
+        businessId: req.business.id 
+      });
+    }
+    
+    const message = testMessage || 'TEST MESSAGE from CallCatcher - SMS is working!';
+    
+    const sms = await twilioClient.messages.create({
+      body: message,
+      from: req.business.phone_number,
+      to: testPhone || req.user.phone
+    });
+    
+    console.log(`📱 ✅ Test SMS sent successfully: ${sms.sid}`);
+    
+    res.json({
+      success: true,
+      message: 'SMS sent successfully',
+      smsId: sms.sid,
+      from: req.business.phone_number,
+      to: testPhone || req.user.phone
+    });
+    
+  } catch (error) {
+    console.error('📱 ❌ SMS test failed:', error);
+    res.status(500).json({
+      error: 'SMS test failed',
+      details: error.message,
+      code: error.code
+    });
+  }
+});
+
 // SIMPLE BOOKING ENDPOINT - Redesigned for reliability
 app.post('/voice/simple/:businessId', voiceRateLimit, processSimpleVoice);
 

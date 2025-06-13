@@ -897,18 +897,36 @@ ${owner.business_name}
 
 🎉 Booked via CallCatcher AI`;
 
-    // Send SMS to owner
-    if (owner.phone && owner.phone_number) {
-      await twilioClient.messages.create({
-        body: message,
-        from: owner.phone_number, // Use business phone number as sender
-        to: owner.phone
-      });
-      
-      console.log(`📱 SMS sent to owner: ${owner.first_name} ${owner.last_name}`);
+    console.log(`📱 SMS DEBUG INFO:`);
+    console.log(`📱 Owner phone: ${owner.phone}`);
+    console.log(`📱 Business phone: ${owner.phone_number}`);
+    console.log(`📱 Customer phone: ${state.customerPhone}`);
+    console.log(`📱 Same number check: ${owner.phone === state.customerPhone ? 'YES - SAME NUMBER' : 'NO - DIFFERENT'}`);
+    
+    // Send SMS to owner (skip if same as customer)
+    if (owner.phone && owner.phone_number && owner.phone !== state.customerPhone) {
+      try {
+        const ownerSms = await twilioClient.messages.create({
+          body: message,
+          from: owner.phone_number, // Use business phone number as sender
+          to: owner.phone
+        });
+        
+        console.log(`📱 ✅ SMS sent to owner: ${owner.first_name} ${owner.last_name} (${owner.phone})`);
+        console.log(`📱 SMS SID: ${ownerSms.sid}`);
+      } catch (smsError) {
+        console.error(`📱 ❌ Failed to send SMS to owner:`, smsError.message);
+        console.error(`📱 Error code: ${smsError.code}`);
+      }
+    } else {
+      if (owner.phone === state.customerPhone) {
+        console.log(`📱 ⚠️ Skipping owner SMS - same number as customer`);
+      } else {
+        console.log(`📱 ⚠️ Missing owner phone (${owner.phone}) or business phone (${owner.phone_number})`);
+      }
     }
     
-    // Also send confirmation to customer
+    // Send confirmation to customer
     const customerMessage = `✅ APPOINTMENT CONFIRMED
 
 ${owner.business_name}
@@ -918,13 +936,24 @@ ${owner.business_name}
 We'll call if running late!
 Questions? Call ${owner.phone_number}`;
 
-    await twilioClient.messages.create({
-      body: customerMessage,
-      from: owner.phone_number,
-      to: state.customerPhone
-    });
-    
-    console.log(`📱 Confirmation sent to customer: ${state.customerName}`);
+    try {
+      const customerSms = await twilioClient.messages.create({
+        body: customerMessage,
+        from: owner.phone_number,
+        to: state.customerPhone
+      });
+      
+      console.log(`📱 ✅ Confirmation sent to customer: ${state.customerName} (${state.customerPhone})`);
+      console.log(`📱 SMS SID: ${customerSms.sid}`);
+    } catch (smsError) {
+      console.error(`📱 ❌ Failed to send SMS to customer:`, smsError.message);
+      console.error(`📱 Error code: ${smsError.code}`);
+      console.error(`📱 SMS details:`, {
+        from: owner.phone_number,
+        to: state.customerPhone,
+        messageLength: customerMessage.length
+      });
+    }
     
   } catch (error) {
     console.error('SMS notification error:', error);

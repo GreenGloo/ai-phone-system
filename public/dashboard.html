@@ -209,6 +209,9 @@
                         <button onclick="testCall()" class="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 text-sm">
                             Test Call System
                         </button>
+                        <button onclick="testSMS()" class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 text-sm mt-2">
+                            Test SMS Notifications
+                        </button>
                     </div>
                 </div>
 
@@ -915,6 +918,39 @@
         function testCall() {
             const phoneNumber = document.getElementById('phone-number').textContent;
             alert(`📞 Test your AI system:\n\nCall: ${phoneNumber}\n\nSay: "I need a plumber for my kitchen sink"\n\nThe AI will offer available appointment times and book the appointment automatically!`);
+        }
+
+        async function testSMS() {
+            try {
+                const token = localStorage.getItem('token');
+                const testPhone = prompt('Enter phone number to test SMS (or leave blank to use your number):');
+                
+                if (testPhone === null) return; // Cancelled
+                
+                const response = await fetch(`/api/test-sms/${businessData.id}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        testMessage: 'TEST: CallCatcher SMS notifications are working! 📱✅',
+                        testPhone: testPhone || undefined
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert(`✅ SMS Test Successful!\n\nSMS ID: ${result.smsId}\nFrom: ${result.from}\nTo: ${result.to}\n\nCheck your phone for the test message!`);
+                } else {
+                    alert(`❌ SMS Test Failed:\n\n${result.details || result.error}\n\nCode: ${result.code || 'Unknown'}`);
+                    console.error('SMS test error:', result);
+                }
+            } catch (error) {
+                console.error('SMS test error:', error);
+                alert(`❌ SMS Test Error:\n\n${error.message}`);
+            }
         }
 
         function refreshAppointments() {
