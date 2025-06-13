@@ -807,6 +807,7 @@ async function suggestAlternativeTimes(businessId, requestedTime, durationMinute
     
     const alternatives = [];
     const sameDay = new Date(requestedTime);
+    const requestedHour = requestedTime.getHours();
     
     // Try times before and after on the same day
     const timeSlots = [];
@@ -816,6 +817,25 @@ async function suggestAlternativeTimes(businessId, requestedTime, durationMinute
       const slotTime = new Date(sameDay);
       slotTime.setHours(hour, 0, 0, 0);
       timeSlots.push(slotTime);
+    }
+    
+    // SMART ORDERING: If they requested afternoon (>=12), prioritize afternoon slots first
+    if (requestedHour >= 12) {
+      console.log(`🍽️ Customer wants afternoon time, prioritizing post-lunch slots`);
+      timeSlots.sort((a, b) => {
+        const aHour = a.getHours();
+        const bHour = b.getHours();
+        
+        // Both are afternoon (>=12) - sort chronologically
+        if (aHour >= 12 && bHour >= 12) {
+          return aHour - bHour;
+        }
+        // Prefer afternoon over morning
+        if (aHour >= 12 && bHour < 12) return -1;
+        if (aHour < 12 && bHour >= 12) return 1;
+        // Both morning - sort chronologically
+        return aHour - bHour;
+      });
     }
     
     // Check each slot for availability
