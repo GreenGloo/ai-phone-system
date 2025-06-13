@@ -219,18 +219,32 @@ async function processSimpleVoice(req, res) {
         // More strict confirmation checking
         if (confirmation.includes('yes') || confirmation.includes('yeah') || confirmation.includes('correct') || confirmation.includes('right') || confirmation.includes('that works') || confirmation.includes('sounds good')) {
           // Book the appointment
-          const bookingResult = await bookSimpleAppointment(state, businessId);
-          
-          if (bookingResult.success) {
-            twiml.say(responses.bookingSuccess
-              .replace('{timeDescription}', bookingResult.timeDescription)
-              .replace('{businessName}', state.business.name));
-            nextStage = STATES.COMPLETE;
-          } else {
-            twiml.say(responses.bookingError);
+          try {
+            const bookingResult = await bookSimpleAppointment(state, businessId);
+            
+            if (bookingResult.success) {
+              twiml.say(responses.bookingSuccess
+                .replace('{timeDescription}', bookingResult.timeDescription)
+                .replace('{businessName}', state.business.name));
+              nextStage = STATES.COMPLETE;
+            } else {
+              twiml.say(responses.bookingError);
+            }
+            twiml.hangup();
+            callStateManager.deleteState(CallSid); // Clean up
+          } catch (error) {
+            // Handle calendar conflicts by asking for different time
+            console.log(`📅 Booking conflict: ${error.message}`);
+            
+            if (error.message.includes('already an appointment') || error.message.includes('closed on') || error.message.includes('only open from')) {
+              twiml.say(error.message);
+              nextStage = STATES.GET_TIME; // Go back to time selection
+            } else {
+              twiml.say(responses.bookingError);
+              twiml.hangup();
+              callStateManager.deleteState(CallSid);
+            }
           }
-          twiml.hangup();
-          callStateManager.deleteState(CallSid); // Clean up
         } else if (confirmation.includes('no') || confirmation.includes('different') || confirmation.includes('change') || confirmation.includes('earlier') || confirmation.includes('later')) {
           twiml.say(responses.timeChange);
           nextStage = STATES.GET_TIME;
@@ -502,6 +516,182 @@ function getNextWeekday(date, targetDay, forceNextWeek = false) {
   return targetDate;
 }
 
+// Check calendar availability for appointment conflicts
+async function checkCalendarAvailability(businessId, startTime, endTime) {
+  try {
+    console.log(`🔍 Checking availability from ${startTime.toISOString()} to ${endTime.toISOString()}`);
+    
+    // Check for overlapping appointments
+    const conflictQuery = await pool.query(`
+      SELECT id, customer_name, start_time, end_time, service_name, status
+      FROM appointments 
+      WHERE business_id = $1 
+        AND status IN ('scheduled', 'confirmed', 'in_progress')
+        AND (
+          (start_time <= $2 AND end_time > $2) OR  -- Overlap at start
+          (start_time < $3 AND end_time >= $3) OR  -- Overlap at end  
+          (start_time >= $2 AND end_time <= $3)    -- Completely within
+        )
+      ORDER BY start_time
+    `, [businessId, startTime.toISOString(), endTime.toISOString()]);
+    
+    if (conflictQuery.rows.length > 0) {
+      const conflict = conflictQuery.rows[0];
+      const conflictStart = new Date(conflict.start_time);
+      const conflictEnd = new Date(conflict.end_time);
+      
+      console.log(`❌ Found appointment conflict:`, {
+        id: conflict.id,
+        customer: conflict.customer_name,
+        service: conflict.service_name,
+        time: `${conflictStart.toLocaleString()} - ${conflictEnd.toLocaleString()}`
+      });
+      
+      return {
+        available: false,
+        reason: `There's already an appointment scheduled from ${conflictStart.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit', 
+          hour12: true 
+        })} to ${conflictEnd.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit', 
+          hour12: true 
+        })}. Could you choose a different time?`,
+        conflictingAppointment: conflict
+      };
+    }
+    
+    // Check business hours (if configured)
+    const dayOfWeek = startTime.toLocaleDateString('en-US', { weekday: 'lowercase' });
+    const businessHours = await getBusinessHours(businessId, dayOfWeek);
+    
+    if (businessHours && !businessHours.isOpen) {
+      return {
+        available: false,
+        reason: `We're closed on ${dayOfWeek}s. Please choose a different day.`,
+        businessHours: businessHours
+      };
+    }
+    
+    if (businessHours && businessHours.isOpen) {
+      const appointmentTime = startTime.toLocaleTimeString('en-US', { 
+        hour12: false, 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+      
+      if (appointmentTime < businessHours.start || appointmentTime >= businessHours.end) {
+        return {
+          available: false,
+          reason: `We're only open from ${businessHours.start} to ${businessHours.end} on ${dayOfWeek}s. Please choose a time during business hours.`,
+          businessHours: businessHours
+        };
+      }
+    }
+    
+    console.log(`✅ Time slot is available - no conflicts found`);
+    return {
+      available: true,
+      reason: 'Time slot is available'
+    };
+    
+  } catch (error) {
+    console.error('❌ Error checking calendar availability:', error);
+    return {
+      available: false,
+      reason: 'Unable to check calendar availability. Please try a different time.',
+      error: error.message
+    };
+  }
+}
+
+// Get business hours for a specific day
+async function getBusinessHours(businessId, dayOfWeek) {
+  try {
+    const result = await pool.query(
+      'SELECT business_hours FROM businesses WHERE id = $1',
+      [businessId]
+    );
+    
+    if (result.rows.length === 0 || !result.rows[0].business_hours) {
+      console.log(`📅 No business hours configured for ${businessId}`);
+      return null;
+    }
+    
+    const hours = result.rows[0].business_hours[dayOfWeek];
+    if (!hours) {
+      console.log(`📅 No hours configured for ${dayOfWeek}`);
+      return null;
+    }
+    
+    return {
+      isOpen: hours.enabled,
+      start: hours.start,
+      end: hours.end,
+      day: dayOfWeek
+    };
+    
+  } catch (error) {
+    console.error('❌ Error getting business hours:', error);
+    return null;
+  }
+}
+
+// Suggest alternative available times when there's a conflict
+async function suggestAlternativeTimes(businessId, requestedTime, durationMinutes) {
+  try {
+    console.log(`🔍 Looking for alternative times around ${requestedTime.toISOString()}`);
+    
+    const alternatives = [];
+    const sameDay = new Date(requestedTime);
+    
+    // Try times before and after on the same day
+    const timeSlots = [];
+    
+    // Generate hourly slots from 8 AM to 6 PM
+    for (let hour = 8; hour <= 18; hour++) {
+      const slotTime = new Date(sameDay);
+      slotTime.setHours(hour, 0, 0, 0);
+      timeSlots.push(slotTime);
+    }
+    
+    // Check each slot for availability
+    for (const slotTime of timeSlots) {
+      const slotEnd = new Date(slotTime.getTime() + durationMinutes * 60000);
+      
+      // Skip the originally requested time
+      if (Math.abs(slotTime.getTime() - requestedTime.getTime()) < 30 * 60000) {
+        continue;
+      }
+      
+      const availability = await checkCalendarAvailability(businessId, slotTime, slotEnd);
+      
+      if (availability.available) {
+        alternatives.push({
+          startTime: slotTime,
+          endTime: slotEnd,
+          description: slotTime.toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit', 
+            hour12: true 
+          })
+        });
+        
+        // Limit to 2 suggestions to avoid overwhelming the customer
+        if (alternatives.length >= 2) break;
+      }
+    }
+    
+    console.log(`📅 Found ${alternatives.length} alternative time slots`);
+    return alternatives;
+    
+  } catch (error) {
+    console.error('❌ Error suggesting alternative times:', error);
+    return [];
+  }
+}
+
 // Simple appointment booking
 async function bookSimpleAppointment(state, businessId) {
   try {
@@ -538,6 +728,27 @@ async function bookSimpleAppointment(state, businessId) {
     console.log(`📅 Business timezone: ${state.business.timezone || 'America/New_York'}`);
     console.log(`📅 Local time: ${appointmentTime.toLocaleString('en-US', { timeZone: state.business.timezone || 'America/New_York' })}`);
     console.log(`📅 Description: ${state.appointmentTime.description}`);
+    
+    // CHECK FOR CALENDAR CONFLICTS BEFORE BOOKING
+    console.log(`🔍 Checking for calendar conflicts...`);
+    const conflictCheck = await checkCalendarAvailability(businessId, appointmentTime, endTime);
+    
+    if (!conflictCheck.available) {
+      console.log(`❌ TIME SLOT CONFLICT: ${conflictCheck.reason}`);
+      
+      // Try to suggest alternative times
+      const alternatives = await suggestAlternativeTimes(businessId, appointmentTime, service.duration_minutes);
+      let errorMessage = conflictCheck.reason;
+      
+      if (alternatives.length > 0) {
+        const altDescriptions = alternatives.map(alt => alt.description).join(' or ');
+        errorMessage += ` How about ${altDescriptions} instead?`;
+      }
+      
+      throw new Error(errorMessage);
+    }
+    
+    console.log(`✅ Time slot is available, proceeding with booking`);
     
     // Insert appointment
     const result = await pool.query(
