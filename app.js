@@ -271,17 +271,14 @@ app.post('/api/signup', async (req, res) => {
       }
     }
 
-    // Get Twilio phone number (simplified - use existing demo number for now)
-    let phoneNumber = process.env.TWILIO_PHONE_NUMBER || '+18445401735';
+    // Phone number will be assigned during onboarding completion
+    // This allows users to select their preferred area code and number
     
-    // In production, you would provision a unique number for each business
-    // For demo/development, we'll use the shared demo number
-
-    // Create business
+    // Create business without phone number initially
     const businessResult = await pool.query(
-      `INSERT INTO businesses (user_id, name, business_type, phone_number) 
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [userId, businessName, cleanBusinessType, phoneNumber]
+      `INSERT INTO businesses (user_id, name, business_type, phone_number, onboarding_completed) 
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [userId, businessName, cleanBusinessType, null, false]
     );
 
     const businessId = businessResult.rows[0].id;
@@ -361,8 +358,9 @@ app.post('/api/signup', async (req, res) => {
       business: {
         id: businessId,
         name: businessName,
-        phoneNumber,
-        plan
+        phoneNumber: null, // Will be assigned during onboarding
+        plan,
+        onboarding_completed: false
       }
     });
 
@@ -895,6 +893,63 @@ app.get('/api/twilio-status/:businessId', authenticateToken, getBusinessContext,
     console.error('📞 ❌ Configuration check error:', error);
     res.status(500).json({
       error: 'Configuration check failed',
+      details: error.message
+    });
+  }
+});
+
+// NOTIFICATIONS ENDPOINT - Get website notifications for business
+app.get('/api/businesses/:businessId/notifications', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    console.log(`📧 Loading notifications for business: ${req.business.id}`);
+    
+    const notifications = await pool.query(`
+      SELECT id, type, title, message, data, created_at, read
+      FROM notifications 
+      WHERE business_id = $1 
+      ORDER BY created_at DESC 
+      LIMIT 20
+    `, [req.business.id]);
+    
+    console.log(`📧 Found ${notifications.rows.length} notifications`);
+    
+    res.json(notifications.rows);
+    
+  } catch (error) {
+    console.error('📧 ❌ Error loading notifications:', error);
+    
+    // If notifications table doesn't exist, return empty array
+    if (error.message.includes('relation "notifications" does not exist')) {
+      console.log('📧 Notifications table does not exist yet, returning empty array');
+      return res.json([]);
+    }
+    
+    res.status(500).json({
+      error: 'Failed to load notifications',
+      details: error.message
+    });
+  }
+});
+
+// MARK NOTIFICATION AS READ ENDPOINT
+app.put('/api/businesses/:businessId/notifications/:notificationId/read', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { notificationId } = req.params;
+    
+    await pool.query(`
+      UPDATE notifications 
+      SET read = true, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1 AND business_id = $2
+    `, [notificationId, req.business.id]);
+    
+    console.log(`📧 Marked notification ${notificationId} as read`);
+    
+    res.json({ success: true });
+    
+  } catch (error) {
+    console.error('📧 ❌ Error marking notification as read:', error);
+    res.status(500).json({
+      error: 'Failed to mark notification as read',
       details: error.message
     });
   }
@@ -3178,7 +3233,7 @@ app.get('/api/debug/all-businesses', async (req, res) => {
 // Complete onboarding with automatic phone number provisioning
 app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, getBusinessContext, async (req, res) => {
   try {
-    const { areaCode } = req.body;
+    const { areaCode, selectedPhoneNumber } = req.body;
     
     // Check if business already has a phone number
     if (req.business.phone_number) {
@@ -3190,33 +3245,46 @@ app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, g
       });
     }
     
-    console.log(`📞 Auto-provisioning phone number for ${req.business.name}`);
+    console.log(`📞 Provisioning phone number for ${req.business.name}`);
+    console.log(`📞 Request body:`, JSON.stringify(req.body, null, 2));
+    console.log(`📞 Selected phone number from request: ${selectedPhoneNumber}`);
+    console.log(`📞 Area code from request: ${areaCode}`);
     
-    // Search for available phone numbers
-    const searchParams = {
-      limit: 5,
-      voiceEnabled: true,
-      smsEnabled: true
-    };
+    let phoneNumberToPurchase;
     
-    if (areaCode) {
-      searchParams.areaCode = areaCode;
+    if (selectedPhoneNumber) {
+      // Use the selected phone number from onboarding
+      phoneNumberToPurchase = selectedPhoneNumber;
+      console.log(`📞 Using selected phone number: ${selectedPhoneNumber}`);
+    } else {
+      // Fallback to auto-selection (for backwards compatibility)
+      console.log(`📞 Auto-selecting phone number (no selection provided)`);
+      
+      const searchParams = {
+        limit: 5,
+        voiceEnabled: true,
+        smsEnabled: true
+      };
+      
+      if (areaCode) {
+        searchParams.areaCode = areaCode;
+      }
+      
+      const availableNumbers = await twilioClient.availablePhoneNumbers('US')
+        .local
+        .list(searchParams);
+      
+      if (availableNumbers.length === 0) {
+        throw new Error('No phone numbers available in the requested area');
+      }
+      
+      phoneNumberToPurchase = availableNumbers[0].phoneNumber;
     }
-    
-    const availableNumbers = await twilioClient.availablePhoneNumbers('US')
-      .local
-      .list(searchParams);
-    
-    if (availableNumbers.length === 0) {
-      throw new Error('No phone numbers available in the requested area');
-    }
-    
-    const selectedNumber = availableNumbers[0].phoneNumber;
     
     // Purchase the phone number with automatic webhook configuration
     const baseUrl = process.env.BASE_URL || 'https://nodejs-production-5e30.up.railway.app';
     const purchasedNumber = await twilioClient.incomingPhoneNumbers.create({
-      phoneNumber: selectedNumber,
+      phoneNumber: phoneNumberToPurchase,
       voiceUrl: `${baseUrl}/voice/incoming/${req.business.id}`,
       voiceMethod: 'POST',
       smsUrl: `${baseUrl}/sms/incoming/${req.business.id}`,
@@ -3226,16 +3294,16 @@ app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, g
     
     // Update business with new phone number and mark onboarding complete
     await pool.query(
-      'UPDATE businesses SET phone_number = $1, onboarding_completed = true WHERE id = $2',
-      [selectedNumber, req.business.id]
+      'UPDATE businesses SET phone_number = $1, twilio_phone_sid = $2, onboarding_completed = true WHERE id = $3',
+      [phoneNumberToPurchase, purchasedNumber.sid, req.business.id]
     );
     
-    console.log(`✅ ${req.business.name} onboarding complete with phone ${selectedNumber}`);
+    console.log(`✅ ${req.business.name} onboarding complete with phone ${phoneNumberToPurchase}`);
     
     res.json({
       success: true,
       message: 'Onboarding completed successfully!',
-      phoneNumber: selectedNumber,
+      phoneNumber: phoneNumberToPurchase,
       twilioSid: purchasedNumber.sid,
       webhookConfigured: true,
       ready: true

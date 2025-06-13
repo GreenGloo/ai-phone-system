@@ -851,10 +851,12 @@ async function bookSimpleAppointment(state, businessId) {
   }
 }
 
-// Send SMS notification to business owner
+// Send notification to business owner (website-based, no SMS)
 async function sendOwnerNotification(state, businessId, service, appointment) {
   try {
-    // Get business owner phone from users table
+    console.log('📧 Creating website notification instead of SMS');
+    
+    // Get business owner info
     const ownerResult = await pool.query(
       `SELECT u.phone, u.first_name, u.last_name, b.name as business_name, b.phone_number 
        FROM businesses b 
@@ -864,7 +866,7 @@ async function sendOwnerNotification(state, businessId, service, appointment) {
     );
     
     if (ownerResult.rows.length === 0) {
-      console.log('No owner found for SMS notification');
+      console.log('❌ No owner found for notification');
       return;
     }
     
@@ -897,63 +899,92 @@ ${owner.business_name}
 
 🎉 Booked via CallCatcher AI`;
 
-    console.log(`📱 SMS DEBUG INFO:`);
-    console.log(`📱 Owner phone: ${owner.phone}`);
-    console.log(`📱 Business phone: ${owner.phone_number}`);
-    console.log(`📱 Customer phone: ${state.customerPhone}`);
-    console.log(`📱 Same number check: ${owner.phone === state.customerPhone ? 'YES - SAME NUMBER' : 'NO - DIFFERENT'}`);
+    // Create in-app notification instead of SMS
+    const notificationData = {
+      business_id: businessId,
+      type: 'new_appointment',
+      title: 'New Appointment Booked!',
+      message: `${state.customerName} booked ${service.name} for ${appointmentTime}`,
+      data: {
+        appointment_id: appointment.id,
+        customer_name: state.customerName,
+        customer_phone: state.customerPhone,
+        service_name: service.name,
+        appointment_time: appointmentTime,
+        service_cost: service.base_rate,
+        service_description: state.service
+      },
+      created_at: new Date().toISOString(),
+      read: false
+    };
     
-    // Send SMS to owner (skip if same as customer)
-    if (owner.phone && owner.phone_number && owner.phone !== state.customerPhone) {
-      try {
-        const ownerSms = await twilioClient.messages.create({
-          body: message,
-          from: owner.phone_number, // Use business phone number as sender
-          to: owner.phone
-        });
-        
-        console.log(`📱 ✅ SMS sent to owner: ${owner.first_name} ${owner.last_name} (${owner.phone})`);
-        console.log(`📱 SMS SID: ${ownerSms.sid}`);
-      } catch (smsError) {
-        console.error(`📱 ❌ Failed to send SMS to owner:`, smsError.message);
-        console.error(`📱 Error code: ${smsError.code}`);
-      }
-    } else {
-      if (owner.phone === state.customerPhone) {
-        console.log(`📱 ⚠️ Skipping owner SMS - same number as customer`);
-      } else {
-        console.log(`📱 ⚠️ Missing owner phone (${owner.phone}) or business phone (${owner.phone_number})`);
-      }
-    }
-    
-    // Send confirmation to customer
-    const customerMessage = `✅ APPOINTMENT CONFIRMED
-
-${owner.business_name}
-📅 ${appointmentTime}
-🔧 ${service.name}
-
-We'll call if running late!
-Questions? Call ${owner.phone_number}`;
-
+    // Store notification in database
     try {
-      const customerSms = await twilioClient.messages.create({
-        body: customerMessage,
-        from: owner.phone_number,
-        to: state.customerPhone
-      });
+      await pool.query(`
+        INSERT INTO notifications (business_id, type, title, message, data, created_at, read)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [
+        notificationData.business_id,
+        notificationData.type,
+        notificationData.title,
+        notificationData.message,
+        JSON.stringify(notificationData.data),
+        notificationData.created_at,
+        notificationData.read
+      ]);
       
-      console.log(`📱 ✅ Confirmation sent to customer: ${state.customerName} (${state.customerPhone})`);
-      console.log(`📱 SMS SID: ${customerSms.sid}`);
-    } catch (smsError) {
-      console.error(`📱 ❌ Failed to send SMS to customer:`, smsError.message);
-      console.error(`📱 Error code: ${smsError.code}`);
-      console.error(`📱 SMS details:`, {
-        from: owner.phone_number,
-        to: state.customerPhone,
-        messageLength: customerMessage.length
-      });
+      console.log(`📧 ✅ Website notification created for ${owner.first_name} ${owner.last_name}`);
+      console.log(`📧 Notification: ${notificationData.title}`);
+      
+    } catch (dbError) {
+      console.error(`📧 ❌ Failed to create notification:`, dbError.message);
+      
+      // Fallback: try to create notifications table if it doesn't exist
+      try {
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            business_id UUID NOT NULL REFERENCES businesses(id),
+            type VARCHAR(50) NOT NULL,
+            title VARCHAR(200) NOT NULL,
+            message TEXT NOT NULL,
+            data JSONB,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            read BOOLEAN DEFAULT false,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        
+        console.log(`📧 Created notifications table, retrying...`);
+        
+        // Retry notification creation
+        await pool.query(`
+          INSERT INTO notifications (business_id, type, title, message, data, created_at, read)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [
+          notificationData.business_id,
+          notificationData.type,
+          notificationData.title,
+          notificationData.message,
+          JSON.stringify(notificationData.data),
+          notificationData.created_at,
+          notificationData.read
+        ]);
+        
+        console.log(`📧 ✅ Website notification created successfully (after table creation)`);
+        
+      } catch (tableError) {
+        console.error(`📧 ❌ Failed to create notifications table:`, tableError.message);
+      }
     }
+    
+    // Log booking summary (no SMS)
+    console.log(`📧 BOOKING SUMMARY:`);
+    console.log(`📧 Customer: ${state.customerName} (${state.customerPhone})`);
+    console.log(`📧 Service: ${service.name} - $${service.base_rate}`);
+    console.log(`📧 Time: ${appointmentTime}`);
+    console.log(`📧 Owner will see notification on dashboard`);
+    console.log(`📧 SMS disabled - using website notifications only`);
     
   } catch (error) {
     console.error('SMS notification error:', error);

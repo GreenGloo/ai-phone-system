@@ -58,6 +58,9 @@
                     <button data-tab="business" id="tab-business" class="tab-button tab-active py-2 px-4 rounded-t-lg font-medium text-sm">
                         Business Info
                     </button>
+                    <button data-tab="phone" id="tab-phone" class="tab-button tab-inactive py-2 px-4 rounded-t-lg font-medium text-sm">
+                        Phone Number
+                    </button>
                     <button data-tab="hours" id="tab-hours" class="tab-button tab-inactive py-2 px-4 rounded-t-lg font-medium text-sm">
                         Business Hours
                     </button>
@@ -153,6 +156,111 @@
                             </button>
                         </div>
                     </form>
+                </div>
+            </div>
+
+            <!-- Phone Number Tab -->
+            <div id="content-phone" class="tab-content hidden">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-xl font-semibold mb-6">Phone Number Management</h2>
+                    <p class="text-gray-600 mb-6">Manage your business phone number and settings</p>
+
+                    <!-- Current Phone Number Display -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
+                        <h3 class="text-lg font-semibold text-blue-900 mb-3">📞 Current Phone Number</h3>
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-2xl font-bold text-blue-800" id="currentPhoneDisplay">Loading...</p>
+                                <p class="text-blue-600 text-sm mt-1">This is your AI assistant's phone number</p>
+                            </div>
+                            <div class="flex gap-3">
+                                <button id="copyPhoneNumber" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                                    📋 Copy Number
+                                </button>
+                                <button id="testPhoneNumber" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
+                                    📞 Test Call
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Change Phone Number Section -->
+                    <div class="border border-gray-200 rounded-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">🔄 Change Phone Number</h3>
+                        <p class="text-gray-600 mb-4">Want a different area code or a more memorable number? Browse available options below.</p>
+                        
+                        <!-- Area Code Selection -->
+                        <div class="mb-6">
+                            <label class="block text-sm font-medium text-gray-700 mb-3">Select Area Code</label>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                                <button onclick="searchPhoneByAreaCode('201')" class="phone-area-code-btn bg-gray-100 border border-gray-300 hover:bg-blue-100 hover:border-blue-500 text-gray-800 px-3 py-2 rounded-lg text-center text-sm">
+                                    201<br><span class="text-xs text-gray-600">New Jersey</span>
+                                </button>
+                                <button onclick="searchPhoneByAreaCode('212')" class="phone-area-code-btn bg-gray-100 border border-gray-300 hover:bg-blue-100 hover:border-blue-500 text-gray-800 px-3 py-2 rounded-lg text-center text-sm">
+                                    212<br><span class="text-xs text-gray-600">New York City</span>
+                                </button>
+                                <button onclick="searchPhoneByAreaCode('305')" class="phone-area-code-btn bg-gray-100 border border-gray-300 hover:bg-blue-100 hover:border-blue-500 text-gray-800 px-3 py-2 rounded-lg text-center text-sm">
+                                    305<br><span class="text-xs text-gray-600">Miami, FL</span>
+                                </button>
+                                <button onclick="searchPhoneByAreaCode('312')" class="phone-area-code-btn bg-gray-100 border border-gray-300 hover:bg-blue-100 hover:border-blue-500 text-gray-800 px-3 py-2 rounded-lg text-center text-sm">
+                                    312<br><span class="text-xs text-gray-600">Chicago, IL</span>
+                                </button>
+                                <button onclick="searchPhoneByAreaCode('404')" class="phone-area-code-btn bg-gray-100 border border-gray-300 hover:bg-blue-100 hover:border-blue-500 text-gray-800 px-3 py-2 rounded-lg text-center text-sm">
+                                    404<br><span class="text-xs text-gray-600">Atlanta, GA</span>
+                                </button>
+                                <button onclick="searchPhoneByAreaCode('415')" class="phone-area-code-btn bg-gray-100 border border-gray-300 hover:bg-blue-100 hover:border-blue-500 text-gray-800 px-3 py-2 rounded-lg text-center text-sm">
+                                    415<br><span class="text-xs text-gray-600">San Francisco</span>
+                                </button>
+                                <button onclick="searchPhoneByAreaCode('512')" class="phone-area-code-btn bg-gray-100 border border-gray-300 hover:bg-blue-100 hover:border-blue-500 text-gray-800 px-3 py-2 rounded-lg text-center text-sm">
+                                    512<br><span class="text-xs text-gray-600">Austin, TX</span>
+                                </button>
+                                <button onclick="searchPhoneByAreaCode('713')" class="phone-area-code-btn bg-gray-100 border border-gray-300 hover:bg-blue-100 hover:border-blue-500 text-gray-800 px-3 py-2 rounded-lg text-center text-sm">
+                                    713<br><span class="text-xs text-gray-600">Houston, TX</span>
+                                </button>
+                            </div>
+                            
+                            <div class="flex gap-2">
+                                <input type="text" id="customPhoneAreaCode" placeholder="e.g. 555" maxlength="3" 
+                                       class="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                                <button onclick="searchCustomPhoneAreaCode()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                                    Search
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Loading State -->
+                        <div id="phone-search-loading" class="hidden text-center py-6">
+                            <div class="text-3xl mb-2">⏳</div>
+                            <p class="text-gray-600">Searching for available numbers...</p>
+                        </div>
+
+                        <!-- Available Phone Numbers -->
+                        <div id="phone-search-results" class="hidden">
+                            <h4 class="text-md font-medium text-gray-900 mb-3">Available Numbers</h4>
+                            <div id="available-phone-list" class="space-y-3 mb-4">
+                                <!-- Numbers will be populated here -->
+                            </div>
+                            <div class="text-center">
+                                <button onclick="loadMorePhoneNumbers()" class="text-blue-600 hover:text-blue-800 text-sm">
+                                    Load More Numbers
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Phone Number Upgrade Warning -->
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-6">
+                            <div class="flex">
+                                <div class="text-yellow-600">⚠️</div>
+                                <div class="ml-3">
+                                    <h4 class="text-yellow-900 font-medium">Important Note</h4>
+                                    <p class="text-yellow-800 text-sm mt-1">
+                                        Changing your phone number will deactivate your current number. Make sure to update 
+                                        your website, Google listing, and marketing materials with the new number.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -486,8 +594,25 @@
 
         function showPhoneNumber() {
             if (businessData.phone_number) {
-                document.getElementById('currentPhoneNumber').textContent = businessData.phone_number;
-                document.getElementById('phoneNumberInfo').classList.remove('hidden');
+                const formattedNumber = formatPhoneNumber(businessData.phone_number);
+                
+                // Update legacy phone number display (if it exists)
+                const currentPhoneElement = document.getElementById('currentPhoneNumber');
+                if (currentPhoneElement) {
+                    currentPhoneElement.textContent = formattedNumber;
+                }
+                
+                // Update new phone number tab display
+                const currentPhoneDisplay = document.getElementById('currentPhoneDisplay');
+                if (currentPhoneDisplay) {
+                    currentPhoneDisplay.textContent = formattedNumber;
+                }
+                
+                // Show phone number info section
+                const phoneNumberInfo = document.getElementById('phoneNumberInfo');
+                if (phoneNumberInfo) {
+                    phoneNumberInfo.classList.remove('hidden');
+                }
             }
         }
 
@@ -797,6 +922,229 @@
                 debugDiv.innerHTML += `<br><strong>Test Error:</strong><br>${error.message}`;
             }
         }
+
+        // Phone Number Management Functions
+        let settingsSelectedPhoneNumber = null;
+        let settingsCurrentAreaCode = null;
+        let settingsAvailableNumbers = [];
+
+        async function searchPhoneByAreaCode(areaCode) {
+            settingsCurrentAreaCode = areaCode;
+            
+            // Update UI to show selected area code
+            document.querySelectorAll('.phone-area-code-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-600', 'text-white', 'border-blue-600');
+                btn.classList.add('bg-gray-100', 'text-gray-800', 'border-gray-300');
+            });
+            
+            // Highlight selected area code button
+            event.target.classList.remove('bg-gray-100', 'text-gray-800', 'border-gray-300');
+            event.target.classList.add('bg-blue-600', 'text-white', 'border-blue-600');
+            
+            await searchAvailablePhoneNumbers(areaCode);
+        }
+
+        async function searchCustomPhoneAreaCode() {
+            const areaCode = document.getElementById('customPhoneAreaCode').value.trim();
+            
+            if (!areaCode || areaCode.length !== 3 || !/^\d{3}$/.test(areaCode)) {
+                alert('Please enter a valid 3-digit area code (e.g., 555)');
+                return;
+            }
+            
+            settingsCurrentAreaCode = areaCode;
+            await searchAvailablePhoneNumbers(areaCode);
+        }
+
+        async function searchAvailablePhoneNumbers(areaCode) {
+            try {
+                // Show loading state
+                document.getElementById('phone-search-loading').classList.remove('hidden');
+                document.getElementById('phone-search-results').classList.add('hidden');
+                
+                console.log(`🔍 Searching for phone numbers in area code ${areaCode}...`);
+                
+                const token = localStorage.getItem('token');
+                
+                const response = await fetch(`/api/businesses/${businessId}/available-phone-numbers?areaCode=${areaCode}&limit=6`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to search phone numbers');
+                }
+                
+                const data = await response.json();
+                settingsAvailableNumbers = data.availableNumbers || [];
+                
+                console.log(`📞 Found ${settingsAvailableNumbers.length} available numbers`);
+                
+                // Hide loading, show results
+                document.getElementById('phone-search-loading').classList.add('hidden');
+                displayAvailablePhoneNumbers();
+                
+            } catch (error) {
+                console.error('❌ Error searching phone numbers:', error);
+                document.getElementById('phone-search-loading').classList.add('hidden');
+                alert(`Error searching phone numbers: ${error.message}`);
+            }
+        }
+
+        function displayAvailablePhoneNumbers() {
+            const container = document.getElementById('available-phone-list');
+            const section = document.getElementById('phone-search-results');
+            
+            if (settingsAvailableNumbers.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-4 text-gray-500">
+                        <p>No numbers available in area code ${settingsCurrentAreaCode}</p>
+                        <p class="text-sm">Please try a different area code</p>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = settingsAvailableNumbers.map(number => `
+                    <div class="settings-phone-option border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors" 
+                         onclick="selectSettingsPhoneNumber('${number.phoneNumber}')">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <div class="text-lg font-semibold text-gray-900">${formatPhoneNumber(number.phoneNumber)}</div>
+                                <div class="text-sm text-gray-600">${number.locality || 'Local Number'}, ${number.region || settingsCurrentAreaCode}</div>
+                                ${number.capabilities?.voice ? '<span class="inline-block bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full mr-1">Voice</span>' : ''}
+                                ${number.capabilities?.sms ? '<span class="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">SMS</span>' : ''}
+                            </div>
+                            <div class="text-right">
+                                <button class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
+                                    Select This Number
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            section.classList.remove('hidden');
+        }
+
+        function selectSettingsPhoneNumber(phoneNumber) {
+            settingsSelectedPhoneNumber = phoneNumber;
+            
+            // Update visual selection
+            document.querySelectorAll('.settings-phone-option').forEach(option => {
+                option.classList.remove('border-green-500', 'bg-green-50');
+                option.classList.add('border-gray-200');
+            });
+            
+            // Highlight selected number
+            event.currentTarget.classList.remove('border-gray-200');
+            event.currentTarget.classList.add('border-green-500', 'bg-green-50');
+            
+            console.log(`📞 Selected new phone number: ${phoneNumber}`);
+            
+            // Show confirmation dialog
+            const currentNumber = businessData.phone_number || 'No current number';
+            const confirmMessage = `🔄 Change Phone Number?\n\nCurrent: ${formatPhoneNumber(currentNumber)}\nNew: ${formatPhoneNumber(phoneNumber)}\n\nThis will deactivate your current number and activate the new one. Continue?`;
+            
+            if (confirm(confirmMessage)) {
+                changePhoneNumber(phoneNumber);
+            }
+        }
+
+        async function changePhoneNumber(newPhoneNumber) {
+            try {
+                console.log(`🔄 Changing phone number to: ${newPhoneNumber}`);
+                
+                const token = localStorage.getItem('token');
+                
+                const response = await fetch(`/api/businesses/${businessId}/purchase-phone-number`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        phoneNumber: newPhoneNumber
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to change phone number');
+                }
+                
+                const result = await response.json();
+                console.log(`✅ Phone number changed successfully:`, result);
+                
+                // Update business data
+                businessData.phone_number = newPhoneNumber;
+                const business = JSON.parse(localStorage.getItem('business') || '{}');
+                business.phone_number = newPhoneNumber;
+                localStorage.setItem('business', JSON.stringify(business));
+                
+                // Update UI
+                document.getElementById('currentPhoneDisplay').textContent = formatPhoneNumber(newPhoneNumber);
+                
+                // Hide search results
+                document.getElementById('phone-search-results').classList.add('hidden');
+                
+                alert(`🎉 Success! Your phone number has been changed to ${formatPhoneNumber(newPhoneNumber)}\n\nMake sure to update your website, Google listing, and marketing materials!`);
+                
+            } catch (error) {
+                console.error('❌ Error changing phone number:', error);
+                alert(`Error changing phone number: ${error.message}`);
+            }
+        }
+
+        async function loadMorePhoneNumbers() {
+            if (settingsCurrentAreaCode) {
+                await searchAvailablePhoneNumbers(settingsCurrentAreaCode);
+            }
+        }
+
+        function copyPhoneNumber() {
+            const phoneNumber = businessData.phone_number;
+            if (phoneNumber) {
+                navigator.clipboard.writeText(phoneNumber).then(() => {
+                    showSuccess('Phone number copied to clipboard!');
+                }).catch(() => {
+                    // Fallback for older browsers
+                    const textArea = document.createElement('textarea');
+                    textArea.value = phoneNumber;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    showSuccess('Phone number copied to clipboard!');
+                });
+            }
+        }
+
+        function testPhoneCall() {
+            const phoneNumber = businessData.phone_number;
+            if (phoneNumber) {
+                alert(`📞 Test your AI system:\n\nCall: ${formatPhoneNumber(phoneNumber)}\n\nSay: "I need service for my kitchen sink"\n\nThe AI will offer available appointment times and book automatically!`);
+            }
+        }
+
+        function formatPhoneNumber(phoneNumber) {
+            if (!phoneNumber) return '';
+            const cleaned = phoneNumber.replace(/\D/g, '');
+            const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
+            if (match) {
+                return `(${match[1]}) ${match[2]}-${match[3]}`;
+            }
+            return phoneNumber;
+        }
+
+        // Add event listeners for phone management
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add event listeners for phone management buttons
+            document.getElementById('copyPhoneNumber')?.addEventListener('click', copyPhoneNumber);
+            document.getElementById('testPhoneNumber')?.addEventListener('click', testPhoneCall);
+        });
     </script>
 </body>
 </html>

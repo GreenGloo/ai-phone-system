@@ -790,25 +790,53 @@
             let notifications = [];
             
             try {
-                // Load real notifications from recent appointments
-                const today = new Date();
-                const yesterday = new Date(today);
-                yesterday.setDate(yesterday.getDate() - 1);
+                const token = localStorage.getItem('token');
                 
-                const recentAppointments = appointments.filter(apt => {
-                    const aptDate = new Date(apt.created_at || apt.start_time);
-                    return aptDate >= yesterday;
+                // Load real notifications from database
+                const response = await fetch(`/api/businesses/${businessData.id}/notifications`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
                 });
                 
-                notifications = recentAppointments.map((apt, index) => ({
-                    id: apt.id || index,
-                    type: 'new_booking',
-                    message: `New appointment: ${apt.customer_name} - ${apt.service_name}`,
-                    time: getTimeAgo(apt.created_at || apt.start_time),
-                    read: false
-                }));
+                if (response.ok) {
+                    const dbNotifications = await response.json();
+                    console.log('📧 Loaded notifications:', dbNotifications.length);
+                    
+                    notifications = dbNotifications.map(notif => ({
+                        id: notif.id,
+                        type: notif.type,
+                        message: notif.message,
+                        time: getTimeAgo(notif.created_at),
+                        read: notif.read,
+                        data: notif.data
+                    }));
+                } else {
+                    console.log('📧 No notifications endpoint or error loading');
+                }
                 
-                // Add a system notification if no real ones
+                // Add fallback notifications from recent appointments if no DB notifications
+                if (notifications.length === 0) {
+                    const today = new Date();
+                    const yesterday = new Date(today);
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    
+                    const recentAppointments = appointments.filter(apt => {
+                        const aptDate = new Date(apt.created_at || apt.start_time);
+                        return aptDate >= yesterday;
+                    });
+                    
+                    notifications = recentAppointments.map((apt, index) => ({
+                        id: apt.id || index,
+                        type: 'new_booking',
+                        message: `New appointment: ${apt.customer_name} - ${apt.service_name}`,
+                        time: getTimeAgo(apt.created_at || apt.start_time),
+                        read: false
+                    }));
+                }
+                
+                // Add a system notification if still no notifications
                 if (notifications.length === 0) {
                     notifications.push({
                         id: 'system-1',

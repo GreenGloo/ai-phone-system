@@ -177,39 +177,111 @@
                 </div>
             </div>
 
-            <!-- Step 4: Phone Number -->
+            <!-- Step 4: Phone Number Selection -->
             <div id="step-content-4" class="step-content hidden">
                 <div class="text-center mb-8">
                     <div class="text-6xl mb-4">📞</div>
-                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Your AI Phone Number</h2>
-                    <p class="text-gray-600">We've set up a dedicated phone number for your business</p>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Choose Your AI Phone Number</h2>
+                    <p class="text-gray-600">Select a local phone number for your business</p>
                 </div>
 
-                <div class="max-w-lg mx-auto">
-                    <div class="bg-green-50 border border-green-200 rounded-lg p-6 text-center mb-6">
-                        <div class="text-green-600 mb-2">✅ Phone Number Assigned</div>
-                        <div id="assigned-phone" class="text-2xl font-bold text-gray-900 mb-2">(Loading...)</div>
-                        <div class="text-sm text-gray-600">This number is ready to receive calls and book appointments!</div>
-                    </div>
-
-                    <div class="space-y-4">
-                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                            <h4 class="font-semibold text-blue-900 mb-2">📋 Next Steps:</h4>
-                            <ul class="text-sm text-blue-800 space-y-1">
-                                <li>• Update your website with this number</li>
-                                <li>• Add it to your Google Business listing</li>
-                                <li>• Update your business cards and marketing</li>
-                                <li>• Forward your existing number (optional)</li>
-                            </ul>
-                        </div>
-
-                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                            <h4 class="font-semibold text-yellow-900 mb-2">🧪 Test Your System:</h4>
-                            <p class="text-sm text-yellow-800 mb-3">Call your new number to test the AI booking system!</p>
-                            <button onclick="testCall()" class="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 text-sm">
-                                Call Now to Test
+                <div class="max-w-4xl mx-auto space-y-6">
+                    <!-- Area Code Selection -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                        <h3 class="font-semibold text-blue-900 mb-4">📍 Select Your Area Code</h3>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <button onclick="searchByAreaCode('201')" class="area-code-btn bg-white border border-blue-300 hover:bg-blue-100 text-blue-800 px-4 py-2 rounded-lg text-center font-medium">
+                                201<br><span class="text-xs text-blue-600">New Jersey</span>
+                            </button>
+                            <button onclick="searchByAreaCode('212')" class="area-code-btn bg-white border border-blue-300 hover:bg-blue-100 text-blue-800 px-4 py-2 rounded-lg text-center font-medium">
+                                212<br><span class="text-xs text-blue-600">New York City</span>
+                            </button>
+                            <button onclick="searchByAreaCode('305')" class="area-code-btn bg-white border border-blue-300 hover:bg-blue-100 text-blue-800 px-4 py-2 rounded-lg text-center font-medium">
+                                305<br><span class="text-xs text-blue-600">Miami, FL</span>
+                            </button>
+                            <button onclick="searchByAreaCode('312')" class="area-code-btn bg-white border border-blue-300 hover:bg-blue-100 text-blue-800 px-4 py-2 rounded-lg text-center font-medium">
+                                312<br><span class="text-xs text-blue-600">Chicago, IL</span>
+                            </button>
+                            <button onclick="searchByAreaCode('404')" class="area-code-btn bg-white border border-blue-300 hover:bg-blue-100 text-blue-800 px-4 py-2 rounded-lg text-center font-medium">
+                                404<br><span class="text-xs text-blue-600">Atlanta, GA</span>
+                            </button>
+                            <button onclick="searchByAreaCode('415')" class="area-code-btn bg-white border border-blue-300 hover:bg-blue-100 text-blue-800 px-4 py-2 rounded-lg text-center font-medium">
+                                415<br><span class="text-xs text-blue-600">San Francisco</span>
+                            </button>
+                            <button onclick="searchByAreaCode('512')" class="area-code-btn bg-white border border-blue-300 hover:bg-blue-100 text-blue-800 px-4 py-2 rounded-lg text-center font-medium">
+                                512<br><span class="text-xs text-blue-600">Austin, TX</span>
+                            </button>
+                            <button onclick="searchByAreaCode('713')" class="area-code-btn bg-white border border-blue-300 hover:bg-blue-100 text-blue-800 px-4 py-2 rounded-lg text-center font-medium">
+                                713<br><span class="text-xs text-blue-600">Houston, TX</span>
                             </button>
                         </div>
+                        <div class="mt-4">
+                            <label class="block text-sm font-medium text-blue-900 mb-2">Or enter a custom area code:</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="custom-area-code" placeholder="e.g. 555" maxlength="3" 
+                                       class="w-24 px-3 py-2 border border-blue-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                                <button onclick="searchCustomAreaCode()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                                    Search
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div id="loading-numbers" class="hidden text-center py-8">
+                        <div class="text-4xl mb-4">⏳</div>
+                        <p class="text-gray-600">Searching for available numbers...</p>
+                    </div>
+
+                    <!-- Available Numbers -->
+                    <div id="available-numbers-section" class="hidden">
+                        <div class="bg-white border border-gray-200 rounded-lg p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="font-semibold text-gray-900">Available Phone Numbers</h3>
+                                <span id="selected-area-code-display" class="text-sm text-gray-600"></span>
+                            </div>
+                            <div id="available-numbers-list" class="space-y-3">
+                                <!-- Numbers will be populated here -->
+                            </div>
+                            <div class="mt-4 text-center">
+                                <button onclick="searchMoreNumbers()" class="text-blue-600 hover:text-blue-800 text-sm">
+                                    Load More Numbers
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Selected Number Preview -->
+                    <div id="selected-number-preview" class="hidden">
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-6">
+                            <div class="text-center">
+                                <div class="text-green-600 mb-2">✅ Selected Phone Number</div>
+                                <div id="selected-phone-display" class="text-2xl font-bold text-gray-900 mb-2"></div>
+                                <div class="text-sm text-gray-600">This number will be activated for your business</div>
+                            </div>
+                            
+                            <div class="mt-6 space-y-4">
+                                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                    <h4 class="font-semibold text-blue-900 mb-2">📋 Next Steps:</h4>
+                                    <ul class="text-sm text-blue-800 space-y-1">
+                                        <li>• Add this number to your website</li>
+                                        <li>• Update your Google Business listing</li>
+                                        <li>• Print on business cards and marketing</li>
+                                        <li>• Set up call forwarding (optional)</li>
+                                    </ul>
+                                </div>
+
+                                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                    <h4 class="font-semibold text-yellow-900 mb-2">🧪 Test After Setup:</h4>
+                                    <p class="text-sm text-yellow-800">Once activated, call your number and say "I need a plumber for my kitchen sink" to test the AI!</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- No Selection Warning -->
+                    <div id="no-selection-warning" class="hidden bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                        <p class="text-yellow-800">Please select a phone number to continue</p>
                     </div>
                 </div>
 
@@ -217,7 +289,7 @@
                     <button onclick="previousStep()" class="bg-gray-200 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-300 font-semibold">
                         ← Back
                     </button>
-                    <button onclick="nextStep()" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold">
+                    <button id="continue-with-number" onclick="continueWithSelectedNumber()" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold" disabled>
                         Continue to Payment →
                     </button>
                 </div>
@@ -477,6 +549,7 @@
                 if (currentStep === 1) saveBusinessHours();
                 if (currentStep === 2) saveServices();
                 if (currentStep === 3) saveAISettings();
+                if (currentStep === 4) savePhoneNumber();
                 
                 currentStep++;
                 showStep(currentStep);
@@ -555,12 +628,59 @@
             document.getElementById('launch-button').classList.remove('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
         }
 
-        function launchDashboard() {
-            // Mark onboarding as complete
-            localStorage.setItem('onboarding_complete', 'true');
-            
-            // Redirect to dashboard
-            window.location.href = '/dashboard';
+        async function launchDashboard() {
+            try {
+                // Complete onboarding on the backend with selected phone number
+                const token = localStorage.getItem('token');
+                const business = JSON.parse(localStorage.getItem('business') || '{}');
+                
+                if (!business.id) {
+                    throw new Error('Business ID not found. Please refresh and try again.');
+                }
+                
+                console.log(`🚀 Completing onboarding for business ${business.id}`);
+                console.log(`📞 Selected phone number: ${businessData.selectedPhoneNumber || 'None selected - will auto-assign'}`);
+                console.log(`📞 Area code: ${businessData.areaCode || 'Not specified'}`);
+                console.log(`📞 Business data:`, businessData);
+                
+                const response = await fetch(`/api/businesses/${business.id}/complete-onboarding`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        selectedPhoneNumber: businessData.selectedPhoneNumber,
+                        areaCode: businessData.areaCode,
+                        businessData: businessData
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to complete onboarding');
+                }
+                
+                const result = await response.json();
+                console.log(`✅ Onboarding completed successfully:`, result);
+                
+                // Update business data with the activated phone number
+                const updatedBusiness = { ...business, phone_number: result.phoneNumber, onboarding_completed: true };
+                localStorage.setItem('business', JSON.stringify(updatedBusiness));
+                
+                // Mark onboarding as complete
+                localStorage.setItem('onboarding_complete', 'true');
+                
+                // Show success message
+                alert(`🎉 Success! Your AI phone system is now active!\n\nYour business phone number: ${result.phoneNumber}\n\nRedirecting to your dashboard...`);
+                
+                // Redirect to dashboard
+                window.location.href = '/dashboard';
+                
+            } catch (error) {
+                console.error('❌ Error completing onboarding:', error);
+                alert(`Error completing setup: ${error.message}\n\nPlease try again or contact support.`);
+            }
         }
 
         function formatPhoneNumber(phoneNumber) {
@@ -575,6 +695,183 @@
 
         function capitalizeFirst(str) {
             return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        // Phone Number Selection Functions
+        let selectedPhoneNumber = null;
+        let currentAreaCode = null;
+        let availableNumbers = [];
+
+        async function searchByAreaCode(areaCode) {
+            currentAreaCode = areaCode;
+            
+            // Update UI to show selected area code
+            document.querySelectorAll('.area-code-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-600', 'text-white');
+                btn.classList.add('bg-white', 'text-blue-800');
+            });
+            
+            // Highlight selected area code button
+            event.target.classList.remove('bg-white', 'text-blue-800');
+            event.target.classList.add('bg-blue-600', 'text-white');
+            
+            await searchAvailableNumbers(areaCode);
+        }
+
+        async function searchCustomAreaCode() {
+            const areaCode = document.getElementById('custom-area-code').value.trim();
+            
+            if (!areaCode || areaCode.length !== 3 || !/^\d{3}$/.test(areaCode)) {
+                alert('Please enter a valid 3-digit area code (e.g., 555)');
+                return;
+            }
+            
+            currentAreaCode = areaCode;
+            await searchAvailableNumbers(areaCode);
+        }
+
+        async function searchAvailableNumbers(areaCode) {
+            try {
+                // Show loading state
+                document.getElementById('loading-numbers').classList.remove('hidden');
+                document.getElementById('available-numbers-section').classList.add('hidden');
+                document.getElementById('selected-number-preview').classList.add('hidden');
+                
+                console.log(`🔍 Searching for numbers in area code ${areaCode}...`);
+                
+                const token = localStorage.getItem('token');
+                const business = JSON.parse(localStorage.getItem('business') || '{}');
+                
+                if (!business.id) {
+                    throw new Error('Business ID not found. Please refresh and try again.');
+                }
+                
+                const response = await fetch(`/api/businesses/${business.id}/available-phone-numbers?areaCode=${areaCode}&limit=8`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to search phone numbers');
+                }
+                
+                const data = await response.json();
+                availableNumbers = data.availableNumbers || [];
+                
+                console.log(`📞 Found ${availableNumbers.length} available numbers`);
+                
+                // Hide loading, show results
+                document.getElementById('loading-numbers').classList.add('hidden');
+                displayAvailableNumbers();
+                
+            } catch (error) {
+                console.error('❌ Error searching phone numbers:', error);
+                document.getElementById('loading-numbers').classList.add('hidden');
+                alert(`Error searching phone numbers: ${error.message}`);
+            }
+        }
+
+        function displayAvailableNumbers() {
+            const container = document.getElementById('available-numbers-list');
+            const section = document.getElementById('available-numbers-section');
+            const display = document.getElementById('selected-area-code-display');
+            
+            display.textContent = `Area Code: ${currentAreaCode}`;
+            
+            if (availableNumbers.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-6 text-gray-500">
+                        <div class="text-2xl mb-2">😔</div>
+                        <p>No numbers available in area code ${currentAreaCode}</p>
+                        <p class="text-sm">Please try a different area code</p>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = availableNumbers.map(number => `
+                    <div class="phone-number-option border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-colors" 
+                         onclick="selectPhoneNumber('${number.phoneNumber}')">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <div class="text-lg font-semibold text-gray-900">${formatPhoneNumber(number.phoneNumber)}</div>
+                                <div class="text-sm text-gray-600">${number.locality || 'Local Number'}, ${number.region || currentAreaCode}</div>
+                                ${number.capabilities?.voice ? '<span class="inline-block bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full mr-1">Voice</span>' : ''}
+                                ${number.capabilities?.sms ? '<span class="inline-block bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">SMS</span>' : ''}
+                            </div>
+                            <div class="text-right">
+                                <div class="text-sm font-medium text-green-600">Included in Plan</div>
+                                <div class="text-xs text-gray-500">No additional cost</div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            section.classList.remove('hidden');
+        }
+
+        function selectPhoneNumber(phoneNumber) {
+            selectedPhoneNumber = phoneNumber;
+            
+            // Update visual selection
+            document.querySelectorAll('.phone-number-option').forEach(option => {
+                option.classList.remove('border-green-500', 'bg-green-50');
+                option.classList.add('border-gray-200');
+            });
+            
+            // Highlight selected number
+            event.currentTarget.classList.remove('border-gray-200');
+            event.currentTarget.classList.add('border-green-500', 'bg-green-50');
+            
+            // Show selected number preview
+            document.getElementById('selected-phone-display').textContent = formatPhoneNumber(phoneNumber);
+            document.getElementById('selected-number-preview').classList.remove('hidden');
+            document.getElementById('no-selection-warning').classList.add('hidden');
+            
+            // Enable continue button
+            document.getElementById('continue-with-number').disabled = false;
+            document.getElementById('continue-with-number').classList.remove('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
+            
+            console.log(`📞 Selected phone number: ${phoneNumber}`);
+        }
+
+        async function searchMoreNumbers() {
+            if (currentAreaCode) {
+                await searchAvailableNumbers(currentAreaCode);
+            }
+        }
+
+        async function continueWithSelectedNumber() {
+            if (!selectedPhoneNumber) {
+                document.getElementById('no-selection-warning').classList.remove('hidden');
+                return;
+            }
+            
+            try {
+                // Save selected phone number
+                businessData.selectedPhoneNumber = selectedPhoneNumber;
+                businessData.areaCode = currentAreaCode;
+                
+                console.log(`📞 Continuing with selected number: ${selectedPhoneNumber}`);
+                
+                // Move to next step
+                nextStep();
+                
+            } catch (error) {
+                console.error('❌ Error continuing with selected number:', error);
+                alert(`Error: ${error.message}`);
+            }
+        }
+
+        // Update the save phone number function to use the selected number
+        function savePhoneNumber() {
+            if (selectedPhoneNumber) {
+                businessData.phoneNumber = selectedPhoneNumber;
+                businessData.areaCode = currentAreaCode;
+                console.log('📞 Saving selected phone number:', selectedPhoneNumber);
+            }
         }
 
         // Initialize
