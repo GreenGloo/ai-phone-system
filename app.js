@@ -3573,7 +3573,45 @@ app.post('/api/businesses/:businessId/purchase-phone-number', authenticateToken,
     
     res.status(500).json({ 
       error: 'Failed to purchase phone number',
-      details: error.message 
+      details: error.message,
+      code: error.code,
+      twilioError: error.message
+    });
+  }
+});
+
+// Debug endpoint to test Twilio account status
+app.get('/api/debug/twilio-status', async (req, res) => {
+  try {
+    console.log('🔍 Testing Twilio account status...');
+    
+    // Test account info
+    const account = await twilioClient.api.accounts(process.env.TWILIO_SID).fetch();
+    
+    // Test if we can list existing phone numbers
+    const existingNumbers = await twilioClient.incomingPhoneNumbers.list({ limit: 5 });
+    
+    // Test if we can search for available numbers (without area code)
+    const availableNumbers = await twilioClient.availablePhoneNumbers('US')
+      .local
+      .list({ limit: 1, voiceEnabled: true });
+    
+    res.json({
+      accountStatus: account.status,
+      accountType: account.type,
+      existingPhoneNumbers: existingNumbers.length,
+      canSearchNumbers: availableNumbers.length > 0,
+      twilioAccountSid: process.env.TWILIO_SID?.substring(0, 10) + '...',
+      testResult: 'Twilio connection working'
+    });
+    
+  } catch (error) {
+    console.error('🔍 Twilio test failed:', error);
+    res.status(500).json({
+      error: 'Twilio test failed',
+      details: error.message,
+      code: error.code,
+      accountSid: process.env.TWILIO_SID?.substring(0, 10) + '...'
     });
   }
 });
