@@ -499,16 +499,17 @@
         let stats = {};
 
         // Initialize dashboard
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
             checkAuthentication();
-            loadBusinessData();
+            await loadBusinessData();
             loadDashboardData();
             renderCalendar();
             
-            // Auto-refresh every 30 seconds
+            // Auto-refresh appointments and notifications every 15 seconds
             setInterval(() => {
+                console.log('🔄 Auto-refreshing dashboard data...');
                 loadDashboardData();
-            }, 30000);
+            }, 15000);
         });
 
         function checkAuthentication() {
@@ -519,34 +520,50 @@
             }
         }
 
-        function loadBusinessData() {
-            const business = JSON.parse(localStorage.getItem('business') || '{}');
+        async function loadBusinessData() {
+            // Always fetch fresh business data from API instead of using stale localStorage
+            try {
+                const token = localStorage.getItem('token');
+                const headers = { 'Authorization': `Bearer ${token}` };
+                
+                const businessesResponse = await fetch('/api/businesses', { headers });
+                if (businessesResponse.ok) {
+                    const businesses = await businessesResponse.json();
+                    if (businesses.length > 0) {
+                        businessData = businesses[0];
+                        localStorage.setItem('business', JSON.stringify(businessData));
+                        console.log('✅ Fresh business data loaded from API:', businessData);
+                    }
+                } else {
+                    console.error('❌ Failed to load businesses from API');
+                    // Fallback to localStorage
+                    const business = JSON.parse(localStorage.getItem('business') || '{}');
+                    businessData = business;
+                }
+            } catch (error) {
+                console.error('❌ Error loading business data:', error);
+                // Fallback to localStorage
+                const business = JSON.parse(localStorage.getItem('business') || '{}');
+                businessData = business;
+            }
+            
             const user = JSON.parse(localStorage.getItem('user') || '{}');
+            businessData.user = user;
+            businessData.userId = user.id;
+            businessData.userEmail = user.email;
             
-            // Don't let user.id overwrite business.id!
-            businessData = { 
-                ...business, 
-                user: user,
-                userId: user.id,
-                userEmail: user.email
-            };
-            
-            console.log('Business data loaded:', businessData);
-            console.log('Business from localStorage:', business);
-            console.log('User from localStorage:', user);
-            
-            if (business.name) {
-                document.getElementById('business-name').textContent = business.name;
+            if (businessData.name) {
+                document.getElementById('business-name').textContent = businessData.name;
             }
             
-            if (business.phone_number) {
-                document.getElementById('phone-number').textContent = formatPhoneNumber(business.phone_number);
+            if (businessData.phone_number) {
+                document.getElementById('phone-number').textContent = formatPhoneNumber(businessData.phone_number);
             } else {
-                console.log('No phone number found in business data:', business);
+                console.log('No phone number found in business data:', businessData);
             }
             
-            if (business.plan) {
-                document.getElementById('current-plan').textContent = capitalizeFirst(business.plan);
+            if (businessData.plan) {
+                document.getElementById('current-plan').textContent = capitalizeFirst(businessData.plan);
             }
         }
 
