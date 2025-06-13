@@ -156,12 +156,18 @@ async function processSimpleVoice(req, res) {
       twiml.say('I didn\'t hear you. Let me have someone call you back.');
       twiml.hangup();
       
-      // Update state - skip GREETING stage since we already greeted
+      // FIXED: Set stage to GET_SERVICE and save state immediately
       state.stage = STATES.GET_SERVICE;
       state.attempts = 1;
       callStateManager.setState(CallSid, state);
       
       return res.type('text/xml').send(twiml.toString());
+    }
+    
+    // If we have speech and we're still in greeting, force to GET_SERVICE
+    if (SpeechResult && state.stage === STATES.GREETING) {
+      console.log(`🔧 FIXING: Got speech in greeting stage, forcing to GET_SERVICE`);
+      state.stage = STATES.GET_SERVICE;
     }
     
     // Skip processing if no speech input (but not initial call)
