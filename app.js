@@ -688,9 +688,9 @@ app.post('/', voiceRateLimit, async (req, res) => {
     const businessId = businessResult.rows[0].id;
     console.log(`✅ Routing call to business: ${businessId}`);
     
-    // Forward to the simple booking handler
+    // Forward to the smart booking handler
     req.params = { businessId };
-    return processSimpleVoice(req, res);
+    return handleVoiceCall(req, res);
     
   } catch (error) {
     console.error('Error routing voice call:', error);
@@ -1624,7 +1624,7 @@ function generateBookingPageHTML(business, services) {
 }
 
 // Voice processing endpoint for AI conversations - using working simple booking logic
-app.post('/voice/process/:businessId', processSimpleVoice);
+app.post('/voice/process/:businessId', handleVoiceCall);
 
 async function processVoiceForBusiness(req, res) {
   try {
