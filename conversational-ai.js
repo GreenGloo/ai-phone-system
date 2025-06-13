@@ -440,9 +440,8 @@ async function bookAppointment(conversation, businessId, service, data) {
     // Create notification for the business owner
     try {
       await pool.query(`
-        INSERT INTO notifications (
-          business_id, type, title, message, metadata, created_at, read
-        ) VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+        INSERT INTO notifications (business_id, type, title, message, data)
+        VALUES ($1, $2, $3, $4, $5)
       `, [
         businessId,
         'new_booking',
@@ -450,8 +449,7 @@ async function bookAppointment(conversation, businessId, service, data) {
         `Customer booked ${service.name} for ${appointmentTime.toLocaleDateString('en-US')} at ${appointmentTime.toLocaleTimeString('en-US')}`,
         JSON.stringify({
           appointmentId: appointmentId
-        }),
-        false
+        })
       ]);
       console.log(`📧 Notification created for appointment ${appointmentId}`);
     } catch (notificationError) {
