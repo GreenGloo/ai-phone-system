@@ -657,8 +657,8 @@ async function getHumanLikeResponse(speech, conversation, business, services, av
     `${h.speaker}: ${h.message}`
   ).join('\n');
   
-  // Show comprehensive availability - enough to cover 2+ months  
-  const availableSlots = availability.slice(0, 120).map(slot => 
+  // Show ALL available slots - full calendar range
+  const availableSlots = availability.map(slot => 
     `${slot.day} ${slot.time} (${slot.datetime})`
   ).join(', ');
   
@@ -678,7 +678,7 @@ ${recentHistory}
 
 AVAILABLE APPOINTMENT SLOTS (NEXT FEW DAYS + WEEKS + MONTHS): ${availableSlots}
 
-BOOKING RANGE: We have appointments available from ${todayStr} through ${new Date(availability[availability.length-1]?.datetime || new Date()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+BOOKING RANGE: We have appointments available from ${todayStr} through ${new Date(availability[availability.length-1]?.datetime || new Date()).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} - CUSTOMERS CAN BOOK WEEKS OR MONTHS IN ADVANCE!
 
 CRITICAL BOOKING INSTRUCTIONS:
 • Speech recognition errors: "CID" = "oil change", "old change" = "oil change"
