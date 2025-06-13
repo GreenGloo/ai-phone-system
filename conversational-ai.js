@@ -146,7 +146,7 @@ async function getAvailableSlots(businessId) {
       return [];
     }
     
-    // Get available slots from pre-generated calendar
+    // Get available slots from pre-generated calendar - FULL YEAR AVAILABILITY
     const slotsResult = await pool.query(`
       SELECT slot_start, slot_end
       FROM calendar_slots
@@ -154,9 +154,8 @@ async function getAvailableSlots(businessId) {
       AND is_available = true
       AND is_blocked = false
       AND slot_start >= NOW()
-      AND slot_start <= NOW() + INTERVAL '30 days'
       ORDER BY slot_start
-      LIMIT 20
+      LIMIT 100
     `, [businessId]);
     
     if (slotsResult.rows.length === 0) {
@@ -171,7 +170,6 @@ async function getAvailableSlots(businessId) {
       WHERE business_id = $1 
       AND status IN ('scheduled', 'confirmed')
       AND start_time >= NOW()
-      AND start_time <= NOW() + INTERVAL '30 days'
     `, [businessId]);
     
     const bookedTimes = existingAppointments.rows.map(apt => ({
@@ -213,6 +211,8 @@ async function getAvailableSlots(businessId) {
       });
     
     console.log(`📅 Found ${availableSlots.length} available slots from pre-generated calendar`);
+    console.log(`📅 Sample slots for Claude:`, availableSlots.slice(0, 5).map(s => `${s.day} ${s.time}`));
+    console.log(`📅 Date range: ${availableSlots[0]?.day} to ${availableSlots[availableSlots.length-1]?.day}`);
     return availableSlots;
     
   } catch (error) {
