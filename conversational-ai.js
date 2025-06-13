@@ -663,7 +663,21 @@ async function getHumanLikeResponse(speech, conversation, business, services, av
     `${h.speaker}: ${h.message}`
   ).join('\n');
   
-  const availableSlots = availability.slice(0, 10).map(slot => 
+  // Show a better sample of available slots including future dates
+  const nearTermSlots = availability.slice(0, 6); // Next few days
+  const midTermSlots = availability.filter(slot => {
+    const date = new Date(slot.datetime);
+    const daysOut = Math.floor((date - new Date()) / (1000 * 60 * 60 * 24));
+    return daysOut >= 7 && daysOut <= 30;
+  }).slice(0, 6); // Next few weeks
+  const longTermSlots = availability.filter(slot => {
+    const date = new Date(slot.datetime);
+    const daysOut = Math.floor((date - new Date()) / (1000 * 60 * 60 * 24));
+    return daysOut > 30;
+  }).slice(0, 6); // Future months
+  
+  const sampleSlots = [...nearTermSlots, ...midTermSlots, ...longTermSlots];
+  const availableSlots = sampleSlots.map(slot => 
     `${slot.day} ${slot.time} (${slot.datetime})`
   ).join(', ');
   
@@ -681,7 +695,9 @@ CUSTOMER INPUT: "${speech}"
 RECENT CONVERSATION:
 ${recentHistory}
 
-AVAILABLE APPOINTMENT SLOTS: ${availableSlots}
+AVAILABLE APPOINTMENT SLOTS (NEXT FEW DAYS + WEEKS + MONTHS): ${availableSlots}
+
+BOOKING RANGE: We have appointments available from ${todayStr} through ${new Date(availability[availability.length-1]?.datetime || new Date()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
 
 CRITICAL BOOKING INSTRUCTIONS:
 • Speech recognition errors: "CID" = "oil change", "old change" = "oil change"
@@ -689,11 +705,13 @@ CRITICAL BOOKING INSTRUCTIONS:
 • Customer saying "yes"/"okay"/"sounds good"/"that works" = book the appointment NOW with action: "book_appointment"
 • ONLY suggest times from the AVAILABLE APPOINTMENT SLOTS list above - never make up dates!
 • When offering times, ALWAYS use the exact appointmentDatetime from the available slots
+• If customer asks for a future date (like "July 10th"), check the available slots - we have appointments available for MONTHS in advance
 • Be conversational but ALWAYS drive toward booking an appointment
-• Oil changes are most common - assume unclear requests are oil changes
+• For unclear requests, default to "consultation" or "diagnostic" - never assume specific services
 
 BOOKING EXAMPLES:
 Customer: "oil change" → action: "continue", offer specific times like "I can get you in tomorrow at 4:00 PM or Sunday at 10:00 AM"
+Customer: unclear speech → action: "continue", "I'd like to schedule a consultation to discuss what you need"
 Customer: "yes" or "4 PM works" or "tomorrow sounds good" → action: "book_appointment" with exact appointmentDatetime like "2025-06-14T16:00:00.000Z"
 Customer: "that works" → action: "book_appointment" using the previously suggested time
 
