@@ -468,7 +468,7 @@ function intelligentServiceMatching(services, requestedService) {
     'brake': ['brake', 'brakes', 'stopping'],
     'battery': ['battery', 'dead', 'jump', 'start'],
     'diagnostics': ['diagnostic', 'check', 'scan', 'code'],
-    'alignment': ['alignment', 'straight', 'pull'],
+    'alignment': ['alignment', 'straight', 'pull', 'tire', 'rotation', 'rotate', 'wheel'],
     'transmission': ['transmission', 'shift', 'gear'],
     'air conditioning': ['ac', 'air conditioning', 'cooling', 'heat'],
     'towing': ['tow', 'towing', 'haul', 'emergency'],
