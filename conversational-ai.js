@@ -48,8 +48,46 @@ console.log(`🔑 OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'CONFIGURED ✅
 console.log(`🎭 ElevenLabs API Key: ${process.env.ELEVENLABS_API_KEY ? 'CONFIGURED ✅' : 'MISSING ❌'}`);
 console.log('🚀 Ready to provide the most human-like AI assistant experience!');
 
-// Advanced conversation memory with emotional intelligence
-const conversations = new Map();
+// Database-backed conversation storage for reliability and scale
+// No more in-memory storage - survives server restarts and handles 1000s of businesses
+
+// Get conversation from database
+async function getConversation(callSid) {
+  try {
+    const result = await pool.query(
+      'SELECT conversation_data FROM conversations WHERE call_sid = $1',
+      [callSid]
+    );
+    
+    if (result.rows.length > 0) {
+      console.log(`📖 Retrieved conversation for call ${callSid}`);
+      return result.rows[0].conversation_data;
+    }
+    
+    console.log(`🆕 Creating new conversation for call ${callSid}`);
+    return null; // New conversation
+  } catch (error) {
+    console.error('❌ Error retrieving conversation:', error);
+    return null; // Fallback to new conversation
+  }
+}
+
+// Save conversation to database
+async function saveConversation(callSid, businessId, conversation) {
+  try {
+    await pool.query(`
+      INSERT INTO conversations (call_sid, business_id, conversation_data) 
+      VALUES ($1, $2, $3)
+      ON CONFLICT (call_sid) 
+      DO UPDATE SET conversation_data = $3, updated_at = CURRENT_TIMESTAMP
+    `, [callSid, businessId, conversation]);
+    
+    console.log(`💾 Saved conversation for call ${callSid}`);
+  } catch (error) {
+    console.error('❌ Error saving conversation:', error);
+    // Don't fail the call if save fails - just log it
+  }
+}
 
 // AI Personality Engine - Makes conversations feel genuinely human
 const PERSONALITY_PROFILES = {
@@ -259,12 +297,12 @@ async function handleVoiceCall(req, res) {
   }
 }
 
-function handleInitialCall(res, business, callSid, from, businessId) {
+async function handleInitialCall(res, business, callSid, from, businessId) {
   // Choose personality based on business type (could be configurable per business)
   const personality = PERSONALITY_PROFILES.helpful; // Default to most helpful
   
-  // Start enhanced conversation memory
-  conversations.set(callSid, {
+  // Start enhanced conversation memory in database
+  const conversation = {
     business: business,
     customerPhone: from,
     conversationHistory: [],
@@ -279,7 +317,10 @@ function handleInitialCall(res, business, callSid, from, businessId) {
       preferredTime: null,
       urgencyLevel: 'normal'
     }
-  });
+  };
+  
+  // Save to database
+  await saveConversation(callSid, businessId, conversation);
   
   // Create warm, personalized greeting
   const timeOfDay = getTimeOfDay();
@@ -480,22 +521,28 @@ function generateSystemErrorMessage(personality, emotions) {
 }
 
 async function holdConversation(res, business, callSid, from, speech, businessId) {
-  const conversation = conversations.get(callSid) || {
-    business: business,
-    customerPhone: from,
-    conversationHistory: [],
-    customerInfo: {},
-    personality: PERSONALITY_PROFILES.helpful,
-    emotionalState: [],
-    interactionCount: 0,
-    startTime: new Date(),
-    context: {
-      hasGreeted: false,
-      needsService: null,
-      preferredTime: null,
-      urgencyLevel: 'normal'
-    }
-  };
+  // Get conversation from database
+  let conversation = await getConversation(callSid);
+  
+  // If no conversation exists, create new one
+  if (!conversation) {
+    conversation = {
+      business: business,
+      customerPhone: from,
+      conversationHistory: [],
+      customerInfo: {},
+      personality: PERSONALITY_PROFILES.helpful,
+      emotionalState: [],
+      interactionCount: 0,
+      startTime: new Date(),
+      context: {
+        hasGreeted: false,
+        needsService: null,
+        preferredTime: null,
+        urgencyLevel: 'normal'
+      }
+    };
+  }
   
   // Increment interaction count and analyze emotional state
   conversation.interactionCount++;
@@ -536,7 +583,8 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     data: aiResponse.data
   });
   
-  conversations.set(callSid, conversation);
+  // Save updated conversation to database
+  await saveConversation(callSid, businessId, conversation);
   
   const twiml = new twilio.twiml.VoiceResponse();
   let shouldContinue = true;
@@ -577,7 +625,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
           twiml.say(enhancedSuccess);
           twiml.hangup();
           shouldContinue = false;
-          conversations.delete(callSid);
+          // Conversation completed successfully - will be auto-cleaned up
         } else {
           console.error('❌ Booking failed:', booking.error);
           const failureMessage = generateBookingFailureMessage(conversation.personality, conversation.emotionalState);
@@ -940,44 +988,22 @@ function handleConversationError(error, conversation, res) {
   return sendTwiml(res, errorMessage);
 }
 
-// Connection Recovery - Handles dropped connections gracefully
-function handleConnectionRecovery(callSid) {
-  const conversation = conversations.get(callSid);
-  if (conversation) {
-    console.log(`🔄 Connection recovery for call ${callSid}`);
-    // Mark conversation for callback
-    conversation.needsCallback = true;
-    conversation.disconnectTime = new Date();
+// Database Conversation Cleanup - Optimized for Railway free tier
+// Automatically removes old conversations to keep storage minimal
+setInterval(async () => {
+  try {
+    const result = await pool.query(`
+      DELETE FROM conversations 
+      WHERE created_at < NOW() - INTERVAL '30 minutes'
+      RETURNING call_sid
+    `);
     
-    // Keep conversation in memory for 5 minutes in case they call back
-    setTimeout(() => {
-      if (conversations.has(callSid) && conversations.get(callSid).needsCallback) {
-        console.log(`🗑️ Cleaning up abandoned conversation ${callSid}`);
-        conversations.delete(callSid);
-      }
-    }, 5 * 60 * 1000);
-  }
-}
-
-// Intelligent Conversation Cleanup - Prevents memory leaks
-setInterval(() => {
-  const now = new Date();
-  let cleanedCount = 0;
-  
-  for (const [callSid, conversation] of conversations.entries()) {
-    const conversationAge = now - conversation.startTime;
-    const maxAge = 30 * 60 * 1000; // 30 minutes
-    
-    if (conversationAge > maxAge) {
-      console.log(`🧹 Cleaning up old conversation ${callSid} (${Math.round(conversationAge / 60000)} minutes old)`);
-      conversations.delete(callSid);
-      cleanedCount++;
+    if (result.rows.length > 0) {
+      console.log(`🧹 Cleaned up ${result.rows.length} old conversations from database`);
     }
+  } catch (error) {
+    console.error('❌ Error cleaning up conversations:', error);
   }
-  
-  if (cleanedCount > 0) {
-    console.log(`🧹 Cleaned up ${cleanedCount} old conversations. Active conversations: ${conversations.size}`);
-  }
-}, 10 * 60 * 1000); // Run every 10 minutes
+}, 5 * 60 * 1000); // Run every 5 minutes - more frequent for free tier
 
 module.exports = { handleVoiceCall };
