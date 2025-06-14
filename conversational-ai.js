@@ -51,20 +51,20 @@ console.log('🚀 Ready to provide the most human-like AI assistant experience!'
 // Database-backed conversation storage for reliability and scale
 // No more in-memory storage - survives server restarts and handles 1000s of businesses
 
-// Get conversation from database
-async function getConversation(callSid) {
+// Get conversation from database - SECURE: Requires business_id for isolation
+async function getConversation(callSid, businessId) {
   try {
     const result = await pool.query(
-      'SELECT conversation_data FROM conversations WHERE call_sid = $1',
-      [callSid]
+      'SELECT conversation_data FROM conversations WHERE call_sid = $1 AND business_id = $2',
+      [callSid, businessId]
     );
     
     if (result.rows.length > 0) {
-      console.log(`📖 Retrieved conversation for call ${callSid}`);
+      console.log(`📖 Retrieved conversation for call ${callSid} (business: ${businessId})`);
       return result.rows[0].conversation_data;
     }
     
-    console.log(`🆕 Creating new conversation for call ${callSid}`);
+    console.log(`🆕 Creating new conversation for call ${callSid} (business: ${businessId})`);
     return null; // New conversation
   } catch (error) {
     console.error('❌ Error retrieving conversation:', error);
@@ -526,8 +526,8 @@ function generateSystemErrorMessage(personality, emotions) {
 }
 
 async function holdConversation(res, business, callSid, from, speech, businessId) {
-  // Get conversation from database
-  let conversation = await getConversation(callSid);
+  // Get conversation from database - SECURE: With business isolation
+  let conversation = await getConversation(callSid, businessId);
   
   // If no conversation exists, create new one
   if (!conversation) {
@@ -995,18 +995,24 @@ function handleConversationError(error, conversation, res) {
   return sendTwiml(res, errorMessage);
 }
 
-// Database Conversation Cleanup - Optimized for Railway free tier
+// Database Conversation Cleanup - Business-isolated and optimized for Railway free tier
 // Automatically removes old conversations to keep storage minimal
 setInterval(async () => {
   try {
     const result = await pool.query(`
       DELETE FROM conversations 
       WHERE created_at < NOW() - INTERVAL '30 minutes'
-      RETURNING call_sid
+      RETURNING call_sid, business_id
     `);
     
     if (result.rows.length > 0) {
       console.log(`🧹 Cleaned up ${result.rows.length} old conversations from database`);
+      // Log by business for security audit
+      const byBusiness = result.rows.reduce((acc, row) => {
+        acc[row.business_id] = (acc[row.business_id] || 0) + 1;
+        return acc;
+      }, {});
+      console.log(`🔒 Cleanup by business:`, byBusiness);
     }
   } catch (error) {
     console.error('❌ Error cleaning up conversations:', error);
