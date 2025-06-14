@@ -464,11 +464,16 @@ function intelligentServiceMatching(services, requestedService) {
   
   // Keyword matching for common service terms
   const serviceKeywords = {
-    'repair': ['repair', 'fix', 'broken', 'maintenance'],
-    'installation': ['install', 'setup', 'new'],
-    'cleaning': ['clean', 'wash', 'sanitize'],
-    'inspection': ['check', 'inspect', 'look'],
-    'consultation': ['consult', 'advice', 'estimate']
+    'oil': ['oil', 'lube', 'fluid'],
+    'brake': ['brake', 'brakes', 'stopping'],
+    'battery': ['battery', 'dead', 'jump', 'start'],
+    'diagnostics': ['diagnostic', 'check', 'scan', 'code'],
+    'alignment': ['alignment', 'straight', 'pull'],
+    'transmission': ['transmission', 'shift', 'gear'],
+    'air conditioning': ['ac', 'air conditioning', 'cooling', 'heat'],
+    'towing': ['tow', 'towing', 'haul', 'emergency'],
+    'inspection': ['inspection', 'test', 'safety'],
+    'maintenance': ['maintenance', 'service', 'tune']
   };
   
   for (const [category, keywords] of Object.entries(serviceKeywords)) {
@@ -613,8 +618,10 @@ async function holdConversation(res, business, callSid, from, speech, businessId
         shouldContinue = false;
       } else {
         // Intelligent service matching with fuzzy logic
+        console.log(`🔍 AI requested service: "${aiResponse.data.service}"`);
+        console.log(`🔍 Available services:`, services.map(s => s.name));
         const selectedService = intelligentServiceMatching(services, aiResponse.data.service);
-        console.log(`🎯 Intelligent service match: "${selectedService.name}"`);
+        console.log(`🎯 Intelligent service match: "${selectedService.name}" (ID: ${selectedService.id})`);
         
         const booking = await bookAppointmentWithConfirmation(conversation, businessId, selectedService, aiResponse.data);
         console.log(`📞 Enhanced booking result:`, booking);
