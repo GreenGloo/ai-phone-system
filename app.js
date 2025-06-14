@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 const { handleVoiceCall } = require('./conversational-ai');
+const { generateKeywordsForService } = require('./service-keyword-generator');
 const twilio = require('twilio');
 const OpenAI = require('openai');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -527,7 +528,23 @@ app.post('/api/businesses/:businessId/service-types', authenticateToken, getBusi
       [req.business.id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active]
     );
     
-    res.json(result.rows[0]);
+    const newService = result.rows[0];
+    
+    // 🚀 PRODUCTION READY: Generate AI keywords for new service
+    console.log(`🧠 Generating AI keywords for new service: "${name}"`);
+    try {
+      const keywordResult = await generateKeywordsForService(newService.id);
+      if (keywordResult.success) {
+        console.log(`✅ Generated ${keywordResult.keywords.length} keywords for: ${name}`);
+      } else {
+        console.error(`❌ Failed to generate keywords for: ${name}`, keywordResult.error);
+      }
+    } catch (keywordError) {
+      console.error('⚠️ Keyword generation failed (non-critical):', keywordError);
+      // Don't fail the service creation if keyword generation fails
+    }
+    
+    res.json(newService);
   } catch (error) {
     console.error('Error creating service type:', error);
     res.status(500).json({ error: 'Failed to create service type' });
@@ -554,7 +571,23 @@ app.put('/api/businesses/:businessId/service-types/:serviceId', authenticateToke
       return res.status(404).json({ error: 'Service type not found' });
     }
     
-    res.json(result.rows[0]);
+    const updatedService = result.rows[0];
+    
+    // 🚀 PRODUCTION READY: Regenerate AI keywords for updated service
+    console.log(`🧠 Regenerating AI keywords for updated service: "${name}"`);
+    try {
+      const keywordResult = await generateKeywordsForService(serviceId);
+      if (keywordResult.success) {
+        console.log(`✅ Regenerated ${keywordResult.keywords.length} keywords for: ${name}`);
+      } else {
+        console.error(`❌ Failed to regenerate keywords for: ${name}`, keywordResult.error);
+      }
+    } catch (keywordError) {
+      console.error('⚠️ Keyword regeneration failed (non-critical):', keywordError);
+      // Don't fail the service update if keyword generation fails
+    }
+    
+    res.json(updatedService);
   } catch (error) {
     console.error('Error updating service type:', error);
     res.status(500).json({ error: 'Failed to update service type' });

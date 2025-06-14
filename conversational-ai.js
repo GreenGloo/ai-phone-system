@@ -443,44 +443,70 @@ function generateBookingConfirmation(data, personality, emotions) {
   return baseConfirmations[Math.floor(Math.random() * baseConfirmations.length)];
 }
 
-// Intelligent Service Matching with Fuzzy Logic and Service Listing
-function intelligentServiceMatching(services, requestedService) {
+// Dynamic Service Matching using AI-generated keywords
+async function intelligentServiceMatching(services, requestedService, businessId) {
   if (!requestedService || services.length === 0) {
     return { service: services[0], shouldListServices: false }; // Default fallback
   }
   
-  const requested = requestedService.toLowerCase();
+  const requested = requestedService.toLowerCase().trim();
+  console.log(`🔍 Matching "${requested}" against ${services.length} services for business ${businessId}`);
   
   // Exact match first
   let match = services.find(s => s.name.toLowerCase() === requested);
-  if (match) return { service: match, shouldListServices: false };
+  if (match) {
+    console.log(`✅ EXACT MATCH: ${match.name}`);
+    return { service: match, shouldListServices: false };
+  }
   
-  // Partial match
+  // Partial match on service names
   match = services.find(s => 
     s.name.toLowerCase().includes(requested) || 
     requested.includes(s.name.toLowerCase())
   );
-  if (match) return { service: match, shouldListServices: false };
+  if (match) {
+    console.log(`✅ PARTIAL MATCH: ${match.name}`);
+    return { service: match, shouldListServices: false };
+  }
   
-  // Keyword matching for common service terms
-  const serviceKeywords = {
-    'oil': ['oil', 'lube', 'fluid'],
-    'brake': ['brake', 'brakes', 'stopping'],
-    'battery': ['battery', 'dead', 'jump', 'start'],
-    'diagnostics': ['diagnostic', 'check', 'scan', 'code'],
-    'alignment': ['alignment', 'straight', 'pull', 'tire', 'rotation', 'rotate', 'wheel'],
-    'transmission': ['transmission', 'shift', 'gear'],
-    'air conditioning': ['ac', 'air conditioning', 'cooling', 'heat'],
-    'towing': ['tow', 'towing', 'haul', 'emergency'],
-    'inspection': ['inspection', 'test', 'safety'],
-    'maintenance': ['maintenance', 'service', 'tune']
-  };
-  
-  for (const [category, keywords] of Object.entries(serviceKeywords)) {
-    if (keywords.some(keyword => requested.includes(keyword))) {
-      match = services.find(s => s.name.toLowerCase().includes(category));
-      if (match) return { service: match, shouldListServices: false };
+  // Dynamic keyword matching using AI-generated keywords from database
+  try {
+    console.log(`🔍 Checking AI-generated keywords for business ${businessId}`);
+    
+    // Get all keywords for this business's services
+    const keywordResult = await pool.query(`
+      SELECT sk.service_id, sk.keyword, sk.confidence_score, st.name as service_name
+      FROM service_keywords sk
+      JOIN service_types st ON sk.service_id = st.id
+      WHERE sk.business_id = $1 
+      AND st.is_active = true
+      ORDER BY sk.confidence_score DESC
+    `, [businessId]);
+    
+    console.log(`📚 Found ${keywordResult.rows.length} AI-generated keywords`);
+    
+    // Check if any keywords match the requested service
+    const keywordMatches = keywordResult.rows.filter(row => 
+      requested.includes(row.keyword.toLowerCase()) || 
+      row.keyword.toLowerCase().includes(requested)
+    );
+    
+    if (keywordMatches.length > 0) {
+      // Sort by confidence score and get the best match
+      keywordMatches.sort((a, b) => b.confidence_score - a.confidence_score);
+      const bestMatch = keywordMatches[0];
+      
+      // Find the actual service object
+      match = services.find(s => s.id === bestMatch.service_id);
+      if (match) {
+        console.log(`✅ AI KEYWORD MATCH: "${requested}" → "${bestMatch.keyword}" → ${match.name} (confidence: ${bestMatch.confidence_score})`);
+        return { service: match, shouldListServices: false };
+      }
     }
+    
+  } catch (error) {
+    console.error('❌ Error in dynamic keyword matching:', error);
+    // Continue to fallback logic
   }
   
   // If we get here, no match was found - suggest listing services
@@ -648,11 +674,11 @@ async function holdConversation(res, business, callSid, from, speech, businessId
         twiml.say(errorMessage);
         shouldContinue = false;
       } else {
-        // Intelligent service matching with fuzzy logic
+        // Dynamic service matching using AI-generated keywords
         console.log(`🔍 AI RESPONSE DATA:`, JSON.stringify(aiResponse.data, null, 2));
         console.log(`🔍 AI requested service: "${aiResponse.data.service}"`);
         console.log(`🔍 Available services:`, services.map(s => s.name));
-        const matchResult = intelligentServiceMatching(services, aiResponse.data.service);
+        const matchResult = await intelligentServiceMatching(services, aiResponse.data.service, businessId);
         const selectedService = matchResult.service;
         console.log(`🎯 SERVICE MATCH RESULT: "${selectedService.name}" (ID: ${selectedService.id})`);
         
