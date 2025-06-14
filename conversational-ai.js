@@ -483,6 +483,19 @@ function intelligentServiceMatching(services, requestedService) {
     }
   }
   
+  // Smart fallback - prefer consultation/diagnostic over emergency services
+  const consultationService = services.find(s => 
+    s.name.toLowerCase().includes('consultation') || 
+    s.name.toLowerCase().includes('diagnostic') ||
+    s.name.toLowerCase().includes('inspection')
+  );
+  
+  if (consultationService) {
+    console.log(`🔄 SMART FALLBACK: Using consultation/diagnostic service: ${consultationService.name}`);
+    return consultationService;
+  }
+  
+  console.log(`⚠️ ULTIMATE FALLBACK: Using first service: ${services[0].name}`);
   return services[0]; // Ultimate fallback
 }
 
@@ -618,10 +631,11 @@ async function holdConversation(res, business, callSid, from, speech, businessId
         shouldContinue = false;
       } else {
         // Intelligent service matching with fuzzy logic
+        console.log(`🔍 AI RESPONSE DATA:`, JSON.stringify(aiResponse.data, null, 2));
         console.log(`🔍 AI requested service: "${aiResponse.data.service}"`);
         console.log(`🔍 Available services:`, services.map(s => s.name));
         const selectedService = intelligentServiceMatching(services, aiResponse.data.service);
-        console.log(`🎯 Intelligent service match: "${selectedService.name}" (ID: ${selectedService.id})`);
+        console.log(`🎯 SERVICE MATCH RESULT: "${selectedService.name}" (ID: ${selectedService.id})`);
         
         const booking = await bookAppointmentWithConfirmation(conversation, businessId, selectedService, aiResponse.data);
         console.log(`📞 Enhanced booking result:`, booking);

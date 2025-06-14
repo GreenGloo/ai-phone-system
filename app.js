@@ -15,38 +15,45 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
-// Basic rate limiting for voice endpoints
-const voiceRequestTracker = new Map(); // Track requests per phone number
-const VOICE_RATE_LIMIT = 20; // Max 20 calls per minute per phone number
+// Per-business rate limiting for voice endpoints - SECURE MULTI-TENANT
+const voiceRequestTracker = new Map(); // Track requests per business+phone combination
+const VOICE_RATE_LIMIT = 20; // Max 20 calls per minute per phone number per business
 const RATE_WINDOW = 60 * 1000; // 1 minute window
 
 function voiceRateLimit(req, res, next) {
   const phoneNumber = req.body.From || req.ip;
+  const businessId = req.params.businessId || 'unknown';
+  
+  // Create business-specific key to prevent cross-business rate limiting
+  const rateLimitKey = `${businessId}:${phoneNumber}`;
   const now = Date.now();
   
-  if (!voiceRequestTracker.has(phoneNumber)) {
-    voiceRequestTracker.set(phoneNumber, { count: 1, firstRequest: now });
+  if (!voiceRequestTracker.has(rateLimitKey)) {
+    voiceRequestTracker.set(rateLimitKey, { count: 1, firstRequest: now });
+    console.log(`📞 Rate limit tracking: ${rateLimitKey} (1st call)`);
     return next();
   }
   
-  const tracker = voiceRequestTracker.get(phoneNumber);
+  const tracker = voiceRequestTracker.get(rateLimitKey);
   
   // Reset window if expired
   if (now - tracker.firstRequest > RATE_WINDOW) {
     tracker.count = 1;
     tracker.firstRequest = now;
+    console.log(`📞 Rate limit reset: ${rateLimitKey}`);
     return next();
   }
   
   // Check rate limit
   if (tracker.count >= VOICE_RATE_LIMIT) {
-    console.warn(`🚨 Voice rate limit exceeded for ${phoneNumber}`);
+    console.warn(`🚨 Per-business rate limit exceeded: ${rateLimitKey} (${tracker.count} calls)`);
     const twiml = new twilio.twiml.VoiceResponse();
     twiml.say('Sorry, too many calls. Please try again in a few minutes.');
     return res.type('text/xml').send(twiml.toString());
   }
   
   tracker.count++;
+  console.log(`📞 Rate limit tracking: ${rateLimitKey} (${tracker.count} calls)`);
   next();
 }
 
@@ -577,8 +584,8 @@ app.delete('/api/businesses/:businessId/service-types/:serviceId', authenticateT
 // Voice endpoint with business context - NEW SMART AI SYSTEM
 app.post('/voice/incoming/:businessId', handleVoiceCall);
 
-// Migration endpoint to fix calendar system
-app.post('/admin/migrate-calendar', async (req, res) => {
+// Migration endpoint to fix calendar system for specific business
+app.post('/admin/migrate-calendar/:businessId', async (req, res) => {
   try {
     console.log('🔧 Running calendar database migration via HTTP...');
     
@@ -588,8 +595,8 @@ app.post('/admin/migrate-calendar', async (req, res) => {
     
     console.log('✅ Database migration completed');
     
-    // Generate real slots for Tom's Garage
-    const businessId = '8fea02b5-850a-4167-913b-a12043c65d17';
+    // Generate real slots for specified business
+    const businessId = req.params.businessId;
     const business = await pool.query('SELECT business_hours FROM businesses WHERE id = $1', [businessId]);
     
     if (business.rows.length > 0) {

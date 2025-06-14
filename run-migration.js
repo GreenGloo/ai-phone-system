@@ -14,13 +14,18 @@ async function runMigration() {
     console.log('✅ Database fixed - calendar_preferences column added');
     console.log('✅ calendar_slots table created');
     
-    // Now generate REAL slots for Tom's Garage
-    console.log('📅 Generating REAL calendar slots for Toms Garage...');
+    // Now generate REAL slots for businesses
+    console.log('📅 Generating REAL calendar slots for all businesses...');
     
-    const businessId = '8fea02b5-850a-4167-913b-a12043c65d17';
+    // Get all active businesses
+    const businesses = await pool.query('SELECT id, name FROM businesses WHERE status = $1', ['active']);
     
-    // Get business hours
-    const business = await pool.query('SELECT business_hours FROM businesses WHERE id = $1', [businessId]);
+    for (const biz of businesses.rows) {
+      console.log(`📅 Generating slots for: ${biz.name} (${biz.id})`);
+      const businessId = biz.id;
+      
+      // Get business hours
+      const business = await pool.query('SELECT business_hours FROM businesses WHERE id = $1', [businessId]);
     
     if (business.rows.length > 0) {
       const business_hours = business.rows[0].business_hours;
@@ -67,11 +72,12 @@ async function runMigration() {
           
           await pool.query(`INSERT INTO calendar_slots (business_id, slot_start, slot_end) VALUES ${values}`, params);
         }
-        console.log(`✅ Generated ${slots.length} REAL calendar slots for Toms Garage`);
+        console.log(`✅ Generated ${slots.length} REAL calendar slots for ${biz.name}`);
       }
     } else {
-      console.log('❌ Business not found');
+      console.log(`❌ Business hours not found for ${biz.name}`);
     }
+  } // End of business loop
     
   } catch (error) {
     console.error('❌ Error:', error.message);
