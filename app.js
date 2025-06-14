@@ -743,6 +743,7 @@ app.post('/', voiceRateLimit, async (req, res) => {
   try {
     const { Called } = req.body;
     console.log(`📞 Incoming call to number: ${Called}`);
+    console.log(`🔍 Full request body:`, JSON.stringify(req.body, null, 2));
     
     // Find business by phone number
     const businessResult = await pool.query(
@@ -759,10 +760,13 @@ app.post('/', voiceRateLimit, async (req, res) => {
     
     const businessId = businessResult.rows[0].id;
     console.log(`✅ Routing call to business: ${businessId}`);
+    console.log(`🚀 Calling handleVoiceCall...`);
     
     // Forward to the smart booking handler
     req.params = { businessId };
-    return handleVoiceCall(req, res);
+    const result = await handleVoiceCall(req, res);
+    console.log(`✅ handleVoiceCall completed`);
+    return result;
     
   } catch (error) {
     console.error('Error routing voice call:', error);
