@@ -48,13 +48,14 @@ async function generateCalendarSlots(businessId, daysAhead = 365) {
       const [endHour, endMinute] = dayHours.end.split(':').map(Number);
       
       // Generate slots every 30 minutes during business hours
-      for (let hour = startHour; hour < endHour; hour++) {
+      for (let hour = startHour; hour < endHour || (hour === endHour && 0 < endMinute); hour++) {
         for (let minute = 0; minute < 60; minute += 30) {
           const slotStart = new Date(currentDate);
           slotStart.setHours(hour, minute, 0, 0);
           
           // Skip if past end time
           if (hour === endHour && minute >= endMinute) break;
+          if (hour > endHour) break;
           
           // Skip past times for today
           if (day === 0 && slotStart <= now) continue;

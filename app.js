@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 const { handleVoiceCall } = require('./conversational-ai');
 const { generateKeywordsForService } = require('./service-keyword-generator');
+const { generateCalendarSlots } = require('./calendar-generator');
 const twilio = require('twilio');
 const OpenAI = require('openai');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -469,6 +470,16 @@ app.put('/api/businesses/:businessId/calendar-settings', authenticateToken, getB
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Business not found' });
+    }
+    
+    // 🚀 AUTOMATIC CALENDAR GENERATION: When hours change, regenerate calendar slots
+    console.log(`📅 Business hours updated - regenerating calendar slots for business ${req.business.id}`);
+    try {
+      const slotsGenerated = await generateCalendarSlots(req.business.id, 365);
+      console.log(`✅ Auto-generated ${slotsGenerated} calendar slots for full year`);
+    } catch (calendarError) {
+      console.error('⚠️ Calendar regeneration failed (non-critical):', calendarError);
+      // Don't fail the business hours update if calendar generation fails
     }
     
     res.json({
@@ -3359,6 +3370,22 @@ app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, g
     );
     
     console.log(`✅ ${req.business.name} onboarding complete with phone ${phoneNumberToPurchase}`);
+    
+    // 🚀 AUTOMATIC CALENDAR GENERATION: When business onboarding completes, generate calendar slots
+    console.log(`📅 Onboarding complete - generating calendar slots for new business ${req.business.id}`);
+    try {
+      // Check if business has business_hours set
+      const businessHoursResult = await pool.query('SELECT business_hours FROM businesses WHERE id = $1', [req.business.id]);
+      if (businessHoursResult.rows.length > 0 && businessHoursResult.rows[0].business_hours) {
+        const slotsGenerated = await generateCalendarSlots(req.business.id, 365);
+        console.log(`✅ Auto-generated ${slotsGenerated} calendar slots for new business`);
+      } else {
+        console.log(`⚠️ Business hours not set yet - calendar slots will be generated when hours are configured`);
+      }
+    } catch (calendarError) {
+      console.error('⚠️ Calendar generation failed for new business (non-critical):', calendarError);
+      // Don't fail the onboarding if calendar generation fails
+    }
     
     res.json({
       success: true,
