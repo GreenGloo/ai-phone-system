@@ -443,24 +443,24 @@ function generateBookingConfirmation(data, personality, emotions) {
   return baseConfirmations[Math.floor(Math.random() * baseConfirmations.length)];
 }
 
-// Intelligent Service Matching with Fuzzy Logic
+// Intelligent Service Matching with Fuzzy Logic and Service Listing
 function intelligentServiceMatching(services, requestedService) {
   if (!requestedService || services.length === 0) {
-    return services[0]; // Default fallback
+    return { service: services[0], shouldListServices: false }; // Default fallback
   }
   
   const requested = requestedService.toLowerCase();
   
   // Exact match first
   let match = services.find(s => s.name.toLowerCase() === requested);
-  if (match) return match;
+  if (match) return { service: match, shouldListServices: false };
   
   // Partial match
   match = services.find(s => 
     s.name.toLowerCase().includes(requested) || 
     requested.includes(s.name.toLowerCase())
   );
-  if (match) return match;
+  if (match) return { service: match, shouldListServices: false };
   
   // Keyword matching for common service terms
   const serviceKeywords = {
@@ -479,9 +479,12 @@ function intelligentServiceMatching(services, requestedService) {
   for (const [category, keywords] of Object.entries(serviceKeywords)) {
     if (keywords.some(keyword => requested.includes(keyword))) {
       match = services.find(s => s.name.toLowerCase().includes(category));
-      if (match) return match;
+      if (match) return { service: match, shouldListServices: false };
     }
   }
+  
+  // If we get here, no match was found - suggest listing services
+  console.log(`❓ NO MATCH FOUND for "${requestedService}" - will list available services`);
   
   // Smart fallback - prefer consultation/diagnostic over emergency services
   const consultationService = services.find(s => 
@@ -492,11 +495,11 @@ function intelligentServiceMatching(services, requestedService) {
   
   if (consultationService) {
     console.log(`🔄 SMART FALLBACK: Using consultation/diagnostic service: ${consultationService.name}`);
-    return consultationService;
+    return { service: consultationService, shouldListServices: true };
   }
   
   console.log(`⚠️ ULTIMATE FALLBACK: Using first service: ${services[0].name}`);
-  return services[0]; // Ultimate fallback
+  return { service: services[0], shouldListServices: true }; // Ultimate fallback with service listing
 }
 
 // Enhanced Error Messages Based on Personality
@@ -509,19 +512,21 @@ function generateServiceErrorMessage(personality, emotions) {
   return 'I\'m having trouble accessing our services at the moment. Let me have someone call you back to assist you properly.';
 }
 
-function generateBookingSuccessMessage(data, personality, emotions, service) {
-  const customerName = data.customerName ? `, ${data.customerName}` : '';
+function generateBookingSuccessMessage(data, personality, emotions, service, conversation) {
+  // Use stored customer name from conversation if available
+  const customerName = conversation?.customerInfo?.name || data.customerName;
+  const namePhrase = customerName ? `, ${customerName}` : '';
   const timePhrase = data.suggestedTime || 'your selected time';
   
   if (emotions.includes('happy') || emotions.includes('excited')) {
-    return `Fantastic${customerName}! Your ${service.name} appointment is all confirmed for ${timePhrase}. We can't wait to help you out! See you then!`;
+    return `Fantastic${namePhrase}! Your ${service.name} appointment is all confirmed for ${timePhrase}. We can't wait to help you out! See you then!`;
   } else if (emotions.includes('urgent')) {
-    return `Perfect${customerName}! I've got you scheduled for ${service.name} at ${timePhrase}. We'll take great care of you. See you soon!`;
+    return `Perfect${namePhrase}! I've got you scheduled for ${service.name} at ${timePhrase}. We'll take great care of you. See you soon!`;
   } else if (personality.tone === 'casual and conversational') {
-    return `All set${customerName}! You're booked for ${service.name} on ${timePhrase}. We'll see you then!`;
+    return `All set${namePhrase}! You're booked for ${service.name} on ${timePhrase}. We'll see you then!`;
   }
   
-  return `Excellent${customerName}! Your ${service.name} appointment is confirmed for ${timePhrase}. We look forward to helping you. See you then!`;
+  return `Excellent${namePhrase}! Your ${service.name} appointment is confirmed for ${timePhrase}. We look forward to helping you. See you then!`;
 }
 
 function generateBookingFailureMessage(personality, emotions) {
@@ -611,7 +616,20 @@ async function holdConversation(res, business, callSid, from, speech, businessId
   console.log(`🔍 Checking AI action: "${aiResponse.action}"`);
   console.log(`🔍 Has data: ${!!aiResponse.data}`);
   
-  if (aiResponse.action === 'book_appointment' && aiResponse.data) {
+  if (aiResponse.action === 'list_services' || aiResponse.data?.shouldListServices) {
+    console.log(`📋 AI requested to list services for customer`);
+    
+    // Create a natural service listing
+    const serviceList = services.map(s => s.name).join(', ');
+    const serviceListingMessage = `I want to make sure I help you with exactly what you need. We offer: ${serviceList}. Which of these sounds right for what you're looking for?`;
+    
+    // Apply natural speech enhancement to service listing
+    const enhancedServiceListing = enhanceNaturalSpeech(serviceListingMessage, conversation.personality, conversation.emotionalState);
+    twiml.say(enhancedServiceListing);
+    
+    // Continue conversation to get service selection
+    shouldContinue = true;
+  } else if (aiResponse.action === 'book_appointment' && aiResponse.data) {
     console.log(`📞 INTELLIGENT BOOKING INITIATED - Data:`, aiResponse.data);
     
     // Intelligent booking confirmation based on personality and emotional state
@@ -634,14 +652,19 @@ async function holdConversation(res, business, callSid, from, speech, businessId
         console.log(`🔍 AI RESPONSE DATA:`, JSON.stringify(aiResponse.data, null, 2));
         console.log(`🔍 AI requested service: "${aiResponse.data.service}"`);
         console.log(`🔍 Available services:`, services.map(s => s.name));
-        const selectedService = intelligentServiceMatching(services, aiResponse.data.service);
+        const matchResult = intelligentServiceMatching(services, aiResponse.data.service);
+        const selectedService = matchResult.service;
         console.log(`🎯 SERVICE MATCH RESULT: "${selectedService.name}" (ID: ${selectedService.id})`);
+        
+        if (matchResult.shouldListServices) {
+          console.log(`📋 Service match uncertain - should list services to customer`);
+        }
         
         const booking = await bookAppointmentWithConfirmation(conversation, businessId, selectedService, aiResponse.data);
         console.log(`📞 Enhanced booking result:`, booking);
         
         if (booking.success) {
-          const successMessage = generateBookingSuccessMessage(aiResponse.data, conversation.personality, conversation.emotionalState, selectedService);
+          const successMessage = generateBookingSuccessMessage(aiResponse.data, conversation.personality, conversation.emotionalState, selectedService, conversation);
           const enhancedSuccess = enhanceNaturalSpeech(successMessage, conversation.personality, conversation.emotionalState);
           twiml.say(enhancedSuccess);
           twiml.hangup();
@@ -731,6 +754,13 @@ async function getHumanLikeResponse(speech, conversation, business, services, av
     `${slot.day} ${slot.time} (${slot.datetime})`
   ).join(', ');
   
+  // Get customer name if available
+  const customerName = conversation.customerInfo?.name || null;
+  const hasCustomerName = !!customerName;
+  
+  // Create service list for when needed
+  const servicesList = services.map(s => s.name).join(', ');
+  
   // Claude-optimized prompt - superior instruction following and context understanding
   const currentDate = new Date();
   const todayStr = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
@@ -742,68 +772,88 @@ CURRENT DATE/TIME: ${todayStr} at ${currentTime}
 
 CUSTOMER INPUT: "${speech}"
 
+CUSTOMER NAME: ${hasCustomerName ? customerName : 'NOT COLLECTED YET'}
+
 RECENT CONVERSATION:
 ${recentHistory}
+
+AVAILABLE SERVICES: ${servicesList}
 
 AVAILABLE APPOINTMENT SLOTS (NEXT FEW DAYS + WEEKS + MONTHS): ${availableSlots}
 
 BOOKING RANGE: We have appointments available from ${todayStr} through ${new Date(availability[availability.length-1]?.datetime || new Date()).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} - CUSTOMERS CAN BOOK WEEKS OR MONTHS IN ADVANCE!
 
-CRITICAL BOOKING INSTRUCTIONS:
+CRITICAL INSTRUCTIONS:
+• ALWAYS collect customer name early in conversation if not already collected
 • Speech recognition errors: "CID" = "oil change", "old change" = "oil change"
-• ANY service mention = immediately offer specific times and push for booking
+• If customer requests a service that doesn't clearly match our available services, politely ask what they need and offer to list our services
+• When listing services, present them in a natural, conversational way
+• ANY clear service mention = immediately offer specific times and push for booking
 • Customer saying "yes"/"okay"/"sounds good"/"that works" = book the appointment NOW with action: "book_appointment"
 • ONLY suggest times from the AVAILABLE APPOINTMENT SLOTS list above - never make up dates!
 • When offering times, ALWAYS use the exact appointmentDatetime from the available slots
-• If customer asks for a future date (like "July 10th"), check the available slots - we have appointments available for MONTHS in advance
 • Be conversational but ALWAYS drive toward booking an appointment
-• For unclear requests, default to "consultation" or "diagnostic" - never assume specific services
+
+NAME COLLECTION EXAMPLES:
+Customer: "I need service" → "I'd be happy to help! Could I get your name first?" 
+Customer: "My name is John" → "Thanks John! What service can I help you with today?"
+
+SERVICE CLARIFICATION EXAMPLES:
+Customer: unclear service request → "I want to make sure I help you with exactly what you need. We offer: [list services]. Which of these sounds right for you?"
+Customer: "I don't know" → "No problem! Let me tell you what we do: [list services]. What's going on with your vehicle?"
 
 BOOKING EXAMPLES:
 Customer: "oil change" → action: "continue", offer specific times like "I can get you in tomorrow at 4:00 PM or Sunday at 10:00 AM"
-Customer: unclear speech → action: "continue", "I'd like to schedule a consultation to discuss what you need"
-Customer: "yes" or "4 PM works" or "tomorrow sounds good" → action: "book_appointment" with exact appointmentDatetime like "2025-06-14T16:00:00.000Z"
-Customer: "that works" → action: "book_appointment" using the previously suggested time
+Customer: "yes" or "4 PM works" → action: "book_appointment" with exact appointmentDatetime like "2025-06-14T16:00:00.000Z"
 
 RESPONSE FORMAT (JSON only):
 {
-  "response": "Natural, helpful response that offers specific appointment times",
-  "action": "continue" or "book_appointment",
+  "response": "Natural, helpful response that collects name and/or offers services/times",
+  "action": "continue" or "book_appointment" or "list_services",
   "data": {
+    "customerName": "John" (if collected),
     "service": "oil change",
     "suggestedTime": "tomorrow 4:00 PM", 
-    "appointmentDatetime": "2025-06-14T16:00:00.000Z"
+    "appointmentDatetime": "2025-06-14T16:00:00.000Z",
+    "shouldListServices": true (if service unclear)
   }
 }`;
 
   const openaiPrompt = `You are a booking assistant for ${business.name}, an automotive garage.
 
 Customer said: "${speech}"
+Customer name: ${hasCustomerName ? customerName : 'NOT COLLECTED YET'}
 
 Conversation history:
 ${recentHistory}
 
+Available services: ${servicesList}
 Available times: ${availableSlots}
 
 BOOKING RULES:
-1. If customer mentions ANY service need (oil change, repair, checkup, etc.) -> offer specific times and book immediately
-2. If customer says "yes", "sounds good", "okay" -> book the appointment  
-3. If customer gives a time -> book it if available
-4. Assume unclear speech like "CID" means "oil change" 
-5. Be direct - offer times, don't just ask questions
+1. Always collect customer name early if not already collected
+2. If customer requests unclear service, list available services naturally
+3. If customer mentions ANY clear service need -> offer specific times and book immediately
+4. If customer says "yes", "sounds good", "okay" -> book the appointment  
+5. Assume unclear speech like "CID" means "oil change" 
+6. Be conversational but drive toward booking
 
-Your response should either:
-- Continue conversation AND offer specific booking times
-- Book the appointment immediately
+Your response should:
+- Collect name if needed
+- List services if service unclear
+- Offer specific booking times
+- Book the appointment when confirmed
 
 Respond in JSON:
 {
   "response": "your reply",
-  "action": "continue" or "book_appointment", 
+  "action": "continue" or "book_appointment" or "list_services", 
   "data": {
+    "customerName": "John" (if collected),
     "service": "oil change",
     "suggestedTime": "today 2:00 PM",
-    "appointmentDatetime": "2025-06-13T14:00:00Z"
+    "appointmentDatetime": "2025-06-13T14:00:00Z",
+    "shouldListServices": true (if service unclear)
   }
 }`;
 
@@ -859,6 +909,12 @@ Respond in JSON:
         action: 'continue',
         data: {}
       };
+    }
+    
+    // Store customer name if collected
+    if (response.data?.customerName && !conversation.customerInfo?.name) {
+      conversation.customerInfo.name = response.data.customerName;
+      console.log(`👤 Customer name collected: ${response.data.customerName}`);
     }
     
     // Update conversation context based on AI insights
@@ -928,6 +984,9 @@ async function bookAppointment(conversation, businessId, service, data) {
     
     const endTime = new Date(appointmentTime.getTime() + (service.duration_minutes || 60) * 60000);
     
+    // Use customer name from conversation if available
+    const customerName = conversation.customerInfo?.name || data.customerName || 'Customer';
+    
     const result = await pool.query(`
       INSERT INTO appointments (
         business_id, customer_name, customer_phone, service_type_id, service_name,
@@ -937,7 +996,7 @@ async function bookAppointment(conversation, businessId, service, data) {
       RETURNING id
     `, [
       businessId,
-      data.customerName || 'Customer',
+      customerName,
       conversation.customerPhone,
       service.id,
       service.name,
