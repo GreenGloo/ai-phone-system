@@ -498,11 +498,19 @@
         let businessData = {};
         let stats = {};
         let notifications = []; // Global notifications array
-        let notificationsDismissed = false; // Track if user dismissed notifications
+        let notificationsDismissed = localStorage.getItem('notificationsDismissed') === 'true'; // Track if user dismissed notifications
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', async function() {
             checkAuthentication();
+            
+            // Hide notification badge if previously dismissed
+            if (notificationsDismissed) {
+                const badge = document.getElementById('notification-badge');
+                badge.classList.add('hidden');
+                console.log('📧 Notifications were previously dismissed - badge hidden');
+            }
+            
             await loadBusinessData();
             loadDashboardData();
             renderCalendar();
@@ -940,8 +948,9 @@
         
         // Simple version that just updates the badge without complex API calls
         function markAllNotificationsAsReadQuietly() {
-            // Set global flag to prevent reloading
+            // Set global flag to prevent reloading and persist in localStorage
             notificationsDismissed = true;
+            localStorage.setItem('notificationsDismissed', 'true');
             
             // Update local state
             notifications.forEach(notif => notif.read = true);
@@ -960,7 +969,7 @@
                 el.onclick = null;
             });
             
-            console.log('📧 Marked all notifications as read (visual only) - preventing future reloads');
+            console.log('📧 Marked all notifications as read (persisted) - preventing future reloads');
         }
 
         async function loadNotifications() {
@@ -1489,6 +1498,7 @@
             localStorage.removeItem('user');
             localStorage.removeItem('business');
             localStorage.removeItem('onboarding_complete');
+            localStorage.removeItem('notificationsDismissed'); // Clear notification state
             window.location.href = '/';
         }
 
