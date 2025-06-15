@@ -179,10 +179,10 @@
                 <!-- Recent Appointments -->
                 <div class="bg-white rounded-lg shadow-sm p-6 mt-6">
                     <div class="flex items-center justify-between mb-4">
-                        <h2 class="text-xl font-bold text-gray-900">📋 Recent Appointments</h2>
+                        <h2 class="text-xl font-bold text-gray-900">📋 All Active Appointments</h2>
                         <button onclick="refreshAppointments()" class="text-blue-600 hover:text-blue-800 text-sm">Refresh</button>
                     </div>
-                    <div id="recent-appointments" class="space-y-3">
+                    <div id="recent-appointments" class="space-y-3 max-h-96 overflow-y-auto">
                         <div class="text-center py-8 text-gray-500">Loading appointments...</div>
                     </div>
                 </div>
@@ -661,11 +661,10 @@
                 return;
             }
 
-            // Filter to show only scheduled/active appointments, sort by most recent and take first 5
+            // Filter to show only scheduled/active appointments, sort by most recent
             const recentAppointments = appointments
                 .filter(apt => apt.status === 'scheduled' || apt.status === 'confirmed')
-                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-                .slice(0, 5);
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
             container.innerHTML = recentAppointments.map(apt => {
                 const startTime = new Date(apt.start_time);
@@ -737,7 +736,7 @@
                     }
                     
                     // Refresh display
-                    renderAppointments();
+                    renderRecentAppointments();
                     loadDashboardData(); // Refresh stats
                 } else {
                     const errorData = await response.json();
