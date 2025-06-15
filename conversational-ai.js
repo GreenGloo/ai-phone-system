@@ -544,9 +544,9 @@ function enhanceNaturalSpeech(response, personality, emotions) {
 }
 
 // Voice Settings - Matches voice characteristics to personality and emotions
-function getVoiceSettings(personality, emotions, businessVoice = 'Polly.Matthew-Neural') {
-  // Ensure we have a valid voice, fallback to Matthew if not
-  const voiceToUse = businessVoice || 'Polly.Matthew-Neural';
+function getVoiceSettings(personality, emotions, businessVoice = 'Polly.Joanna-Neural') {
+  // Ensure we have a valid voice, fallback to default if not
+  const voiceToUse = businessVoice || 'Polly.Joanna-Neural';
   
   // DEBUG: Log voice selection for troubleshooting
   console.log(`🎤 Voice Settings - Input: ${businessVoice}, Using: ${voiceToUse}`);
