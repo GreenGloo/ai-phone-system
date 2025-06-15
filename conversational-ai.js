@@ -548,8 +548,18 @@ function getVoiceSettings(personality, emotions, businessVoice = 'Polly.Joanna-N
   // Ensure we have a valid voice, fallback to default if not
   const voiceToUse = businessVoice || 'Polly.Joanna-Neural';
   
-  // DEBUG: Log voice selection for troubleshooting
+  // DEBUG: Log voice selection for troubleshooting  
   console.log(`🎤 Voice Settings - Input: ${businessVoice}, Using: ${voiceToUse}`);
+  
+  // TEST: If Matthew-Neural isn't working, try just Matthew
+  if (voiceToUse === 'Polly.Matthew-Neural') {
+    console.log(`🧪 TESTING: Trying 'Polly.Matthew' instead of 'Polly.Matthew-Neural'`);
+    const settings = {
+      voice: 'Polly.Matthew', // Test without -Neural suffix
+      rate: '1.0'
+    };
+    return settings;
+  }
   
   const settings = {
     voice: voiceToUse, // Use business-configured voice or Matthew fallback
