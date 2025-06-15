@@ -473,7 +473,7 @@ async function handleInitialCall(res, business, callSid, from, businessId) {
   const greeting = greetingVariations[Math.floor(Math.random() * greetingVariations.length)];
   
   const twiml = new twilio.twiml.VoiceResponse();
-  await generateVoiceResponse(greeting, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
+  await generateVoiceResponse(greeting, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
   
   twiml.gather({
     input: 'speech',
@@ -483,7 +483,7 @@ async function handleInitialCall(res, business, callSid, from, businessId) {
     method: 'POST'
   });
   
-  await generateVoiceResponse('I\'m having trouble hearing you clearly. Please try speaking a bit louder or closer to your phone, or I can have someone call you back.', conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
+  await generateVoiceResponse('I\'m having trouble hearing you clearly. Please try speaking a bit louder or closer to your phone, or I can have someone call you back.', conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
   twiml.hangup();
   
   return res.type('text/xml').send(twiml.toString());
@@ -542,26 +542,51 @@ function enhanceNaturalSpeech(response, personality, emotions) {
   return enhanced;
 }
 
-// Enhanced voice generation with ElevenLabs support
-async function generateVoiceResponse(text, personality, emotions, businessVoice = 'Polly.Joanna-Neural', twiml) {
+// Enhanced voice generation with ElevenLabs support and conversation consistency
+async function generateVoiceResponse(text, personality, emotions, businessVoice = 'Polly.Joanna-Neural', twiml, conversation) {
   const useElevenLabs = process.env.ELEVENLABS_API_KEY && process.env.USE_ELEVENLABS !== 'false';
   
   console.log(`🎤 Voice Generation - Text: "${text.substring(0, 50)}..."`);
   console.log(`🎤 Voice ID: ${businessVoice}, ElevenLabs: ${useElevenLabs ? 'YES' : 'NO'}`);
   
+  // Check if conversation has already established a voice preference
+  if (conversation && conversation.voiceMode) {
+    console.log(`🎭 Conversation voice mode established: ${conversation.voiceMode}`);
+    if (conversation.voiceMode === 'twilio') {
+      // Force Twilio TTS for consistency
+      const voiceSettings = getVoiceSettings(personality, emotions, businessVoice);
+      console.log(`🔄 Using consistent Twilio TTS: ${JSON.stringify(voiceSettings)}`);
+      twiml.say(text, voiceSettings);
+      return false;
+    } else if (conversation.voiceMode === 'elevenlabs') {
+      // Try to continue with ElevenLabs for consistency
+      console.log(`🎭 Attempting to maintain ElevenLabs consistency`);
+    }
+  }
+  
   if (useElevenLabs) {
     try {
-      const audioResult = await generateElevenLabsAudio(text, businessVoice);
+      // Add longer timeout for ElevenLabs to prevent premature fallbacks
+      const audioResult = await Promise.race([
+        generateElevenLabsAudio(text, businessVoice),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('ElevenLabs timeout')), 5000))
+      ]);
       
       if (audioResult.success) {
         console.log(`🎵 Using ElevenLabs audio: ${audioResult.filename}`);
+        // Set conversation voice mode to ElevenLabs for consistency
+        if (conversation) conversation.voiceMode = 'elevenlabs';
         twiml.play(audioResult.url);
         return true; // Indicates ElevenLabs was used
       } else {
-        console.log(`⚠️ ElevenLabs failed, falling back to Twilio TTS: ${audioResult.error}`);
+        console.log(`⚠️ ElevenLabs failed, switching conversation to Twilio mode: ${audioResult.error}`);
+        // Set conversation to Twilio mode for consistency
+        if (conversation) conversation.voiceMode = 'twilio';
       }
     } catch (error) {
-      console.log(`⚠️ ElevenLabs error, falling back to Twilio TTS: ${error.message}`);
+      console.log(`⚠️ ElevenLabs error, switching conversation to Twilio mode: ${error.message}`);
+      // Set conversation to Twilio mode for consistency
+      if (conversation) conversation.voiceMode = 'twilio';
     }
   }
   
@@ -856,7 +881,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     
     // Apply natural speech enhancement to service listing
     const enhancedServiceListing = enhanceNaturalSpeech(serviceListingMessage, conversation.personality, conversation.emotionalState);
-    await generateVoiceResponse(enhancedServiceListing, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
+    await generateVoiceResponse(enhancedServiceListing, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
     
     // Continue conversation to get service selection
     shouldContinue = true;
@@ -869,14 +894,14 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     
     // Apply natural speech enhancement to confirmation
     const enhancedConfirmation = enhanceNaturalSpeech(confirmationMessage, conversation.personality, conversation.emotionalState);
-    await generateVoiceResponse(enhancedConfirmation, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
+    await generateVoiceResponse(enhancedConfirmation, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
     
     // Process the booking with enhanced error handling
     try {
       if (services.length === 0) {
         console.error('❌ No services found for business');
         const errorMessage = generateServiceErrorMessage(conversation.personality, conversation.emotionalState);
-        await generateVoiceResponse(errorMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
+        await generateVoiceResponse(errorMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
         shouldContinue = false;
       } else {
         // Dynamic service matching using AI-generated keywords
@@ -897,21 +922,21 @@ async function holdConversation(res, business, callSid, from, speech, businessId
         if (booking.success) {
           const successMessage = generateBookingSuccessMessage(aiResponse.data, conversation.personality, conversation.emotionalState, selectedService, conversation);
           const enhancedSuccess = enhanceNaturalSpeech(successMessage, conversation.personality, conversation.emotionalState);
-          await generateVoiceResponse(enhancedSuccess, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
+          await generateVoiceResponse(enhancedSuccess, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
           twiml.hangup();
           shouldContinue = false;
           // Conversation completed successfully - will be auto-cleaned up
         } else {
           console.error('❌ Booking failed:', booking.error);
           const failureMessage = generateBookingFailureMessage(conversation.personality, conversation.emotionalState);
-          await generateVoiceResponse(failureMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
+          await generateVoiceResponse(failureMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
           shouldContinue = false;
         }
       }
     } catch (error) {
       console.error('❌ Booking error:', error);
       const errorMessage = generateSystemErrorMessage(conversation.personality, conversation.emotionalState);
-      await generateVoiceResponse(errorMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
+      await generateVoiceResponse(errorMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
       shouldContinue = false;
     }
   } else {
@@ -925,7 +950,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     console.log(`🚀 Immediate AI response - no artificial delays`);
     
     // Say the enhanced response with personality-matched voice settings
-    await generateVoiceResponse(enhancedResponse, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
+    await generateVoiceResponse(enhancedResponse, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
   }
   
   if (shouldContinue) {
@@ -960,7 +985,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
       timeoutMessage = 'Sorry, I think there might be a connection issue. Could you try speaking louder, or we can call you right back?';
     }
     
-    await generateVoiceResponse(timeoutMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
+    await generateVoiceResponse(timeoutMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
     twiml.hangup();
   }
   
