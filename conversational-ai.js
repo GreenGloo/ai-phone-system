@@ -184,7 +184,7 @@ async function getAvailableSlots(businessId) {
       return [];
     }
     
-    // Get available slots from pre-generated calendar - ALL SLOTS AVAILABLE
+    // Get available slots from pre-generated calendar - FULL YEAR AVAILABLE
     const slotsResult = await pool.query(`
       SELECT slot_start, slot_end
       FROM calendar_slots
@@ -193,7 +193,7 @@ async function getAvailableSlots(businessId) {
       AND is_blocked = false
       AND slot_start >= NOW()
       ORDER BY slot_start
-      LIMIT 300
+      LIMIT 5000
     `, [businessId]);
     
     if (slotsResult.rows.length === 0) {
