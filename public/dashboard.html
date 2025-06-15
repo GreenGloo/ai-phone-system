@@ -739,8 +739,8 @@
                         clickText.remove();
                     }
                     
-                    // Update notification badge count
-                    updateNotificationBadge(notifications);
+                    // Force reload notifications to get fresh badge count
+                    await loadNotifications();
                     
                     console.log(`📧 Marked notification ${notificationId} as read`);
                 } else {
@@ -765,9 +765,8 @@
                     notif.read = true;
                 }
                 
-                // Refresh notifications display
-                renderNotifications();
-                updateNotificationBadge(notifications);
+                // Force reload notifications from server to get fresh data
+                await loadNotifications();
                 
                 console.log(`📧 Marked ${unreadNotifications.length} notifications as read`);
             } catch (error) {
