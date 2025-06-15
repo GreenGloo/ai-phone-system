@@ -99,13 +99,13 @@ const PERSONALITY_PROFILES = {
     speechPatterns: ["I'd be happy to help", "Absolutely", "Of course", "That sounds perfect"],
     confirmationStyle: "polite and thorough"
   },
-  casual: {
-    name: "Casual & Friendly", 
-    tone: "relaxed and approachable",
+  friendly: {
+    name: "Friendly & Approachable", 
+    tone: "warm and conversational",
     enthusiasm: 0.9,
     empathy: 0.9,
     speechPatterns: ["Sure thing", "Sounds great", "Perfect", "You got it"],
-    confirmationStyle: "casual and conversational"
+    confirmationStyle: "friendly and conversational"
   },
   helpful: {
     name: "Extremely Helpful",
@@ -114,6 +114,14 @@ const PERSONALITY_PROFILES = {
     empathy: 0.9,
     speechPatterns: ["I'd love to help with that", "Let me take care of that for you", "Absolutely, no problem"],
     confirmationStyle: "thorough and reassuring"
+  },
+  urgent: {
+    name: "Direct & Efficient",
+    tone: "direct and efficient",
+    enthusiasm: 0.6,
+    empathy: 0.7,
+    speechPatterns: ["Let's get this done", "I'll handle that right away", "Got it"],
+    confirmationStyle: "quick and direct"
   }
 };
 
@@ -426,8 +434,8 @@ async function handleVoiceCall(req, res) {
 }
 
 async function handleInitialCall(res, business, callSid, from, businessId) {
-  // Choose personality based on business type (could be configurable per business)
-  const personality = PERSONALITY_PROFILES.helpful; // Default to most helpful
+  // Choose personality based on business configuration
+  const personality = PERSONALITY_PROFILES[business.ai_personality] || PERSONALITY_PROFILES.helpful;
   
   // Start enhanced conversation memory in database
   const conversation = {
@@ -710,7 +718,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
       customerPhone: from,
       conversationHistory: [],
       customerInfo: {},
-      personality: PERSONALITY_PROFILES.helpful,
+      personality: PERSONALITY_PROFILES[business.ai_personality] || PERSONALITY_PROFILES.helpful,
       emotionalState: [],
       interactionCount: 0,
       startTime: new Date(),
