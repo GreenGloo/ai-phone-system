@@ -612,8 +612,11 @@
                     console.error(`❌ No business ID available for loading appointments`);
                 }
 
-                // Load notifications
-                loadNotifications();
+                // Only load notifications if they haven't been marked as read
+                const notificationBadge = document.getElementById('notification-badge');
+                if (!notificationBadge.classList.contains('hidden')) {
+                    loadNotifications();
+                }
 
             } catch (error) {
                 console.error('Error loading dashboard data:', error);
@@ -888,7 +891,8 @@
         function getDayAppointments(date) {
             return appointments.filter(apt => {
                 const aptDate = new Date(apt.start_time);
-                return aptDate.toDateString() === date.toDateString();
+                return aptDate.toDateString() === date.toDateString() && 
+                       apt.status !== 'cancelled'; // Exclude cancelled appointments
             });
         }
 
