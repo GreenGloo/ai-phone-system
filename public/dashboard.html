@@ -1123,13 +1123,17 @@
                 });
                 
                 if (response.ok) {
+                    const result = await response.json();
+                    alert('Service deleted successfully!');
                     loadServices(); // Reload the list
                 } else {
-                    alert('Error deleting service');
+                    const errorData = await response.json();
+                    const errorMessage = errorData.details || errorData.error || 'Error deleting service';
+                    alert(`Cannot delete service: ${errorMessage}`);
                 }
             } catch (error) {
                 console.error('Error deleting service:', error);
-                alert('Error deleting service');
+                alert('Error deleting service: Network or server error');
             }
         }
 

@@ -662,19 +662,50 @@ app.delete('/api/businesses/:businessId/service-types/:serviceId', authenticateT
   try {
     const { serviceId } = req.params;
     
+    console.log(`🗑️ Attempting to delete service type: ${serviceId} for business: ${req.business.id}`);
+    
+    // Check if service has appointments first
+    const appointmentCheck = await pool.query(
+      'SELECT COUNT(*) as count FROM appointments WHERE service_type_id = $1',
+      [serviceId]
+    );
+    
+    const appointmentCount = parseInt(appointmentCheck.rows[0].count);
+    console.log(`📅 Found ${appointmentCount} appointments for this service`);
+    
+    if (appointmentCount > 0) {
+      return res.status(400).json({ 
+        error: 'Cannot delete service type with existing appointments',
+        details: `This service has ${appointmentCount} scheduled appointment(s). Please cancel or move those appointments first.`
+      });
+    }
+    
+    // Proceed with deletion
     const result = await pool.query(
       'DELETE FROM service_types WHERE id = $1 AND business_id = $2 RETURNING *',
       [serviceId, req.business.id]
     );
     
     if (result.rows.length === 0) {
+      console.log(`❌ Service type not found: ${serviceId}`);
       return res.status(404).json({ error: 'Service type not found' });
     }
     
-    res.json({ success: true, message: 'Service type deleted' });
+    console.log(`✅ Successfully deleted service type: ${result.rows[0].name}`);
+    res.json({ success: true, message: 'Service type deleted successfully' });
+    
   } catch (error) {
-    console.error('Error deleting service type:', error);
-    res.status(500).json({ error: 'Failed to delete service type' });
+    console.error('❌ Error deleting service type:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail
+    });
+    
+    res.status(500).json({ 
+      error: 'Failed to delete service type',
+      details: error.message 
+    });
   }
 });
 
