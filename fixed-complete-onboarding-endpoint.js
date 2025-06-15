@@ -112,7 +112,7 @@ app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, g
       voiceMethod: 'POST',
       smsUrl: `${baseUrl}/sms/incoming/${req.business.id}`,
       smsMethod: 'POST',
-      friendlyName: `${lockedBusiness.name} - CallCatcher AI`
+      friendlyName: `${lockedBusiness.name} - BookIt AI`
     });
     
     console.log(`✅ Phone number purchased: ${phoneNumberToPurchase} (${purchasedNumber.sid})`);

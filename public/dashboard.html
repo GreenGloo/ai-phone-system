@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CallCatcher Dashboard</title>
+    <title>BookIt Technologies Dashboard</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <style>
         .stat-card {
@@ -52,7 +52,7 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center py-4">
                 <div class="flex items-center">
-                    <h1 class="text-2xl font-bold text-gray-900">📞 CallCatcher</h1>
+                    <h1 class="text-2xl font-bold text-gray-900">📞 BookIt</h1>
                     <span id="business-name" class="ml-4 text-gray-600">Loading...</span>
                 </div>
                 <div class="flex items-center gap-4">
@@ -864,7 +864,7 @@
                     notifications.push({
                         id: 'system-1',
                         type: 'system',
-                        message: 'CallCatcher system is active and ready',
+                        message: 'BookIt system is active and ready',
                         time: '1 hour ago',
                         read: true
                     });
@@ -874,7 +874,7 @@
                 notifications = [{
                     id: 'error-1',
                     type: 'system',
-                    message: 'CallCatcher system is active',
+                    message: 'BookIt system is active',
                     time: 'Now',
                     read: true
                 }];
@@ -985,7 +985,7 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        testMessage: 'TEST: CallCatcher SMS notifications are working! 📱✅',
+                        testMessage: 'TEST: BookIt SMS notifications are working! 📱✅',
                         testPhone: testPhone || undefined
                     })
                 });

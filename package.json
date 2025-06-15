@@ -1,7 +1,7 @@
 {
-  "name": "callcatcher-saas",
+  "name": "bookit-technologies",
   "version": "2.0.0",
-  "description": "AI Phone System SaaS for Service Businesses",
+  "description": "BookIt Technologies - AI Phone System SaaS for Service Businesses",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",

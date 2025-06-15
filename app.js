@@ -841,7 +841,7 @@ app.post('/api/test-sms/:businessId', authenticateToken, getBusinessContext, asy
     
     console.log(`📱 Normalized phone: ${normalizedPhone}`);
     
-    const message = testMessage || 'TEST MESSAGE from CallCatcher - SMS is working!';
+    const message = testMessage || 'TEST MESSAGE from BookIt Technologies - SMS is working!';
     
     const sms = await twilioClient.messages.create({
       body: message,
@@ -3230,7 +3230,7 @@ app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, g
       voiceMethod: 'POST',
       smsUrl: `${baseUrl}/sms/incoming/${req.business.id}`,
       smsMethod: 'POST',
-      friendlyName: `${req.business.name} - CallCatcher AI`
+      friendlyName: `${req.business.name} - BookIt AI`
     });
     
     // Update business with new phone number and mark onboarding complete
@@ -3506,7 +3506,7 @@ app.post('/api/businesses/:businessId/purchase-phone-number', authenticateToken,
       voiceMethod: 'POST',
       smsUrl: `${process.env.BASE_URL || 'https://nodejs-production-5e30.up.railway.app'}/sms/incoming/${req.business.id}`,
       smsMethod: 'POST',
-      friendlyName: `${req.business.name} - CallCatcher AI`
+      friendlyName: `${req.business.name} - BookIt AI`
     });
     
     // Update business with new phone number
@@ -3734,7 +3734,7 @@ app.use('/api/*', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 CallCatcher SaaS running on port ${PORT}`);
+  console.log(`🚀 BookIt Technologies running on port ${PORT}`);
   console.log(`🏠 Landing page: /`);
   console.log(`📋 Onboarding: /onboarding`);
   console.log(`📊 Dashboard: /dashboard`);
