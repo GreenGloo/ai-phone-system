@@ -856,8 +856,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     
     // Apply natural speech enhancement to service listing
     const enhancedServiceListing = enhanceNaturalSpeech(serviceListingMessage, conversation.personality, conversation.emotionalState);
-    const serviceListingVoiceSettings = getVoiceSettings(conversation.personality, conversation.emotionalState, business.ai_voice_id);
-    twiml.say(enhancedServiceListing, serviceListingVoiceSettings);
+    await generateVoiceResponse(enhancedServiceListing, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
     
     // Continue conversation to get service selection
     shouldContinue = true;
@@ -870,16 +869,14 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     
     // Apply natural speech enhancement to confirmation
     const enhancedConfirmation = enhanceNaturalSpeech(confirmationMessage, conversation.personality, conversation.emotionalState);
-    const confirmationVoiceSettings = getVoiceSettings(conversation.personality, conversation.emotionalState, business.ai_voice_id);
-    twiml.say(enhancedConfirmation, confirmationVoiceSettings);
+    await generateVoiceResponse(enhancedConfirmation, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
     
     // Process the booking with enhanced error handling
     try {
       if (services.length === 0) {
         console.error('❌ No services found for business');
         const errorMessage = generateServiceErrorMessage(conversation.personality, conversation.emotionalState);
-        const errorVoiceSettings = getVoiceSettings(conversation.personality, conversation.emotionalState, business.ai_voice_id);
-        twiml.say(errorMessage, errorVoiceSettings);
+        await generateVoiceResponse(errorMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
         shouldContinue = false;
       } else {
         // Dynamic service matching using AI-generated keywords
@@ -900,24 +897,21 @@ async function holdConversation(res, business, callSid, from, speech, businessId
         if (booking.success) {
           const successMessage = generateBookingSuccessMessage(aiResponse.data, conversation.personality, conversation.emotionalState, selectedService, conversation);
           const enhancedSuccess = enhanceNaturalSpeech(successMessage, conversation.personality, conversation.emotionalState);
-          const successVoiceSettings = getVoiceSettings(conversation.personality, conversation.emotionalState, business.ai_voice_id);
-          twiml.say(enhancedSuccess, successVoiceSettings);
+          await generateVoiceResponse(enhancedSuccess, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
           twiml.hangup();
           shouldContinue = false;
           // Conversation completed successfully - will be auto-cleaned up
         } else {
           console.error('❌ Booking failed:', booking.error);
           const failureMessage = generateBookingFailureMessage(conversation.personality, conversation.emotionalState);
-          const failureVoiceSettings = getVoiceSettings(conversation.personality, conversation.emotionalState, business.ai_voice_id);
-          twiml.say(failureMessage, failureVoiceSettings);
+          await generateVoiceResponse(failureMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
           shouldContinue = false;
         }
       }
     } catch (error) {
       console.error('❌ Booking error:', error);
       const errorMessage = generateSystemErrorMessage(conversation.personality, conversation.emotionalState);
-      const systemErrorVoiceSettings = getVoiceSettings(conversation.personality, conversation.emotionalState, business.ai_voice_id);
-      twiml.say(errorMessage, systemErrorVoiceSettings);
+      await generateVoiceResponse(errorMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
       shouldContinue = false;
     }
   } else {
@@ -937,8 +931,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     }
     
     // Say the enhanced response with personality-matched voice settings
-    const voiceSettings = getVoiceSettings(conversation.personality, conversation.emotionalState, business.ai_voice_id);
-    twiml.say(enhancedResponse, voiceSettings);
+    await generateVoiceResponse(enhancedResponse, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
   }
   
   if (shouldContinue) {
@@ -973,8 +966,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
       timeoutMessage = 'Hmm, I think we might have lost connection. We\'ll call you right back!';
     }
     
-    const timeoutMessageVoiceSettings = getVoiceSettings(conversation.personality, conversation.emotionalState, business.ai_voice_id);
-    twiml.say(timeoutMessage, timeoutMessageVoiceSettings);
+    await generateVoiceResponse(timeoutMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
     twiml.hangup();
   }
   
