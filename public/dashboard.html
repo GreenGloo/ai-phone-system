@@ -272,10 +272,7 @@
         <div class="p-4 border-b">
             <div class="flex items-center justify-between">
                 <h3 class="font-semibold text-gray-900">Notifications</h3>
-                <div class="flex items-center gap-2">
-                    <button onclick="markAllNotificationsAsRead()" class="text-blue-600 hover:text-blue-800 text-sm">Mark All Read</button>
-                    <button onclick="toggleNotifications()" class="text-gray-400 hover:text-gray-600">✕</button>
-                </div>
+                <button onclick="toggleNotifications()" class="text-gray-400 hover:text-gray-600">✕</button>
             </div>
         </div>
         <div id="notifications-list" class="max-h-80 overflow-y-auto">
@@ -919,7 +916,37 @@
         // Notification functions
         function toggleNotifications() {
             const dropdown = document.getElementById('notifications-dropdown');
+            const wasHidden = dropdown.classList.contains('hidden');
             dropdown.classList.toggle('hidden');
+            
+            // Auto-mark all as read when opening notifications
+            if (wasHidden) {
+                setTimeout(() => {
+                    markAllNotificationsAsReadQuietly();
+                }, 100);
+            }
+        }
+        
+        // Simple version that just updates the badge without complex API calls
+        function markAllNotificationsAsReadQuietly() {
+            // Update local state
+            notifications.forEach(notif => notif.read = true);
+            
+            // Update badge immediately
+            const badge = document.getElementById('notification-badge');
+            badge.classList.add('hidden');
+            
+            // Update visual appearance of notifications
+            const notificationElements = document.querySelectorAll('#notifications-list > div');
+            notificationElements.forEach(el => {
+                el.classList.add('opacity-60');
+                el.classList.remove('cursor-pointer', 'hover:bg-gray-50');
+                const clickText = el.querySelector('.text-blue-600');
+                if (clickText) clickText.remove();
+                el.onclick = null;
+            });
+            
+            console.log('📧 Marked all notifications as read (visual only)');
         }
 
         async function loadNotifications() {
@@ -1058,11 +1085,9 @@
             container.innerHTML = notifications.map(notif => {
                 const bgColor = notif.type === 'new_booking' ? 'bg-blue-50 border-l-blue-500' : 'bg-orange-50 border-l-orange-500';
                 return `
-                    <div class="p-3 border-l-4 ${bgColor} ${notif.read ? 'opacity-60' : ''} cursor-pointer hover:bg-gray-50" 
-                         onclick="markNotificationAsRead('${notif.id}', this)">
+                    <div class="p-3 border-l-4 ${bgColor} ${notif.read ? 'opacity-60' : ''}">
                         <div class="text-sm font-medium text-gray-900">${notif.message}</div>
                         <div class="text-xs text-gray-500 mt-1">${notif.time}</div>
-                        ${!notif.read ? '<div class="text-xs text-blue-600 mt-1">Click to mark as read</div>' : ''}
                     </div>
                 `;
             }).join('');
