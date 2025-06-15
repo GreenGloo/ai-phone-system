@@ -193,7 +193,7 @@ async function getAvailableSlots(businessId) {
       AND is_blocked = false
       AND slot_start >= NOW()
       ORDER BY slot_start
-      LIMIT 2000
+      LIMIT 6000
     `, [businessId]);
     
     if (slotsResult.rows.length === 0) {
