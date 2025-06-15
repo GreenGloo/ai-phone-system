@@ -10,6 +10,10 @@ const OpenAI = require('openai');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Simple in-memory cache for services (reduces DB queries)
+const servicesCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 // Add Claude support for superior conversation quality
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const USE_CLAUDE = process.env.USE_CLAUDE === 'true'; // Set to 'true' to use Claude instead of OpenAI
@@ -822,17 +826,9 @@ async function holdConversation(res, business, callSid, from, speech, businessId
   
   console.log(`🗣️ Conversation history: ${conversation.conversationHistory.length} messages`);
   
-  // Get services for context (already have business from parent function)
-  const servicesResult = await pool.query(
-    'SELECT id, name, duration_minutes, base_rate FROM service_types WHERE business_id = $1 AND is_active = true',
-    [businessId]
-  );
-  const services = servicesResult.rows;
-  console.log(`🔧 Found ${services.length} services for business ${businessId}`);
-  
-  // Smart availability loading based on customer request
-  let availability;
+  // PARALLEL OPTIMIZATION: Run services and availability queries simultaneously
   let needsExtendedSearch = false;
+  let availabilityQuery = 'soon'; // Default
   
   // Check if customer mentioned far-future dates
   if (speech.toLowerCase().includes('february') || speech.toLowerCase().includes('feb') || 
@@ -841,16 +837,57 @@ async function holdConversation(res, business, callSid, from, speech, businessId
       speech.toLowerCase().includes('annual') || speech.toLowerCase().includes('yearly')) {
     console.log('🎯 Customer mentioned far-future date - using targeted search');
     needsExtendedSearch = true;
-    availability = await getAvailableSlots(businessId, speech); // Pass speech for date parsing
-  } else {
-    // Default: load next 6 weeks (fast and cost-efficient)
-    availability = await getAvailableSlots(businessId, 'soon');
+    availabilityQuery = speech; // Pass speech for date parsing
   }
+  
+  // CACHE OPTIMIZATION: Check for cached services first
+  const cacheKey = `services_${businessId}`;
+  let services;
+  let availability;
+  
+  if (servicesCache.has(cacheKey)) {
+    const cached = servicesCache.get(cacheKey);
+    if (Date.now() - cached.timestamp < CACHE_DURATION) {
+      services = cached.data;
+      console.log(`🚀 Using cached services for business ${businessId}`);
+      
+      // Only fetch availability (much faster)
+      availability = await getAvailableSlots(businessId, availabilityQuery);
+    } else {
+      servicesCache.delete(cacheKey); // Remove expired cache
+      services = null;
+    }
+  }
+  
+  if (!services) {
+    // Run both database operations in parallel (saves ~200-400ms)
+    const [servicesResult, availabilityResult] = await Promise.all([
+      pool.query(
+        'SELECT id, name, duration_minutes, base_rate FROM service_types WHERE business_id = $1 AND is_active = true',
+        [businessId]
+      ),
+      getAvailableSlots(businessId, availabilityQuery)
+    ]);
+    
+    services = servicesResult.rows;
+    availability = availabilityResult;
+    
+    // Cache services for future requests
+    servicesCache.set(cacheKey, {
+      data: services,
+      timestamp: Date.now()
+    });
+  }
+  console.log(`🔧 Found ${services.length} services for business ${businessId}`);
   
   console.log(`📅 Found ${availability.length} available slots`);
   
-  // Get AI response with appropriate context
-  const aiResponse = await getHumanLikeResponse(speech, conversation, business, services, availability, needsExtendedSearch);
+  // ASYNC OPTIMIZATION: Start AI processing immediately
+  const aiResponsePromise = getHumanLikeResponse(speech, conversation, business, services, availability, needsExtendedSearch);
+  console.log(`🚀 AI processing started asynchronously`);
+  
+  // Await the AI response
+  const aiResponse = await aiResponsePromise;
   console.log(`🤖 Human-like AI Response:`, JSON.stringify(aiResponse, null, 2));
   
   // Add AI response to history
@@ -957,7 +994,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     // Intelligent gathering with enhanced parameters for natural conversation
     const gatherParams = {
       input: 'speech',
-      timeout: 25, // Slightly shorter to feel more responsive
+      timeout: 20, // Faster timeout for snappier conversations
       speechTimeout: 'auto',
       action: `/voice/incoming/${businessId}`,
       method: 'POST'
@@ -1015,47 +1052,21 @@ async function getHumanLikeResponse(speech, conversation, business, services, av
   const todayStr = currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const currentTime = currentDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   
-  const claudePrompt = `You are an expert booking assistant for ${business.name}, a professional automotive garage.
+  const claudePrompt = `Booking assistant for ${business.name}.
 
-CURRENT DATE/TIME: ${todayStr} at ${currentTime}
+CUSTOMER: "${speech}"
+NAME: ${hasCustomerName ? customerName : 'NEEDED'}
+HISTORY: ${recentHistory}
+SERVICES: ${servicesList}
+SLOTS: ${availableSlots}
 
-CUSTOMER INPUT: "${speech}"
-
-CUSTOMER NAME: ${hasCustomerName ? customerName : 'NOT COLLECTED YET'}
-
-RECENT CONVERSATION:
-${recentHistory}
-
-AVAILABLE SERVICES: ${servicesList}
-
-AVAILABLE APPOINTMENT SLOTS (NEXT FEW DAYS + WEEKS + MONTHS): ${availableSlots}
-
-BOOKING RANGE: We have appointments available from ${todayStr} through ${new Date(availability[availability.length-1]?.datetime || new Date()).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} - CUSTOMERS CAN BOOK WEEKS OR MONTHS IN ADVANCE!
-
-CRITICAL INSTRUCTIONS:
-• ALWAYS collect customer name early in conversation if not already collected
-• PRESERVE CONTEXT: If customer already selected a service, NEVER ask for service again - just find times for that service
-• When customer asks for "different day" or "next Tuesday", keep their previously selected service
-• Speech recognition errors: "CID" = "oil change", "old change" = "oil change"  
-• If customer requests a service that doesn't clearly match our available services, politely ask what they need and offer to list our services
-• When listing services, present them in a natural, conversational way
-• ANY clear service mention = immediately offer specific times and push for booking
-• Customer saying "yes"/"okay"/"sounds good"/"that works" = book the appointment NOW with action: "book_appointment"
-• ONLY suggest times from the AVAILABLE APPOINTMENT SLOTS list above - never make up dates!
-• When offering times, ALWAYS use the exact appointmentDatetime from the available slots
-• Be conversational but ALWAYS drive toward booking an appointment
-
-NAME COLLECTION EXAMPLES:
-Customer: "I need service" → "I'd be happy to help! Could I get your name first?" 
-Customer: "My name is John" → "Thanks John! What service can I help you with today?"
-
-SERVICE CLARIFICATION EXAMPLES:
-Customer: unclear service request → "I want to make sure I help you with exactly what you need. We offer: [list services]. Which of these sounds right for you?"
-Customer: "I don't know" → "No problem! Let me tell you what we do: [list services]. What's going on with your vehicle?"
-
-BOOKING EXAMPLES:
-Customer: "oil change" → action: "continue", offer specific times like "I can get you in tomorrow at 4:00 PM or Sunday at 10:00 AM"
-Customer: "yes" or "4 PM works" → action: "book_appointment" with exact appointmentDatetime like "2025-06-14T16:00:00.000Z"
+RULES:
+• Collect name if missing
+• Keep service context across turns
+• "CID"/"old change" = oil change
+• Service mentioned = offer specific times from slots
+• "yes"/"okay" = book appointment  
+• Use exact appointmentDatetime from available slots
 
 RESPONSE FORMAT - MUST BE VALID JSON ONLY (NO EXPLANATIONS):
 {

@@ -93,13 +93,13 @@ app.use('/temp', express.static('temp'));
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  // Performance optimizations
-  max: 20, // Maximum pool size
-  min: 5,  // Minimum pool size
-  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 10000, // Return error after 10 seconds if connection cannot be established
-  statement_timeout: 30000, // 30 second query timeout
-  query_timeout: 30000,
+  // Performance optimizations for faster responses
+  max: 30, // Higher pool size for concurrent calls
+  min: 10, // More ready connections
+  idleTimeoutMillis: 60000, // Keep connections longer
+  connectionTimeoutMillis: 5000, // Faster timeout for connection attempts
+  statement_timeout: 15000, // Faster query timeout
+  query_timeout: 15000,
   // Connection health checks
   keepAlive: true,
   keepAliveInitialDelayMillis: 10000,
