@@ -86,6 +86,9 @@ app.get('/', (req, res) => {
 
 app.use(express.static('public'));
 
+// Serve temporary ElevenLabs audio files
+app.use('/temp', express.static('temp'));
+
 // Database connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,

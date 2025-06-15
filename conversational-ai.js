@@ -5,6 +5,7 @@
 require('dotenv').config();
 const twilio = require('twilio');
 const { Pool } = require('pg');
+const { generateElevenLabsAudio, cleanupOldAudioFiles } = require('./elevenlabs-integration');
 const OpenAI = require('openai');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -472,8 +473,7 @@ async function handleInitialCall(res, business, callSid, from, businessId) {
   const greeting = greetingVariations[Math.floor(Math.random() * greetingVariations.length)];
   
   const twiml = new twilio.twiml.VoiceResponse();
-  const greetingVoiceSettings = getVoiceSettings(conversation.personality, conversation.emotionalState, business.ai_voice_id);
-  twiml.say(greeting, greetingVoiceSettings);
+  await generateVoiceResponse(greeting, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
   
   twiml.gather({
     input: 'speech',
@@ -483,8 +483,7 @@ async function handleInitialCall(res, business, callSid, from, businessId) {
     method: 'POST'
   });
   
-  const timeoutVoiceSettings = getVoiceSettings(conversation.personality, conversation.emotionalState, business.ai_voice_id);
-  twiml.say('I didn\'t catch that - let me have someone call you right back to make sure we take great care of you.', timeoutVoiceSettings);
+  await generateVoiceResponse('I didn\'t catch that - let me have someone call you right back to make sure we take great care of you.', conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
   twiml.hangup();
   
   return res.type('text/xml').send(twiml.toString());
@@ -543,7 +542,37 @@ function enhanceNaturalSpeech(response, personality, emotions) {
   return enhanced;
 }
 
-// Voice Settings - Matches voice characteristics to personality and emotions
+// Enhanced voice generation with ElevenLabs support
+async function generateVoiceResponse(text, personality, emotions, businessVoice = 'Polly.Joanna-Neural', twiml) {
+  const useElevenLabs = process.env.ELEVENLABS_API_KEY && process.env.USE_ELEVENLABS !== 'false';
+  
+  console.log(`🎤 Voice Generation - Text: "${text.substring(0, 50)}..."`);
+  console.log(`🎤 Voice ID: ${businessVoice}, ElevenLabs: ${useElevenLabs ? 'YES' : 'NO'}`);
+  
+  if (useElevenLabs) {
+    try {
+      const audioResult = await generateElevenLabsAudio(text, businessVoice);
+      
+      if (audioResult.success) {
+        console.log(`🎵 Using ElevenLabs audio: ${audioResult.filename}`);
+        twiml.play(audioResult.url);
+        return true; // Indicates ElevenLabs was used
+      } else {
+        console.log(`⚠️ ElevenLabs failed, falling back to Twilio TTS: ${audioResult.error}`);
+      }
+    } catch (error) {
+      console.log(`⚠️ ElevenLabs error, falling back to Twilio TTS: ${error.message}`);
+    }
+  }
+  
+  // Fallback to Twilio TTS
+  const voiceSettings = getVoiceSettings(personality, emotions, businessVoice);
+  console.log(`🔄 Using Twilio TTS fallback: ${JSON.stringify(voiceSettings)}`);
+  twiml.say(text, voiceSettings);
+  return false; // Indicates Twilio TTS was used
+}
+
+// Voice Settings - Matches voice characteristics to personality and emotions (Twilio TTS fallback)
 function getVoiceSettings(personality, emotions, businessVoice = 'Polly.Joanna-Neural') {
   // Ensure we have a valid voice, fallback to default if not
   const voiceToUse = businessVoice || 'Polly.Joanna-Neural';
