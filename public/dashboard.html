@@ -695,13 +695,59 @@
                         <div class="text-sm text-gray-600 mb-1">
                             🔧 ${apt.service_name}
                         </div>
-                        <div class="flex items-center justify-between text-xs text-gray-500">
+                        <div class="flex items-center justify-between text-xs text-gray-500 mb-2">
                             <span>📅 ${timeString}</span>
                             <span>💰 $${apt.estimated_revenue}</span>
+                        </div>
+                        <div class="flex gap-2 justify-end">
+                            ${apt.status === 'scheduled' ? `
+                                <button onclick="updateAppointmentStatus('${apt.id}', 'completed')" class="text-green-600 hover:text-green-800 text-xs font-medium">Complete</button>
+                                <button onclick="updateAppointmentStatus('${apt.id}', 'cancelled')" class="text-red-600 hover:text-red-800 text-xs font-medium">Cancel</button>
+                            ` : ''}
                         </div>
                     </div>
                 `;
             }).join('');
+        }
+
+        // Update appointment status (complete or cancel)
+        async function updateAppointmentStatus(appointmentId, newStatus) {
+            const actionText = newStatus === 'cancelled' ? 'cancel' : 'mark as completed';
+            if (!confirm(`Are you sure you want to ${actionText} this appointment?`)) return;
+            
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch(`/api/businesses/${businessData.id}/appointments/${appointmentId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(`Appointment ${newStatus === 'cancelled' ? 'cancelled' : 'completed'} successfully!`);
+                    
+                    // Update local data
+                    const appointment = appointments.find(apt => apt.id === appointmentId);
+                    if (appointment) {
+                        appointment.status = newStatus;
+                    }
+                    
+                    // Refresh display
+                    renderAppointments();
+                    loadDashboardData(); // Refresh stats
+                } else {
+                    const errorData = await response.json();
+                    const errorMessage = errorData.error || 'Error updating appointment';
+                    alert(`Cannot update appointment: ${errorMessage}`);
+                }
+            } catch (error) {
+                console.error('Error updating appointment:', error);
+                alert('Error updating appointment: Network or server error');
+            }
         }
 
         // Calendar functions
