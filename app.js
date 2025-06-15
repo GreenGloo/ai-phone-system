@@ -3731,11 +3731,45 @@ app.put('/api/businesses/:businessId/appointments/:appointmentId', authenticateT
       return res.status(404).json({ error: 'Appointment not found' });
     }
     
+    const appointment = result.rows[0];
     console.log(`✅ Appointment ${appointmentId} status updated to: ${status}`);
+    
+    // If appointment is cancelled or completed, free up the calendar slot
+    if (status === 'cancelled' || status === 'completed') {
+      console.log(`🗓️ Freeing calendar slot for cancelled/completed appointment`);
+      
+      try {
+        // Free up the calendar slot by marking it as available
+        await pool.query(
+          `UPDATE calendar_slots 
+           SET is_booked = false, 
+               appointment_id = NULL,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE appointment_id = $1`,
+          [appointmentId]
+        );
+        
+        // Mark related notifications as read/resolved
+        await pool.query(
+          `UPDATE notifications 
+           SET read = true,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE business_id = $1 
+           AND (data->>'appointment_id' = $2 OR data->>'appointmentId' = $2)`,
+          [req.business.id, appointmentId]
+        );
+        
+        console.log(`✅ Calendar slot freed and notifications cleared for appointment ${appointmentId}`);
+        
+      } catch (cleanupError) {
+        console.error(`⚠️ Error cleaning up calendar/notifications for appointment ${appointmentId}:`, cleanupError);
+        // Don't fail the main request if cleanup fails
+      }
+    }
     
     res.json({
       success: true,
-      appointment: result.rows[0]
+      appointment: appointment
     });
     
   } catch (error) {

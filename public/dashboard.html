@@ -738,6 +738,8 @@
                     // Refresh display
                     renderRecentAppointments();
                     loadDashboardData(); // Refresh stats
+                    renderCalendar(); // Refresh calendar to show freed slots
+                    loadNotifications(); // Refresh notifications
                 } else {
                     const errorData = await response.json();
                     const errorMessage = errorData.error || 'Error updating appointment';
