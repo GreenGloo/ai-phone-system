@@ -550,6 +550,7 @@ function getVoiceSettings(personality, emotions, businessVoice = 'Polly.Joanna-N
   
   // DEBUG: Log voice selection for troubleshooting  
   console.log(`🎤 Voice Settings - Input: ${businessVoice}, Using: ${voiceToUse}`);
+  console.log(`🎤 Final TwiML voice setting: ${JSON.stringify({voice: voiceToUse, rate: '1.0'})}`);
   
   const settings = {
     voice: voiceToUse, // Use business-configured voice or Matthew fallback
