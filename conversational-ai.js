@@ -976,6 +976,16 @@ async function holdConversation(res, business, callSid, from, speech, businessId
       await generateVoiceResponse(errorMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
       shouldContinue = false;
     }
+  } else if (aiResponse.action === 'complete') {
+    console.log(`✅ AI indicated conversation complete - ending call with message: "${aiResponse.response}"`);
+    
+    // Say the final message and end the call
+    const enhancedResponse = enhanceNaturalSpeech(aiResponse.response, conversation.personality, conversation.emotionalState);
+    await generateVoiceResponse(enhancedResponse, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
+    
+    // End the call gracefully
+    twiml.hangup();
+    shouldContinue = false;
   } else {
     console.log(`💬 Continuing conversation with: "${aiResponse.response}"`);
     
@@ -1065,22 +1075,23 @@ RULES:
 • Keep service context across turns
 • "CID"/"old change" = oil change
 • Service mentioned = offer specific times from slots
-• "yes"/"okay" = book appointment  
+• When customer confirms time ("yes"/"okay"/"that works") = use action "book_appointment"
 • Use exact appointmentDatetime from available slots
 
-RESPONSE FORMAT - MUST BE VALID JSON ONLY (NO EXPLANATIONS):
+EXAMPLES:
+Customer needs service → action: "continue", offer times
+Customer confirms time → action: "book_appointment", book it immediately
+
+RESPONSE FORMAT - MUST BE VALID JSON ONLY:
 {
-  "response": "Natural, helpful response that collects name and/or offers services/times",
-  "action": "continue",
+  "response": "Natural response",
+  "action": "continue" OR "book_appointment",
   "data": {
     "customerName": "John",
     "service": "oil change",
-    "suggestedTime": "tomorrow 4:00 PM", 
     "appointmentDatetime": "2025-06-14T16:00:00.000Z"
   }
-}
-
-IMPORTANT: Return ONLY the JSON object above. No extra text, no explanations, no markdown formatting.`;
+}`;
 
   const openaiPrompt = `You are a booking assistant for ${business.name}, an automotive garage.
 
@@ -1110,11 +1121,10 @@ Your response should:
 RESPONSE FORMAT - MUST BE VALID JSON ONLY:
 {
   "response": "your reply",
-  "action": "continue",
+  "action": "continue" OR "book_appointment",
   "data": {
     "customerName": "John",
     "service": "oil change",
-    "suggestedTime": "today 2:00 PM",
     "appointmentDatetime": "2025-06-13T14:00:00Z"
   }
 }
