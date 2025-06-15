@@ -500,6 +500,7 @@
         let appointments = [];
         let businessData = {};
         let stats = {};
+        let notifications = []; // Global notifications array
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', async function() {
@@ -922,7 +923,7 @@
         }
 
         async function loadNotifications() {
-            let notifications = [];
+            notifications = []; // Reset global notifications array
             
             try {
                 const token = localStorage.getItem('token');
