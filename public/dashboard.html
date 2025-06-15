@@ -272,7 +272,10 @@
         <div class="p-4 border-b">
             <div class="flex items-center justify-between">
                 <h3 class="font-semibold text-gray-900">Notifications</h3>
-                <button onclick="toggleNotifications()" class="text-gray-400 hover:text-gray-600">✕</button>
+                <div class="flex items-center gap-2">
+                    <button onclick="markAllNotificationsAsRead()" class="text-blue-600 hover:text-blue-800 text-sm">Mark All Read</button>
+                    <button onclick="toggleNotifications()" class="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
             </div>
         </div>
         <div id="notifications-list" class="max-h-80 overflow-y-auto">
@@ -709,6 +712,69 @@
             }).join('');
         }
 
+        // Mark notification as read
+        async function markNotificationAsRead(notificationId, element) {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch(`/api/businesses/${businessData.id}/notifications/${notificationId}/read`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    // Update local notification state
+                    const notification = notifications.find(n => n.id === notificationId);
+                    if (notification) {
+                        notification.read = true;
+                    }
+                    
+                    // Update the visual appearance
+                    element.classList.add('opacity-60');
+                    element.classList.remove('cursor-pointer', 'hover:bg-gray-50');
+                    element.onclick = null;
+                    
+                    // Remove the "Click to mark as read" text
+                    const clickText = element.querySelector('.text-blue-600');
+                    if (clickText) {
+                        clickText.remove();
+                    }
+                    
+                    // Update notification badge count
+                    updateNotificationBadge(notifications);
+                    
+                    console.log(`📧 Marked notification ${notificationId} as read`);
+                } else {
+                    console.error('Failed to mark notification as read');
+                }
+            } catch (error) {
+                console.error('Error marking notification as read:', error);
+            }
+        }
+
+        // Mark all notifications as read
+        async function markAllNotificationsAsRead() {
+            try {
+                const unreadNotifications = notifications.filter(n => !n.read);
+                const token = localStorage.getItem('token');
+                
+                for (const notif of unreadNotifications) {
+                    await fetch(`/api/businesses/${businessData.id}/notifications/${notif.id}/read`, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    notif.read = true;
+                }
+                
+                // Refresh notifications display
+                renderNotifications();
+                updateNotificationBadge(notifications);
+                
+                console.log(`📧 Marked ${unreadNotifications.length} notifications as read`);
+            } catch (error) {
+                console.error('Error marking all notifications as read:', error);
+            }
+        }
+
         // Update appointment status (complete or cancel)
         async function updateAppointmentStatus(appointmentId, newStatus) {
             const actionText = newStatus === 'cancelled' ? 'cancel' : 'mark as completed';
@@ -992,9 +1058,11 @@
             container.innerHTML = notifications.map(notif => {
                 const bgColor = notif.type === 'new_booking' ? 'bg-blue-50 border-l-blue-500' : 'bg-orange-50 border-l-orange-500';
                 return `
-                    <div class="p-3 border-l-4 ${bgColor} ${notif.read ? 'opacity-60' : ''}">
+                    <div class="p-3 border-l-4 ${bgColor} ${notif.read ? 'opacity-60' : ''} cursor-pointer hover:bg-gray-50" 
+                         onclick="markNotificationAsRead('${notif.id}', this)">
                         <div class="text-sm font-medium text-gray-900">${notif.message}</div>
                         <div class="text-xs text-gray-500 mt-1">${notif.time}</div>
+                        ${!notif.read ? '<div class="text-xs text-blue-600 mt-1">Click to mark as read</div>' : ''}
                     </div>
                 `;
             }).join('');
