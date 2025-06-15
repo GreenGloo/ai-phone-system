@@ -20,7 +20,7 @@ async function callClaude(prompt) {
   
   const response = await axios.post('https://api.anthropic.com/v1/messages', {
     model: 'claude-3-5-sonnet-20241022',
-    max_tokens: 100, // Reduced from 200 for faster phone responses
+    max_tokens: 150, // Balanced: fast but not truncated
     temperature: 0.7,
     messages: [
       {
@@ -483,7 +483,7 @@ async function handleInitialCall(res, business, callSid, from, businessId) {
     method: 'POST'
   });
   
-  await generateVoiceResponse('I didn\'t catch that - let me have someone call you right back to make sure we take great care of you.', conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
+  await generateVoiceResponse('I\'m having trouble hearing you clearly. Please try speaking a bit louder or closer to your phone, or I can have someone call you back.', conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
   twiml.hangup();
   
   return res.type('text/xml').send(twiml.toString());
@@ -950,14 +950,14 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     twiml.gather(gatherParams);
     
     // Natural timeout messages based on emotional state and personality
-    let timeoutMessage = 'I didn\'t catch that. Let me have someone call you right back to make sure we take care of you.';
+    let timeoutMessage = 'I\'m having trouble hearing you. Could you please speak up, or I can have someone call you back to help?';
     
     if (conversation.emotionalState.includes('frustrated')) {
-      timeoutMessage = 'I want to make sure I help you properly - let me have someone call you back right away.';
+      timeoutMessage = 'I want to make sure I help you properly - could you try speaking closer to your phone, or someone can call you back right away.';
     } else if (conversation.emotionalState.includes('urgent')) {
-      timeoutMessage = 'I don\'t want to keep you waiting - someone will call you back immediately.';
+      timeoutMessage = 'I don\'t want to keep you waiting - please speak up or someone will call you back immediately.';
     } else if (conversation.personality.tone === 'casual and conversational') {
-      timeoutMessage = 'Hmm, I think we might have lost connection. We\'ll call you right back!';
+      timeoutMessage = 'Sorry, I think there might be a connection issue. Could you try speaking louder, or we can call you right back?';
     }
     
     await generateVoiceResponse(timeoutMessage, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
@@ -1102,7 +1102,7 @@ Respond in JSON:
           model: "gpt-4o-mini",
           messages: [{ role: "user", content: prompt }],
           temperature: 0.7,
-          max_tokens: 100, // Reduced from 200 for faster phone responses
+          max_tokens: 150, // Balanced: fast but not truncated
           presence_penalty: 0.1,
           frequency_penalty: 0.1
         });
@@ -1130,8 +1130,19 @@ Respond in JSON:
     } catch (parseError) {
       // Fallback if JSON parsing fails
       console.warn('JSON parse failed, using fallback response');
+      console.warn('Raw AI content:', aiContent);
+      
+      // Clean up the response and ensure it's complete
+      let cleanedResponse = aiContent.replace(/```json|```/g, '').trim();
+      
+      // If response seems truncated or too short, use a proper fallback
+      if (cleanedResponse.length < 10 || cleanedResponse.endsWith('...') || cleanedResponse.includes('qu...')) {
+        cleanedResponse = "I'd be happy to help you. What service do you need today?";
+        console.warn('Response was truncated, using complete fallback');
+      }
+      
       response = {
-        response: aiContent.replace(/```json|```/g, '').trim(),
+        response: cleanedResponse,
         action: 'continue',
         data: {}
       };
