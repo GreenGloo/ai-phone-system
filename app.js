@@ -664,14 +664,14 @@ app.delete('/api/businesses/:businessId/service-types/:serviceId', authenticateT
     
     console.log(`🗑️ Attempting to delete service type: ${serviceId} for business: ${req.business.id}`);
     
-    // Check if service has appointments first
+    // Check if service has ACTIVE appointments first (only scheduled/confirmed block deletion)
     const appointmentCheck = await pool.query(
-      'SELECT COUNT(*) as count FROM appointments WHERE service_type_id = $1',
+      'SELECT COUNT(*) as count FROM appointments WHERE service_type_id = $1 AND status IN (\'scheduled\', \'confirmed\')',
       [serviceId]
     );
     
     const appointmentCount = parseInt(appointmentCheck.rows[0].count);
-    console.log(`📅 Found ${appointmentCount} appointments for this service`);
+    console.log(`📅 Found ${appointmentCount} ACTIVE appointments blocking this service deletion`);
     
     if (appointmentCount > 0) {
       return res.status(400).json({ 
