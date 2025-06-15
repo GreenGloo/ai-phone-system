@@ -184,7 +184,11 @@ async function getAvailableSlots(businessId) {
       return [];
     }
     
-    // Get available slots from pre-generated calendar - FULL YEAR AVAILABLE
+    // Get available slots from pre-generated calendar - OPTIMIZED FOR PERFORMANCE
+    // Get slots for next 14 months to ensure February 2026 coverage
+    const fourteenMonthsOut = new Date();
+    fourteenMonthsOut.setMonth(fourteenMonthsOut.getMonth() + 14);
+    
     const slotsResult = await pool.query(`
       SELECT slot_start, slot_end
       FROM calendar_slots
@@ -192,9 +196,10 @@ async function getAvailableSlots(businessId) {
       AND is_available = true
       AND is_blocked = false
       AND slot_start >= NOW()
+      AND slot_start <= $2
       ORDER BY slot_start
-      LIMIT 6000
-    `, [businessId]);
+      LIMIT 4000
+    `, [businessId, fourteenMonthsOut.toISOString()]);
     
     if (slotsResult.rows.length === 0) {
       console.log('📅 No pre-generated slots found - business may need calendar setup');
@@ -257,6 +262,49 @@ async function getAvailableSlots(businessId) {
     console.error('❌ Error getting calendar slots:', error);
     console.error('❌ Error details:', error.message);
     console.error('❌ Error stack:', error.stack);
+    
+    // Fallback: try with smaller date range if full query fails
+    try {
+      console.log('🔄 Attempting fallback with 6-month range...');
+      const sixMonthsOut = new Date();
+      sixMonthsOut.setMonth(sixMonthsOut.getMonth() + 6);
+      
+      const fallbackResult = await pool.query(`
+        SELECT slot_start, slot_end
+        FROM calendar_slots
+        WHERE business_id = $1
+        AND is_available = true
+        AND is_blocked = false
+        AND slot_start >= NOW()
+        AND slot_start <= $2
+        ORDER BY slot_start
+        LIMIT 1000
+      `, [businessId, sixMonthsOut.toISOString()]);
+      
+      if (fallbackResult.rows.length > 0) {
+        console.log(`✅ Fallback successful: ${fallbackResult.rows.length} slots found`);
+        return fallbackResult.rows.map(slot => {
+          const slotDate = new Date(slot.slot_start);
+          return {
+            day: slotDate.toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              month: 'long', 
+              day: 'numeric',
+              year: slotDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+            }),
+            time: slotDate.toLocaleTimeString('en-US', { 
+              hour: 'numeric', 
+              minute: '2-digit', 
+              hour12: true 
+            }),
+            datetime: slot.slot_start
+          };
+        });
+      }
+    } catch (fallbackError) {
+      console.error('❌ Fallback also failed:', fallbackError.message);
+    }
+    
     return [];
   }
 }
