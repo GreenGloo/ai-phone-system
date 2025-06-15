@@ -149,29 +149,71 @@ function analyzeCustomerEmotion(speech, conversationHistory) {
 
 // Dynamic Response Timing - Makes conversations feel more natural
 function calculateResponseTiming(messageLength, emotion, personality) {
-  let baseDelay = 0.5; // Base 0.5 second thinking time
+  let baseDelay = 0.2; // Reduced from 0.5 to 0.2 - prevent hangup perception
   
-  // Adjust for message complexity
-  if (messageLength > 50) baseDelay += 0.3;
-  if (messageLength > 100) baseDelay += 0.5;
+  // Much smaller adjustments for message complexity
+  if (messageLength > 50) baseDelay += 0.1; // Reduced from 0.3
+  if (messageLength > 100) baseDelay += 0.1; // Reduced from 0.5
   
-  // Adjust for emotions
-  if (emotion.includes('urgent')) baseDelay *= 0.5; // Respond faster to urgent requests
-  if (emotion.includes('frustrated')) baseDelay *= 0.7; // Don't keep frustrated customers waiting
-  if (emotion.includes('confused')) baseDelay += 0.2; // Take time to think about explanations
+  // Faster responses for all emotions
+  if (emotion.includes('urgent')) baseDelay *= 0.3; // Even faster for urgent
+  if (emotion.includes('frustrated')) baseDelay *= 0.4; // Much faster for frustrated
+  if (emotion.includes('confused')) baseDelay += 0.1; // Only slightly longer
   
-  // Personality adjustments
-  baseDelay *= (1 + personality.enthusiasm * 0.3); // More enthusiastic = slightly faster
+  // Minimal personality impact
+  baseDelay *= (1 + personality.enthusiasm * 0.1); // Reduced from 0.3
   
-  return Math.max(0.2, Math.min(2.0, baseDelay)); // Keep between 0.2-2 seconds
+  return Math.max(0.1, Math.min(0.5, baseDelay)); // Max 0.5 seconds to prevent hangup perception
 }
 
-// Get available appointment slots from PRE-GENERATED calendar
-async function getAvailableSlots(businessId) {
+// Parse customer timeframe requests into dates
+function parseTimeframeToDate(timeframe) {
+  if (!timeframe || typeof timeframe !== 'string') return null;
+  
+  const lower = timeframe.toLowerCase();
+  const currentYear = new Date().getFullYear();
+  const nextYear = currentYear + 1;
+  
+  // Month patterns
+  const monthPatterns = {
+    'january': 0, 'jan': 0,
+    'february': 1, 'feb': 1,
+    'march': 2, 'mar': 2,
+    'april': 3, 'apr': 3,
+    'may': 4,
+    'june': 5, 'jun': 5,
+    'july': 6, 'jul': 6,
+    'august': 7, 'aug': 7,
+    'september': 8, 'sep': 8, 'sept': 8,
+    'october': 9, 'oct': 9,
+    'november': 10, 'nov': 10,
+    'december': 11, 'dec': 11
+  };
+  
+  // Check for month mentions
+  for (const [monthName, monthIndex] of Object.entries(monthPatterns)) {
+    if (lower.includes(monthName)) {
+      // Determine year - if month already passed this year, use next year
+      const testDate = new Date(currentYear, monthIndex, 1);
+      const targetYear = testDate < new Date() ? nextYear : currentYear;
+      return new Date(targetYear, monthIndex, 1);
+    }
+  }
+  
+  // Check for "next year" or year numbers
+  if (lower.includes('next year') || lower.includes((nextYear).toString())) {
+    return new Date(nextYear, 0, 1); // January of next year
+  }
+  
+  return null;
+}
+
+// COST-EFFICIENT: Get sample slots + ability to search specific dates
+async function getAvailableSlots(businessId, requestedTimeframe = 'soon') {
   try {
-    console.log(`📅 Getting PRE-GENERATED calendar slots for business ${businessId}`);
+    console.log(`📅 Getting calendar slots for business ${businessId} (${requestedTimeframe})`);
     
-    // Check if calendar_slots table exists, if not use basic method
+    // Check if calendar_slots table exists
     const tableCheck = await pool.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -180,26 +222,54 @@ async function getAvailableSlots(businessId) {
     `);
     
     if (!tableCheck.rows[0].exists) {
-      console.error('📅 calendar_slots table does not exist - NO FAKE SLOTS');
+      console.error('📅 calendar_slots table does not exist');
       return [];
     }
     
-    // Get available slots from pre-generated calendar - OPTIMIZED FOR PERFORMANCE
-    // Get slots for next 14 months to ensure February 2026 coverage
-    const fourteenMonthsOut = new Date();
-    fourteenMonthsOut.setMonth(fourteenMonthsOut.getMonth() + 14);
+    let slotsResult;
     
-    const slotsResult = await pool.query(`
-      SELECT slot_start, slot_end
-      FROM calendar_slots
-      WHERE business_id = $1
-      AND is_available = true
-      AND is_blocked = false
-      AND slot_start >= NOW()
-      AND slot_start <= $2
-      ORDER BY slot_start
-      LIMIT 4000
-    `, [businessId, fourteenMonthsOut.toISOString()]);
+    if (requestedTimeframe === 'soon' || requestedTimeframe === 'near_future') {
+      // Default: Load next 6 weeks only (cost-efficient)
+      const sixWeeksOut = new Date();
+      sixWeeksOut.setDate(sixWeeksOut.getDate() + 42);
+      
+      slotsResult = await pool.query(`
+        SELECT slot_start, slot_end
+        FROM calendar_slots
+        WHERE business_id = $1
+        AND is_available = true
+        AND is_blocked = false
+        AND slot_start >= NOW()
+        AND slot_start <= $2
+        ORDER BY slot_start
+        LIMIT 200
+      `, [businessId, sixWeeksOut.toISOString()]);
+      
+    } else {
+      // Customer mentioned specific far-future date - targeted search
+      const targetDate = parseTimeframeToDate(requestedTimeframe);
+      if (targetDate) {
+        const startOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
+        const endOfMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0);
+        
+        console.log(`🎯 Searching specific month: ${startOfMonth.toDateString()} to ${endOfMonth.toDateString()}`);
+        
+        slotsResult = await pool.query(`
+          SELECT slot_start, slot_end
+          FROM calendar_slots
+          WHERE business_id = $1
+          AND is_available = true
+          AND is_blocked = false
+          AND slot_start >= $2
+          AND slot_start <= $3
+          ORDER BY slot_start
+          LIMIT 100
+        `, [businessId, startOfMonth.toISOString(), endOfMonth.toISOString()]);
+      } else {
+        // Fallback to 6 weeks
+        return getAvailableSlots(businessId, 'soon');
+      }
+    }
     
     if (slotsResult.rows.length === 0) {
       console.log('📅 No pre-generated slots found - business may need calendar setup');
@@ -665,12 +735,27 @@ async function holdConversation(res, business, callSid, from, speech, businessId
   const services = servicesResult.rows;
   console.log(`🔧 Found ${services.length} services for business ${businessId}`);
   
-  // Get current availability for AI to make intelligent suggestions
-  const availability = await getAvailableSlots(businessId);
+  // Smart availability loading based on customer request
+  let availability;
+  let needsExtendedSearch = false;
+  
+  // Check if customer mentioned far-future dates
+  if (speech.toLowerCase().includes('february') || speech.toLowerCase().includes('feb') || 
+      speech.toLowerCase().includes('next year') || speech.toLowerCase().includes('2026') ||
+      speech.toLowerCase().includes('march') || speech.toLowerCase().includes('april') ||
+      speech.toLowerCase().includes('annual') || speech.toLowerCase().includes('yearly')) {
+    console.log('🎯 Customer mentioned far-future date - using targeted search');
+    needsExtendedSearch = true;
+    availability = await getAvailableSlots(businessId, speech); // Pass speech for date parsing
+  } else {
+    // Default: load next 6 weeks (fast and cost-efficient)
+    availability = await getAvailableSlots(businessId, 'soon');
+  }
+  
   console.log(`📅 Found ${availability.length} available slots`);
   
-  // Have AI respond with full emotional intelligence and context awareness
-  const aiResponse = await getHumanLikeResponse(speech, conversation, business, services, availability);
+  // Get AI response with appropriate context
+  const aiResponse = await getHumanLikeResponse(speech, conversation, business, services, availability, needsExtendedSearch);
   console.log(`🤖 Human-like AI Response:`, JSON.stringify(aiResponse, null, 2));
   
   // Add AI response to history
@@ -766,13 +851,13 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     const enhancedResponse = enhanceNaturalSpeech(aiResponse.response, conversation.personality, conversation.emotionalState);
     console.log(`🎭 Enhanced speech: "${enhancedResponse}"`);
     
-    // Calculate natural response timing
+    // REDUCED PAUSE: Prevent customers thinking AI hung up
     const responseDelay = calculateResponseTiming(speech.length, conversation.emotionalState, conversation.personality);
     console.log(`⏱️ Natural response delay: ${responseDelay}s`);
     
-    // Add slight pause for natural timing (Twilio supports pause)
-    if (responseDelay > 0.5) {
-      twiml.pause({ length: Math.min(1, responseDelay - 0.5) });
+    // Keep pause very short to prevent hangup perception
+    if (responseDelay > 0.3) {
+      twiml.pause({ length: Math.min(0.3, responseDelay - 0.2) }); // Max 0.3 second pause
     }
     
     // Say the enhanced response with personality-matched voice settings
