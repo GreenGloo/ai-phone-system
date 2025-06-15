@@ -308,12 +308,18 @@ async function getAvailableSlots(businessId, requestedTimeframe = 'soon') {
         let dayLabel;
         if (daysDiff === 0) dayLabel = 'today';
         else if (daysDiff === 1) dayLabel = 'tomorrow';
-        else dayLabel = slotStart.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+        else dayLabel = slotStart.toLocaleDateString('en-US', { 
+          weekday: 'long', 
+          month: 'short', 
+          day: 'numeric',
+          timeZone: 'America/New_York'  // Tom's Garage timezone
+        });
         
         const timeStr = slotStart.toLocaleTimeString('en-US', { 
           hour: 'numeric', 
           minute: '2-digit',
-          hour12: true 
+          hour12: true,
+          timeZone: 'America/New_York'  // Tom's Garage timezone
         });
         
         return {
@@ -360,12 +366,14 @@ async function getAvailableSlots(businessId, requestedTimeframe = 'soon') {
               weekday: 'long', 
               month: 'long', 
               day: 'numeric',
-              year: slotDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+              year: slotDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
+              timeZone: 'America/New_York'  // Tom's Garage timezone
             }),
             time: slotDate.toLocaleTimeString('en-US', { 
               hour: 'numeric', 
               minute: '2-digit', 
-              hour12: true 
+              hour12: true,
+              timeZone: 'America/New_York'  // Tom's Garage timezone
             }),
             datetime: slot.slot_start
           };
