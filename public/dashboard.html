@@ -498,6 +498,7 @@
         let businessData = {};
         let stats = {};
         let notifications = []; // Global notifications array
+        let notificationsDismissed = false; // Track if user dismissed notifications
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', async function() {
@@ -612,10 +613,11 @@
                     console.error(`❌ No business ID available for loading appointments`);
                 }
 
-                // Only load notifications if they haven't been marked as read
-                const notificationBadge = document.getElementById('notification-badge');
-                if (!notificationBadge.classList.contains('hidden')) {
+                // Only load notifications if they haven't been dismissed by user
+                if (!notificationsDismissed) {
                     loadNotifications();
+                } else {
+                    console.log('📧 Notifications dismissed - skipping reload');
                 }
 
             } catch (error) {
@@ -740,8 +742,7 @@
                         clickText.remove();
                     }
                     
-                    // Force reload notifications to get fresh badge count
-                    await loadNotifications();
+                    // Notifications already updated locally - no need to reload
                     
                     console.log(`📧 Marked notification ${notificationId} as read`);
                 } else {
@@ -766,8 +767,7 @@
                     notif.read = true;
                 }
                 
-                // Force reload notifications from server to get fresh data
-                await loadNotifications();
+                // Notifications already updated locally - no need to reload
                 
                 console.log(`📧 Marked ${unreadNotifications.length} notifications as read`);
             } catch (error) {
@@ -805,7 +805,7 @@
                     renderRecentAppointments();
                     loadDashboardData(); // Refresh stats
                     renderCalendar(); // Refresh calendar to show freed slots
-                    loadNotifications(); // Refresh notifications
+                    // Notifications will be handled by global dismissed state
                 } else {
                     const errorData = await response.json();
                     const errorMessage = errorData.error || 'Error updating appointment';
@@ -889,11 +889,18 @@
         }
 
         function getDayAppointments(date) {
-            return appointments.filter(apt => {
+            const dayAppointments = appointments.filter(apt => {
                 const aptDate = new Date(apt.start_time);
-                return aptDate.toDateString() === date.toDateString() && 
-                       apt.status !== 'cancelled'; // Exclude cancelled appointments
+                const isCorrectDate = aptDate.toDateString() === date.toDateString();
+                if (isCorrectDate) {
+                    console.log(`📅 ${date.toDateString()} appointment: ${apt.customer_name} - Status: ${apt.status}`);
+                }
+                return isCorrectDate && apt.status !== 'cancelled'; // Exclude cancelled appointments
             });
+            if (dayAppointments.length > 0) {
+                console.log(`📅 ${date.toDateString()} showing ${dayAppointments.length} non-cancelled appointments`);
+            }
+            return dayAppointments;
         }
 
         function selectDate(date) {
@@ -933,6 +940,9 @@
         
         // Simple version that just updates the badge without complex API calls
         function markAllNotificationsAsReadQuietly() {
+            // Set global flag to prevent reloading
+            notificationsDismissed = true;
+            
             // Update local state
             notifications.forEach(notif => notif.read = true);
             
@@ -950,7 +960,7 @@
                 el.onclick = null;
             });
             
-            console.log('📧 Marked all notifications as read (visual only)');
+            console.log('📧 Marked all notifications as read (visual only) - preventing future reloads');
         }
 
         async function loadNotifications() {
@@ -1308,7 +1318,7 @@
                     renderRecentAppointments();
                     loadDashboardData();
                     renderCalendar();
-                    loadNotifications();
+                    // Notifications handled by global dismissed state
                     
                     // Now try to delete the service again
                     await deleteService(serviceId);
