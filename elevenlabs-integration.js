@@ -17,7 +17,13 @@ const ELEVENLABS_VOICES = {
 
 // Map business voice selections to ElevenLabs voices
 const VOICE_MAPPING = {
-  'Polly.Matthew': 'matthew',
+  // Current settings dropdown options
+  'Polly.Matthew': 'matthew',     // Matthew (Male, US) → Adam
+  'Polly.Joanna': 'sarah',        // Joanna (Female, US) → Sarah
+  'Polly.Amy': 'grace',           // Amy (Female, UK) → Grace
+  'Polly.Brian': 'daniel',        // Brian (Male, UK) → Daniel
+  
+  // Additional voice options
   'Polly.Daniel': 'daniel', 
   'Polly.Sam': 'sam',
   'Polly.Sarah': 'sarah',
@@ -26,8 +32,9 @@ const VOICE_MAPPING = {
   
   // Fallbacks for old format
   'Polly.Matthew-Neural': 'matthew',
-  'Polly.Joanna': 'sarah',
   'Polly.Joanna-Neural': 'sarah',
+  'Polly.Amy-Neural': 'grace',
+  'Polly.Brian-Neural': 'daniel',
   'man': 'matthew',
   'male': 'matthew',
   'alice': 'sarah',
