@@ -6,6 +6,9 @@ const { Pool } = require('pg');
 const { handleVoiceCall } = require('./conversational-ai');
 const { generateKeywordsForService } = require('./service-keyword-generator');
 const { generateCalendarSlots } = require('./calendar-generator');
+const { autoMigrate } = require('./auto-migration-system');
+const { autoConfigureAllWebhooks, startWebhookHealthCheck, configureBusinessWebhook } = require('./webhook-auto-config');
+const { startBusinessHealthMonitoring } = require('./business-auto-repair');
 const twilio = require('twilio');
 const OpenAI = require('openai');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -126,8 +129,55 @@ async function setupDatabaseMonitoring() {
   }, 30000);
 }
 
-// Start monitoring
-setupDatabaseMonitoring();
+// 🚀 AUTOMATIC SYSTEM INITIALIZATION
+async function initializeSystem() {
+  try {
+    // 1. Setup database monitoring
+    setupDatabaseMonitoring();
+    
+    // 2. Run automatic database migrations
+    console.log('\n📊 Running automatic database migrations...');
+    const migrationSuccess = await autoMigrate();
+    
+    if (!migrationSuccess) {
+      console.error('🚨 Database migrations failed - system may not work correctly');
+      // Don't exit - allow system to start with warnings
+    }
+    
+    // 3. Configure webhooks for all businesses
+    console.log('\n🔗 Running automatic webhook configuration...');
+    try {
+      await autoConfigureAllWebhooks();
+    } catch (webhookError) {
+      console.error('⚠️ Webhook auto-configuration failed (non-critical):', webhookError);
+    }
+    
+    // 4. Start webhook health monitoring
+    console.log('\n🩺 Starting webhook health monitoring...');
+    try {
+      await startWebhookHealthCheck();
+    } catch (healthError) {
+      console.error('⚠️ Webhook health monitoring failed to start (non-critical):', healthError);
+    }
+    
+    // 5. Start business data health monitoring
+    console.log('\n🩺 Starting business data health monitoring...');
+    try {
+      await startBusinessHealthMonitoring();
+    } catch (healthError) {
+      console.error('⚠️ Business health monitoring failed to start (non-critical):', healthError);
+    }
+    
+    console.log('✅ System initialization complete');
+    
+  } catch (error) {
+    console.error('🚨 System initialization failed:', error);
+    // Don't exit on initialization failure - allow system to try to start
+  }
+}
+
+// Start automatic initialization
+initializeSystem();
 
 // JWT secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
@@ -475,8 +525,8 @@ app.put('/api/businesses/:businessId/calendar-settings', authenticateToken, getB
     // 🚀 AUTOMATIC CALENDAR GENERATION: When hours change, regenerate calendar slots
     console.log(`📅 Business hours updated - regenerating calendar slots for business ${req.business.id}`);
     try {
-      const slotsGenerated = await generateCalendarSlots(req.business.id, 365);
-      console.log(`✅ Auto-generated ${slotsGenerated} calendar slots for full year`);
+      const slotsGenerated = await generateCalendarSlots(req.business.id, 400);
+      console.log(`✅ Auto-generated ${slotsGenerated} calendar slots for annual appointments (400+ days)`);
     } catch (calendarError) {
       console.error('⚠️ Calendar regeneration failed (non-critical):', calendarError);
       // Don't fail the business hours update if calendar generation fails
@@ -628,77 +678,10 @@ app.delete('/api/businesses/:businessId/service-types/:serviceId', authenticateT
 // Voice endpoint with business context - NEW SMART AI SYSTEM
 app.post('/voice/incoming/:businessId', handleVoiceCall);
 
-// Migration endpoint to fix calendar system for specific business
-app.post('/admin/migrate-calendar/:businessId', async (req, res) => {
-  try {
-    console.log('🔧 Running calendar database migration via HTTP...');
-    
-    const fs = require('fs');
-    const migrationSQL = fs.readFileSync('./fix-calendar-database.sql', 'utf8');
-    await pool.query(migrationSQL);
-    
-    console.log('✅ Database migration completed');
-    
-    // Generate real slots for specified business
-    const businessId = req.params.businessId;
-    const business = await pool.query('SELECT business_hours FROM businesses WHERE id = $1', [businessId]);
-    
-    if (business.rows.length > 0) {
-      const business_hours = business.rows[0].business_hours;
-      
-      // Clear existing slots
-      await pool.query('DELETE FROM calendar_slots WHERE business_id = $1', [businessId]);
-      
-      // Generate slots for next 365 days (full year)
-      const slots = [];
-      const now = new Date();
-      
-      for (let day = 0; day < 365; day++) {
-        const currentDate = new Date(now);
-        currentDate.setDate(now.getDate() + day);
-        
-        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-        const dayName = dayNames[currentDate.getDay()];
-        
-        const dayHours = business_hours[dayName];
-        if (!dayHours || !dayHours.enabled) continue;
-        
-        const [startHour] = dayHours.start.split(':').map(Number);
-        const [endHour] = dayHours.end.split(':').map(Number);
-        
-        for (let hour = startHour; hour < endHour; hour++) {
-          const slotStart = new Date(currentDate);
-          slotStart.setHours(hour, 0, 0, 0);
-          
-          if (day === 0 && slotStart <= now) continue;
-          
-          const slotEnd = new Date(slotStart.getTime() + 60 * 60000);
-          
-          await pool.query(
-            'INSERT INTO calendar_slots (business_id, slot_start, slot_end) VALUES ($1, $2, $3)',
-            [businessId, slotStart.toISOString(), slotEnd.toISOString()]
-          );
-          
-          slots.push({ start: slotStart.toISOString(), end: slotEnd.toISOString() });
-        }
-      }
-      
-      console.log(`✅ Generated ${slots.length} REAL calendar slots for Toms Garage`);
-      
-      res.json({
-        success: true,
-        message: `Calendar migration completed. Generated ${slots.length} real calendar slots.`,
-        sampleSlots: slots.slice(0, 5)
-      });
-    } else {
-      res.json({ success: false, message: 'Business not found' });
-    }
-    
-  } catch (error) {
-    console.error('❌ Migration error:', error);
-    res.json({ success: false, error: error.message });
-  }
-});
+// REMOVED: Manual admin endpoints - now handled by automatic systems
+// Calendar generation is now automatic via business-auto-repair system
+// Database migrations are now automatic via auto-migration-system
+// Webhook configuration is now automatic via webhook-auto-config system
 
 // OLD SARAH CODE COMMENTED OUT
 /*
@@ -2175,38 +2158,31 @@ class DatabaseCalendarManager {
 
   async getAvailableSlots(date, requestedDuration = 60) {
     try {
-      console.log(`🔍 Getting slots for business ${this.businessId} on ${date.toDateString()}`);
+      console.log(`🔍 Getting PRE-GENERATED slots for business ${this.businessId} on ${date.toDateString()}`);
       
-      // Get business hours
-      const businessResult = await pool.query(
-        'SELECT business_hours FROM businesses WHERE id = $1',
-        [this.businessId]
-      );
-
-      if (businessResult.rows.length === 0) {
-        console.log('❌ Business not found in database');
-        return [];
-      }
-
-      const businessHours = businessResult.rows[0].business_hours;
-      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-      const dayHours = businessHours[dayName];
-      
-      console.log(`📋 Day: ${dayName}, Hours:`, dayHours);
-
-      if (!dayHours || !dayHours.enabled) {
-        return [];
-      }
-
-      const [startHour, startMinute] = dayHours.start.split(':').map(Number);
-      const [endHour, endMinute] = dayHours.end.split(':').map(Number);
-
-      // Get existing appointments for the day
+      // Get pre-generated calendar slots for the specific date
       const dayStart = new Date(date);
       dayStart.setHours(0, 0, 0, 0);
       const dayEnd = new Date(date);
       dayEnd.setHours(23, 59, 59, 999);
 
+      const slotsResult = await pool.query(
+        `SELECT slot_start, slot_end 
+         FROM calendar_slots 
+         WHERE business_id = $1 
+         AND slot_start >= $2 AND slot_start <= $3
+         AND is_available = true 
+         AND is_blocked = false
+         ORDER BY slot_start`,
+        [this.businessId, dayStart.toISOString(), dayEnd.toISOString()]
+      );
+
+      if (slotsResult.rows.length === 0) {
+        console.log(`❌ No pre-generated slots found for ${date.toDateString()}`);
+        return [];
+      }
+
+      // Get existing appointments for the day to filter out conflicts
       const appointmentsResult = await pool.query(
         `SELECT start_time, end_time, duration_minutes 
          FROM appointments 
@@ -2215,53 +2191,42 @@ class DatabaseCalendarManager {
       );
 
       const existingAppointments = appointmentsResult.rows;
-      const slots = [];
+      const availableSlots = [];
 
-      // Generate potential slots
-      for (let hour = startHour; hour < endHour; hour++) {
-        for (let minute = 0; minute < 60; minute += 30) {
-          const slotStart = new Date(date);
-          slotStart.setHours(hour, minute, 0, 0);
+      // Filter slots that don't conflict with existing appointments
+      for (const slot of slotsResult.rows) {
+        const slotStart = new Date(slot.slot_start);
+        const travelBuffer = requestedDuration > 180 ? 15 : 30; // 15 min buffer for 3+ hour appointments
+        const totalDuration = requestedDuration + travelBuffer;
+        const slotEnd = new Date(slotStart.getTime() + totalDuration * 60000);
 
-          // Add travel buffer (reduce for long appointments like bookkeeping)
-          const travelBuffer = requestedDuration > 180 ? 15 : 30; // 15 min buffer for 3+ hour appointments
-          const totalDuration = requestedDuration + travelBuffer;
-          const slotEnd = new Date(slotStart.getTime() + totalDuration * 60000);
+        // Check conflicts with existing appointments
+        const hasConflict = existingAppointments.some(apt => {
+          const aptStart = new Date(apt.start_time);
+          const aptEnd = new Date(apt.end_time);
+          
+          // Add buffers
+          aptStart.setMinutes(aptStart.getMinutes() - 30);
+          aptEnd.setMinutes(aptEnd.getMinutes() + 30);
+          
+          return (slotStart < aptEnd && slotEnd > aptStart);
+        });
 
-          // Check if slot is within business hours
-          if (slotEnd.getHours() > endHour || 
-              (slotEnd.getHours() === endHour && slotEnd.getMinutes() > endMinute)) {
-            continue;
-          }
-
-          // Check conflicts with existing appointments
-          const hasConflict = existingAppointments.some(apt => {
-            const aptStart = new Date(apt.start_time);
-            const aptEnd = new Date(apt.end_time);
-            
-            // Add buffers
-            aptStart.setMinutes(aptStart.getMinutes() - 30);
-            aptEnd.setMinutes(aptEnd.getMinutes() + 30);
-            
-            return (slotStart < aptEnd && slotEnd > aptStart);
+        if (!hasConflict) {
+          availableSlots.push({
+            start: slotStart,
+            end: slotEnd,
+            display: slotStart.toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true
+            })
           });
-
-          if (!hasConflict) {
-            slots.push({
-              start: slotStart,
-              end: slotEnd,
-              display: slotStart.toLocaleTimeString('en-US', {
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: true
-              })
-            });
-          }
         }
       }
 
-      console.log(`✅ Generated ${slots.length} total slots, showing first 8`);
-      return slots.slice(0, 8);
+      console.log(`✅ Found ${availableSlots.length} available pre-generated slots, showing first 8`);
+      return availableSlots.slice(0, 8);
     } catch (error) {
       console.error('Error getting available slots:', error);
       return [];
@@ -3160,102 +3125,7 @@ async function sendNewAppointmentNotification(business, appointment) {
   }
 }
 
-// Admin endpoint to fix business data (temporary for debugging)
-app.post('/api/admin/fix-business/:businessId', async (req, res) => {
-  try {
-    const { businessId } = req.params;
-    const { businessType } = req.body;
-    
-    if (!businessType) {
-      return res.status(400).json({ error: 'Business type is required' });
-    }
-    
-    console.log(`🔧 Admin: Fixing business ${businessId} with type ${businessType}`);
-    
-    // Update business type
-    await pool.query(
-      'UPDATE businesses SET business_type = $1 WHERE id = $2',
-      [businessType, businessId]
-    );
-    
-    // Get existing services
-    const existingServices = await pool.query('SELECT * FROM service_types WHERE business_id = $1 ORDER BY created_at', [businessId]);
-    console.log(`📋 Found ${existingServices.rows.length} existing services`);
-    
-    // Define tax preparation services to replace plumbing ones
-    const taxServices = [
-      "Individual Tax Return - Complete individual tax return preparation and filing - $150",
-      "Business Tax Return - Small business tax return preparation and filing - $250", 
-      "Tax Consultation - Professional tax advice and planning session - $100",
-      "Bookkeeping Services - Monthly bookkeeping and financial record management - $75",
-      "Tax Amendment - Amend previous year tax returns - $125"
-    ];
-    
-    // Update existing services with tax preparation services
-    for (let i = 0; i < existingServices.rows.length && i < taxServices.length; i++) {
-      const service = existingServices.rows[i];
-      const [name, description, priceStr] = taxServices[i].split(' - ');
-      const base_rate = parseInt(priceStr.replace('$', ''));
-      
-      await pool.query(
-        `UPDATE service_types SET 
-         name = $1, 
-         service_key = $2, 
-         description = $3, 
-         base_rate = $4,
-         travel_buffer_minutes = 0,
-         is_emergency = false
-         WHERE id = $5`,
-        [
-          name,
-          name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, ''),
-          description,
-          base_rate,
-          service.id
-        ]
-      );
-      console.log(`✅ Updated service: ${name}`);
-    }
-    
-    // If we have extra tax services, add them as new services
-    if (taxServices.length > existingServices.rows.length) {
-      for (let i = existingServices.rows.length; i < taxServices.length; i++) {
-        const [name, description, priceStr] = taxServices[i].split(' - ');
-        const base_rate = parseInt(priceStr.replace('$', ''));
-        
-        await pool.query(
-          `INSERT INTO service_types (business_id, name, service_key, description, duration_minutes, base_rate, emergency_multiplier, travel_buffer_minutes, is_emergency, is_active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [
-            businessId,
-            name,
-            name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, ''),
-            description,
-            60, // default duration
-            base_rate,
-            1.0,
-            0,
-            false,
-            true
-          ]
-        );
-        console.log(`✅ Added new service: ${name}`);
-      }
-    }
-    
-    console.log(`✅ Successfully fixed business ${businessId} with ${businessType} services`);
-    
-    res.json({
-      success: true,
-      message: `Fixed business with ${businessType} services`,
-      updatedServices: taxServices.length
-    });
-    
-  } catch (error) {
-    console.error('Error fixing business:', error);
-    res.status(500).json({ error: 'Failed to fix business', details: error.message });
-  }
-});
+// REMOVED: Manual business fixing endpoint - now handled by business-auto-repair system
 
 // Debug endpoint to check what services are being returned
 app.get('/api/debug/services/:businessId', async (req, res) => {
@@ -3371,14 +3241,27 @@ app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, g
     
     console.log(`✅ ${req.business.name} onboarding complete with phone ${phoneNumberToPurchase}`);
     
+    // 🚀 AUTOMATIC WEBHOOK CONFIGURATION: Configure webhook for new business
+    console.log(`🔗 Configuring webhook for new business ${req.business.id}`);
+    try {
+      const webhookResult = await configureBusinessWebhook(req.business.id, purchasedNumber.sid);
+      if (webhookResult.success) {
+        console.log(`✅ Webhook configured: ${webhookResult.webhookUrl}`);
+      } else {
+        console.error(`⚠️ Webhook configuration failed: ${webhookResult.error}`);
+      }
+    } catch (webhookError) {
+      console.error('⚠️ Webhook configuration failed for new business (non-critical):', webhookError);
+    }
+    
     // 🚀 AUTOMATIC CALENDAR GENERATION: When business onboarding completes, generate calendar slots
     console.log(`📅 Onboarding complete - generating calendar slots for new business ${req.business.id}`);
     try {
       // Check if business has business_hours set
       const businessHoursResult = await pool.query('SELECT business_hours FROM businesses WHERE id = $1', [req.business.id]);
       if (businessHoursResult.rows.length > 0 && businessHoursResult.rows[0].business_hours) {
-        const slotsGenerated = await generateCalendarSlots(req.business.id, 365);
-        console.log(`✅ Auto-generated ${slotsGenerated} calendar slots for new business`);
+        const slotsGenerated = await generateCalendarSlots(req.business.id, 400);
+        console.log(`✅ Auto-generated ${slotsGenerated} calendar slots for new business (400+ days for annual appointments)`);
       } else {
         console.log(`⚠️ Business hours not set yet - calendar slots will be generated when hours are configured`);
       }
@@ -3405,43 +3288,42 @@ app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, g
   }
 });
 
-// Admin endpoint to fix Twilio webhook for the demo phone number
-app.post('/api/admin/fix-webhook', async (req, res) => {
+// REMOVED: Manual webhook fixing endpoint - now handled by webhook-auto-config system
+
+// Debug endpoint to check booking horizon
+app.get('/api/debug/booking-horizon/:businessId', async (req, res) => {
   try {
-    const phoneNumber = '+18445401735';
-    const businessId = '9e075387-b066-4b70-ac33-6bce880f73df';
+    const { businessId } = req.params;
     
-    // List all phone numbers to find the SID
-    const phoneNumbers = await twilioClient.incomingPhoneNumbers.list();
-    const targetNumber = phoneNumbers.find(num => num.phoneNumber === phoneNumber);
+    const result = await pool.query(`
+      SELECT 
+        COUNT(*) as total_slots,
+        MIN(slot_start) as earliest_slot,
+        MAX(slot_start) as latest_slot,
+        NOW() as current_time
+      FROM calendar_slots
+      WHERE business_id = $1
+      AND slot_start > NOW()
+    `, [businessId]);
     
-    if (!targetNumber) {
-      return res.status(404).json({ error: 'Phone number not found in Twilio' });
-    }
-    
-    console.log(`🔧 Updating webhook for ${phoneNumber} (${targetNumber.sid})`);
-    
-    // Update the webhook URL
-    const baseUrl = process.env.BASE_URL || 'https://nodejs-production-5e30.up.railway.app';
-    const newVoiceUrl = `${baseUrl}/voice/incoming/${businessId}`;
-    
-    await twilioClient.incomingPhoneNumbers(targetNumber.sid).update({
-      voiceUrl: newVoiceUrl,
-      voiceMethod: 'POST'
-    });
-    
-    console.log(`✅ Webhook updated to: ${newVoiceUrl}`);
+    const data = result.rows[0];
+    const currentTime = new Date(data.current_time);
+    const latestSlot = new Date(data.latest_slot);
+    const daysAhead = Math.ceil((latestSlot - currentTime) / (1000 * 60 * 60 * 24));
     
     res.json({
-      success: true,
-      phoneNumber: phoneNumber,
-      oldUrl: targetNumber.voiceUrl,
-      newUrl: newVoiceUrl,
-      message: 'Webhook updated successfully'
+      businessId,
+      totalFutureSlots: parseInt(data.total_slots),
+      earliestBookable: data.earliest_slot,
+      latestBookable: data.latest_slot,
+      bookingHorizonDays: daysAhead,
+      canBookFullYear: daysAhead >= 365,
+      canBookAnnualAppointments: daysAhead >= 400,
+      status: daysAhead >= 365 ? 'healthy' : 'needs_regeneration'
     });
     
   } catch (error) {
-    console.error('Error updating webhook:', error);
+    console.error('Error checking booking horizon:', error);
     res.status(500).json({ error: error.message });
   }
 });

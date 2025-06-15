@@ -640,6 +640,21 @@
         }
 
         async function launchDashboard() {
+            const launchButton = document.getElementById('launch-button');
+            
+            // Prevent multiple clicks - check if already processing
+            if (launchButton.disabled || launchButton.dataset.processing === 'true') {
+                console.log('🚫 Launch already in progress, ignoring click');
+                return;
+            }
+            
+            // Disable button and show loading state
+            launchButton.disabled = true;
+            launchButton.dataset.processing = 'true';
+            const originalText = launchButton.textContent;
+            launchButton.textContent = '🔄 Setting up your system...';
+            launchButton.classList.add('opacity-50', 'cursor-not-allowed');
+            
             try {
                 // Complete onboarding on the backend with selected phone number
                 const token = localStorage.getItem('token');
@@ -654,16 +669,21 @@
                 console.log(`📞 Area code: ${businessData.areaCode || 'Not specified'}`);
                 console.log(`📞 Business data:`, businessData);
                 
+                // Generate unique request ID for deduplication
+                const requestId = `onboarding-${business.id}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                
                 const response = await fetch(`/api/businesses/${business.id}/complete-onboarding`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'X-Request-ID': requestId
                     },
                     body: JSON.stringify({
                         selectedPhoneNumber: businessData.selectedPhoneNumber,
                         areaCode: businessData.areaCode,
-                        businessData: businessData
+                        businessData: businessData,
+                        requestId: requestId
                     })
                 });
                 
@@ -690,6 +710,13 @@
                 
             } catch (error) {
                 console.error('❌ Error completing onboarding:', error);
+                
+                // Re-enable button on error
+                launchButton.disabled = false;
+                launchButton.dataset.processing = 'false';
+                launchButton.textContent = originalText;
+                launchButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                
                 alert(`Error completing setup: ${error.message}\n\nPlease try again or contact support.`);
             }
         }
