@@ -552,6 +552,16 @@ function getVoiceSettings(personality, emotions, businessVoice = 'Polly.Joanna-N
   console.log(`🎤 Voice Settings - Input: ${businessVoice}, Using: ${voiceToUse}`);
   console.log(`🎤 Final TwiML voice setting: ${JSON.stringify({voice: voiceToUse, rate: '1.0'})}`);
   
+  // TEST: Try basic male voice if Matthew isn't working
+  if (voiceToUse === 'Polly.Matthew') {
+    console.log(`🧪 TESTING: Trying basic 'man' voice instead of 'Polly.Matthew'`);
+    const settings = {
+      voice: 'man', // Try Twilio's basic male voice
+      rate: '1.0'
+    };
+    return settings;
+  }
+  
   const settings = {
     voice: voiceToUse, // Use business-configured voice or Matthew fallback
     rate: '1.0'
