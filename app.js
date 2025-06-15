@@ -676,7 +676,9 @@ app.delete('/api/businesses/:businessId/service-types/:serviceId', authenticateT
     if (appointmentCount > 0) {
       return res.status(400).json({ 
         error: 'Cannot delete service type with existing appointments',
-        details: `This service has ${appointmentCount} scheduled appointment(s). Please cancel or move those appointments first.`
+        details: `This service has ${appointmentCount} scheduled appointment(s). Please cancel or move those appointments first.`,
+        appointmentCount: appointmentCount,
+        canBulkCancel: true
       });
     }
     
@@ -706,6 +708,90 @@ app.delete('/api/businesses/:businessId/service-types/:serviceId', authenticateT
       error: 'Failed to delete service type',
       details: error.message 
     });
+  }
+});
+
+// Admin endpoint to bulk cancel appointments for a service (to allow service deletion)
+app.post('/api/businesses/:businessId/service-types/:serviceId/bulk-cancel', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { serviceId } = req.params;
+    
+    console.log(`🔄 Bulk cancelling appointments for service: ${serviceId}`);
+    
+    // Get service info
+    const serviceResult = await pool.query(
+      'SELECT name FROM service_types WHERE id = $1 AND business_id = $2',
+      [serviceId, req.business.id]
+    );
+    
+    if (serviceResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+    
+    const serviceName = serviceResult.rows[0].name;
+    
+    // Find appointments to cancel
+    const appointmentsToCancel = await pool.query(
+      `SELECT id, customer_name, start_time 
+       FROM appointments 
+       WHERE service_type_id = $1 AND status IN ('scheduled', 'confirmed')`,
+      [serviceId]
+    );
+
+    if (appointmentsToCancel.rows.length === 0) {
+      return res.json({ 
+        success: true, 
+        message: 'No appointments to cancel',
+        cancelledCount: 0 
+      });
+    }
+
+    // Cancel all appointments
+    const cancelResult = await pool.query(
+      `UPDATE appointments 
+       SET status = 'cancelled', 
+           updated_at = CURRENT_TIMESTAMP
+       WHERE service_type_id = $1 AND status IN ('scheduled', 'confirmed')
+       RETURNING id`,
+      [serviceId]
+    );
+
+    // Free up calendar slots and clear notifications
+    for (const appointment of cancelResult.rows) {
+      try {
+        await pool.query(
+          `UPDATE calendar_slots 
+           SET is_booked = false, 
+               appointment_id = NULL,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE appointment_id = $1`,
+          [appointment.id]
+        );
+
+        await pool.query(
+          `UPDATE notifications 
+           SET read = true,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE business_id = $1 AND (data->>'appointment_id' = $2 OR data->>'appointmentId' = $2)`,
+          [req.business.id, appointment.id]
+        );
+      } catch (cleanupError) {
+        console.log(`⚠️ Cleanup error for appointment ${appointment.id}:`, cleanupError.message);
+      }
+    }
+
+    console.log(`✅ Bulk cancelled ${cancelResult.rows.length} appointments for service: ${serviceName}`);
+    
+    res.json({
+      success: true,
+      message: `Cancelled ${cancelResult.rows.length} appointments for ${serviceName}`,
+      cancelledCount: cancelResult.rows.length,
+      serviceName: serviceName
+    });
+    
+  } catch (error) {
+    console.error('❌ Bulk cancel error:', error);
+    res.status(500).json({ error: 'Failed to bulk cancel appointments' });
   }
 });
 

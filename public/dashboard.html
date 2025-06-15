@@ -1176,11 +1176,53 @@
                 } else {
                     const errorData = await response.json();
                     const errorMessage = errorData.details || errorData.error || 'Error deleting service';
-                    alert(`Cannot delete service: ${errorMessage}`);
+                    
+                    if (errorData.canBulkCancel && errorData.appointmentCount > 0) {
+                        const bulkCancel = confirm(`${errorMessage}\n\nWould you like to automatically cancel all ${errorData.appointmentCount} appointments for this service? This will allow you to delete the service.`);
+                        
+                        if (bulkCancel) {
+                            await bulkCancelServiceAppointments(serviceId);
+                            return; // bulkCancelServiceAppointments will handle the retry
+                        }
+                    } else {
+                        alert(`Cannot delete service: ${errorMessage}`);
+                    }
                 }
             } catch (error) {
                 console.error('Error deleting service:', error);
                 alert('Error deleting service: Network or server error');
+            }
+        }
+
+        // Bulk cancel all appointments for a service
+        async function bulkCancelServiceAppointments(serviceId) {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch(`/api/businesses/${businessData.id}/service-types/${serviceId}/bulk-cancel`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(`${result.message}\n\nNow attempting to delete the service...`);
+                    
+                    // Refresh data first
+                    renderRecentAppointments();
+                    loadDashboardData();
+                    renderCalendar();
+                    loadNotifications();
+                    
+                    // Now try to delete the service again
+                    await deleteService(serviceId);
+                    
+                } else {
+                    const errorData = await response.json();
+                    alert(`Failed to bulk cancel appointments: ${errorData.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Error bulk cancelling appointments:', error);
+                alert('Error bulk cancelling appointments: Network or server error');
             }
         }
 
