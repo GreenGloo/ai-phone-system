@@ -54,7 +54,7 @@ async function generateElevenLabsAudio(text, voiceId, options = {}) {
   
   const requestBody = {
     text: text,
-    model_id: "eleven_monolingual_v1",
+    model_id: "eleven_turbo_v2", // Faster model for real-time conversations
     voice_settings: {
       stability: options.stability || 0.5,
       similarity_boost: options.similarity_boost || 0.5,

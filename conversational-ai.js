@@ -20,7 +20,7 @@ async function callClaude(prompt) {
   
   const response = await axios.post('https://api.anthropic.com/v1/messages', {
     model: 'claude-3-5-sonnet-20241022',
-    max_tokens: 200,
+    max_tokens: 100, // Reduced from 200 for faster phone responses
     temperature: 0.7,
     messages: [
       {
@@ -797,7 +797,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
   
   console.log(`🗣️ Conversation history: ${conversation.conversationHistory.length} messages`);
   
-  // Get services for context
+  // Get services for context (already have business from parent function)
   const servicesResult = await pool.query(
     'SELECT id, name, duration_minutes, base_rate FROM service_types WHERE business_id = $1 AND is_active = true',
     [businessId]
@@ -921,14 +921,8 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     const enhancedResponse = enhanceNaturalSpeech(aiResponse.response, conversation.personality, conversation.emotionalState);
     console.log(`🎭 Enhanced speech: "${enhancedResponse}"`);
     
-    // REDUCED PAUSE: Prevent customers thinking AI hung up
-    const responseDelay = calculateResponseTiming(speech.length, conversation.emotionalState, conversation.personality);
-    console.log(`⏱️ Natural response delay: ${responseDelay}s`);
-    
-    // Keep pause very short to prevent hangup perception
-    if (responseDelay > 0.3) {
-      twiml.pause({ length: Math.min(0.3, responseDelay - 0.2) }); // Max 0.3 second pause
-    }
+    // NO ARTIFICIAL DELAYS: Immediate response for human-like interaction
+    console.log(`🚀 Immediate AI response - no artificial delays`);
     
     // Say the enhanced response with personality-matched voice settings
     await generateVoiceResponse(enhancedResponse, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml);
@@ -1108,7 +1102,7 @@ Respond in JSON:
           model: "gpt-4o-mini",
           messages: [{ role: "user", content: prompt }],
           temperature: 0.7,
-          max_tokens: 200,
+          max_tokens: 100, // Reduced from 200 for faster phone responses
           presence_penalty: 0.1,
           frequency_penalty: 0.1
         });
