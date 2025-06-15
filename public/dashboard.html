@@ -498,20 +498,25 @@
         let businessData = {};
         let stats = {};
         let notifications = []; // Global notifications array
-        let notificationsDismissed = localStorage.getItem('notificationsDismissed') === 'true'; // Track if user dismissed notifications
+        let notificationsDismissed = false; // Will be set based on business-specific storage
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', async function() {
             checkAuthentication();
+            await loadBusinessData();
             
-            // Hide notification badge if previously dismissed
-            if (notificationsDismissed) {
-                const badge = document.getElementById('notification-badge');
-                badge.classList.add('hidden');
-                console.log('📧 Notifications were previously dismissed - badge hidden');
+            // Check business-specific notification dismissal after business data loads
+            if (businessData.id) {
+                const businessKey = `notificationsDismissed_${businessData.id}`;
+                notificationsDismissed = localStorage.getItem(businessKey) === 'true';
+                
+                if (notificationsDismissed) {
+                    const badge = document.getElementById('notification-badge');
+                    badge.classList.add('hidden');
+                    console.log(`📧 Notifications were previously dismissed for business ${businessData.id} - badge hidden`);
+                }
             }
             
-            await loadBusinessData();
             loadDashboardData();
             renderCalendar();
             
@@ -948,9 +953,13 @@
         
         // Simple version that just updates the badge without complex API calls
         function markAllNotificationsAsReadQuietly() {
-            // Set global flag to prevent reloading and persist in localStorage
+            // Set global flag to prevent reloading and persist with business-specific key
             notificationsDismissed = true;
-            localStorage.setItem('notificationsDismissed', 'true');
+            if (businessData.id) {
+                const businessKey = `notificationsDismissed_${businessData.id}`;
+                localStorage.setItem(businessKey, 'true');
+                console.log(`📧 Notifications dismissed for business ${businessData.id} - will persist permanently`);
+            }
             
             // Update local state
             notifications.forEach(notif => notif.read = true);
@@ -969,7 +978,7 @@
                 el.onclick = null;
             });
             
-            console.log('📧 Marked all notifications as read (persisted) - preventing future reloads');
+            console.log('📧 Marked all notifications as read (business-specific persistence) - preventing future reloads');
         }
 
         async function loadNotifications() {
@@ -1498,7 +1507,7 @@
             localStorage.removeItem('user');
             localStorage.removeItem('business');
             localStorage.removeItem('onboarding_complete');
-            localStorage.removeItem('notificationsDismissed'); // Clear notification state
+            // Note: notificationsDismissed is business-specific and persists across logins
             window.location.href = '/';
         }
 
