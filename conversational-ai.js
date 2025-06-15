@@ -1032,18 +1032,19 @@ BOOKING EXAMPLES:
 Customer: "oil change" → action: "continue", offer specific times like "I can get you in tomorrow at 4:00 PM or Sunday at 10:00 AM"
 Customer: "yes" or "4 PM works" → action: "book_appointment" with exact appointmentDatetime like "2025-06-14T16:00:00.000Z"
 
-RESPONSE FORMAT (JSON only):
+RESPONSE FORMAT - MUST BE VALID JSON ONLY (NO EXPLANATIONS):
 {
   "response": "Natural, helpful response that collects name and/or offers services/times",
-  "action": "continue" or "book_appointment" or "list_services",
+  "action": "continue",
   "data": {
-    "customerName": "John" (if collected),
+    "customerName": "John",
     "service": "oil change",
     "suggestedTime": "tomorrow 4:00 PM", 
-    "appointmentDatetime": "2025-06-14T16:00:00.000Z",
-    "shouldListServices": true (if service unclear)
+    "appointmentDatetime": "2025-06-14T16:00:00.000Z"
   }
-}`;
+}
+
+IMPORTANT: Return ONLY the JSON object above. No extra text, no explanations, no markdown formatting.`;
 
   const openaiPrompt = `You are a booking assistant for ${business.name}, an automotive garage.
 
@@ -1070,18 +1071,19 @@ Your response should:
 - Offer specific booking times
 - Book the appointment when confirmed
 
-Respond in JSON:
+RESPONSE FORMAT - MUST BE VALID JSON ONLY:
 {
   "response": "your reply",
-  "action": "continue" or "book_appointment" or "list_services", 
+  "action": "continue",
   "data": {
-    "customerName": "John" (if collected),
+    "customerName": "John",
     "service": "oil change",
     "suggestedTime": "today 2:00 PM",
-    "appointmentDatetime": "2025-06-13T14:00:00Z",
-    "shouldListServices": true (if service unclear)
+    "appointmentDatetime": "2025-06-13T14:00:00Z"
   }
-}`;
+}
+
+Return ONLY valid JSON. No extra text or explanations.`;
 
   const prompt = USE_CLAUDE ? claudePrompt : openaiPrompt;
 
@@ -1129,16 +1131,28 @@ Respond in JSON:
       response = JSON.parse(aiContent);
     } catch (parseError) {
       // Fallback if JSON parsing fails
-      console.warn('JSON parse failed, using fallback response');
+      console.warn('JSON parse failed, trying to extract response field');
       console.warn('Raw AI content:', aiContent);
       
-      // Clean up the response and ensure it's complete
+      // Try to extract just the response field from malformed JSON
       let cleanedResponse = aiContent.replace(/```json|```/g, '').trim();
       
-      // If response seems truncated or too short, use a proper fallback
-      if (cleanedResponse.length < 10 || cleanedResponse.endsWith('...') || cleanedResponse.includes('qu...')) {
-        cleanedResponse = "I'd be happy to help you. What service do you need today?";
-        console.warn('Response was truncated, using complete fallback');
+      // Look for "response": "text" pattern
+      const responseMatch = cleanedResponse.match(/"response":\s*"([^"]+)"/);
+      if (responseMatch) {
+        cleanedResponse = responseMatch[1];
+        console.log('Extracted response from malformed JSON:', cleanedResponse);
+      } else {
+        // If we can't extract the response field, check if it's raw text
+        if (cleanedResponse.includes('"action"') || cleanedResponse.includes('"data"') || cleanedResponse.includes('get customer name')) {
+          // This looks like internal JSON structure - use fallback
+          cleanedResponse = "I'd be happy to help you. What service do you need today?";
+          console.warn('AI returned internal structure, using fallback');
+        } else if (cleanedResponse.length < 10 || cleanedResponse.endsWith('...') || cleanedResponse.includes('qu...')) {
+          // Response seems truncated
+          cleanedResponse = "I'd be happy to help you. What service do you need today?";
+          console.warn('Response was truncated, using complete fallback');
+        }
       }
       
       response = {
