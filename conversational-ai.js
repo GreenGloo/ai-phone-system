@@ -193,7 +193,7 @@ async function getAvailableSlots(businessId) {
       AND is_blocked = false
       AND slot_start >= NOW()
       ORDER BY slot_start
-      LIMIT 5000
+      LIMIT 2000
     `, [businessId]);
     
     if (slotsResult.rows.length === 0) {
@@ -255,6 +255,8 @@ async function getAvailableSlots(businessId) {
     
   } catch (error) {
     console.error('❌ Error getting calendar slots:', error);
+    console.error('❌ Error details:', error.message);
+    console.error('❌ Error stack:', error.stack);
     return [];
   }
 }
