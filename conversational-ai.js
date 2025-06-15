@@ -434,6 +434,9 @@ async function handleVoiceCall(req, res) {
 }
 
 async function handleInitialCall(res, business, callSid, from, businessId) {
+  // DEBUG: Log business voice configuration
+  console.log(`🏢 Business Voice Config - ID: ${business.ai_voice_id}, Personality: ${business.ai_personality}`);
+  
   // Choose personality based on business configuration
   const personality = PERSONALITY_PROFILES[business.ai_personality] || PERSONALITY_PROFILES.helpful;
   
@@ -542,6 +545,9 @@ function enhanceNaturalSpeech(response, personality, emotions) {
 
 // Voice Settings - Matches voice characteristics to personality and emotions
 function getVoiceSettings(personality, emotions, businessVoice = 'alice') {
+  // DEBUG: Log voice selection for troubleshooting
+  console.log(`🎤 Voice Settings - Input: ${businessVoice}, Using: ${businessVoice}`);
+  
   const settings = {
     voice: businessVoice, // Use business-configured voice
     rate: '1.0'
@@ -708,6 +714,9 @@ function generateSystemErrorMessage(personality, emotions) {
 }
 
 async function holdConversation(res, business, callSid, from, speech, businessId) {
+  // DEBUG: Log business voice configuration for ongoing conversation
+  console.log(`🏢 Conversation Voice Config - ID: ${business.ai_voice_id}, Personality: ${business.ai_personality}`);
+  
   // Get conversation from database - SECURE: With business isolation
   let conversation = await getConversation(callSid, businessId);
   
