@@ -682,6 +682,26 @@ app.delete('/api/businesses/:businessId/service-types/:serviceId', authenticateT
       });
     }
     
+    // ADDITIONAL CHECK: Clean up any cancelled appointments that still reference this service
+    console.log(`🧹 Cleaning up cancelled appointments that still reference service ${serviceId}`);
+    try {
+      const cleanupResult = await pool.query(
+        `UPDATE appointments 
+         SET service_type_id = NULL, 
+             updated_at = CURRENT_TIMESTAMP
+         WHERE service_type_id = $1 
+         AND status IN ('cancelled', 'completed', 'no_show')
+         RETURNING id`,
+        [serviceId]
+      );
+      
+      if (cleanupResult.rows.length > 0) {
+        console.log(`🧹 Cleaned up ${cleanupResult.rows.length} cancelled appointments to allow service deletion`);
+      }
+    } catch (cleanupError) {
+      console.error('⚠️ Error cleaning up cancelled appointments:', cleanupError.message);
+    }
+    
     // Proceed with deletion
     const result = await pool.query(
       'DELETE FROM service_types WHERE id = $1 AND business_id = $2 RETURNING *',
