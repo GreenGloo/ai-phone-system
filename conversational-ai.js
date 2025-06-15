@@ -946,7 +946,9 @@ BOOKING RANGE: We have appointments available from ${todayStr} through ${new Dat
 
 CRITICAL INSTRUCTIONS:
 • ALWAYS collect customer name early in conversation if not already collected
-• Speech recognition errors: "CID" = "oil change", "old change" = "oil change"
+• PRESERVE CONTEXT: If customer already selected a service, NEVER ask for service again - just find times for that service
+• When customer asks for "different day" or "next Tuesday", keep their previously selected service
+• Speech recognition errors: "CID" = "oil change", "old change" = "oil change"  
 • If customer requests a service that doesn't clearly match our available services, politely ask what they need and offer to list our services
 • When listing services, present them in a natural, conversational way
 • ANY clear service mention = immediately offer specific times and push for booking

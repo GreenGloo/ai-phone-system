@@ -50,6 +50,7 @@ async function generateCalendarSlots(businessId, daysAhead = 365) {
       // Generate slots every 30 minutes during business hours
       for (let hour = startHour; hour < endHour || (hour === endHour && 0 < endMinute); hour++) {
         for (let minute = 0; minute < 60; minute += 30) {
+          // Create slot in business timezone (Eastern Time)
           const slotStart = new Date(currentDate);
           slotStart.setHours(hour, minute, 0, 0);
           
