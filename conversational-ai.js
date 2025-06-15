@@ -1054,6 +1054,20 @@ async function getHumanLikeResponse(speech, conversation, business, services, av
   const customerName = conversation.customerInfo?.name || null;
   const hasCustomerName = !!customerName;
   
+  // CONTEXT PRESERVATION: Extract previously discussed service from conversation history
+  let previousService = null;
+  const allMessages = conversation.conversationHistory || [];
+  
+  // Look for service context in recent conversation data
+  for (let i = allMessages.length - 1; i >= 0; i--) {
+    const msg = allMessages[i];
+    if (msg.data?.service) {
+      previousService = msg.data.service;
+      console.log(`🔄 Found previous service context: ${previousService}`);
+      break;
+    }
+  }
+  
   // Create service list for when needed
   const servicesList = services.map(s => s.name).join(', ');
   
@@ -1067,12 +1081,13 @@ async function getHumanLikeResponse(speech, conversation, business, services, av
 CUSTOMER: "${speech}"
 NAME: ${hasCustomerName ? customerName : 'NEEDED'}
 HISTORY: ${recentHistory}
+PREVIOUS SERVICE: ${previousService || 'NONE - ASK WHAT THEY NEED'}
 SERVICES: ${servicesList}
 SLOTS: ${availableSlots}
 
 RULES:
 • Collect name if missing
-• Keep service context across turns
+• CRITICAL: If PREVIOUS SERVICE exists, KEEP using it - don't ask for service again
 • "CID"/"old change" = oil change
 • Service mentioned = offer specific times from slots
 • When customer confirms time ("yes"/"okay"/"that works") = use action "book_appointment"
@@ -1097,6 +1112,7 @@ RESPONSE FORMAT - MUST BE VALID JSON ONLY:
 
 Customer said: "${speech}"
 Customer name: ${hasCustomerName ? customerName : 'NOT COLLECTED YET'}
+Previous service discussed: ${previousService || 'NONE'}
 
 Conversation history:
 ${recentHistory}
@@ -1106,7 +1122,7 @@ Available times: ${availableSlots}
 
 BOOKING RULES:
 1. Always collect customer name early if not already collected
-2. If customer requests unclear service, list available services naturally
+2. CRITICAL: If previous service exists, keep using it - don't change services
 3. If customer mentions ANY clear service need -> offer specific times and book immediately
 4. If customer says "yes", "sounds good", "okay" -> book the appointment  
 5. Assume unclear speech like "CID" means "oil change" 
