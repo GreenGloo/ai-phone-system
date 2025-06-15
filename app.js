@@ -746,10 +746,11 @@ app.post('/api/businesses/:businessId/service-types/:serviceId/bulk-cancel', aut
       });
     }
 
-    // Cancel all appointments
+    // Cancel all appointments and remove service reference to allow service deletion
     const cancelResult = await pool.query(
       `UPDATE appointments 
        SET status = 'cancelled', 
+           service_type_id = NULL,
            updated_at = CURRENT_TIMESTAMP
        WHERE service_type_id = $1 AND status IN ('scheduled', 'confirmed')
        RETURNING id`,
@@ -3804,14 +3805,21 @@ app.put('/api/businesses/:businessId/appointments/:appointmentId', authenticateT
       return res.status(400).json({ error: 'Invalid appointment status' });
     }
     
-    const result = await pool.query(
-      `UPDATE appointments SET 
-        status = $1,
-        updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2 AND business_id = $3
-       RETURNING *`,
-      [status, appointmentId, req.business.id]
-    );
+    // For cancelled appointments, also remove service reference to allow service deletion
+    const updateQuery = status === 'cancelled' 
+      ? `UPDATE appointments SET 
+          status = $1,
+          service_type_id = NULL,
+          updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2 AND business_id = $3
+         RETURNING *`
+      : `UPDATE appointments SET 
+          status = $1,
+          updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2 AND business_id = $3
+         RETURNING *`;
+
+    const result = await pool.query(updateQuery, [status, appointmentId, req.business.id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Appointment not found' });
