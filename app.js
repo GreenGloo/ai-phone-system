@@ -1062,6 +1062,76 @@ app.put('/business/:businessId/settings', authenticateToken, getBusinessContext,
   }
 });
 
+// Sample data endpoint for mobile app demo
+app.post('/create-sample-appointments', async (req, res) => {
+  try {
+    const { businessId } = req.body;
+    
+    const sampleAppointments = [
+      {
+        customer_name: 'John Smith',
+        phone_number: '+1234567890',
+        service_name: 'Haircut',
+        appointment_time: new Date(Date.now() + 24*60*60*1000), // Tomorrow
+        status: 'confirmed',
+        notes: 'Regular customer, prefers short cut',
+        service_price: 25.00
+      },
+      {
+        customer_name: 'Sarah Johnson',
+        phone_number: '+1234567891',
+        service_name: 'Color & Style',
+        appointment_time: new Date(Date.now() + 2*24*60*60*1000), // Day after tomorrow
+        status: 'confirmed',
+        notes: 'First time customer',
+        service_price: 85.00
+      },
+      {
+        customer_name: 'Mike Wilson',
+        phone_number: '+1234567892',
+        service_name: 'Beard Trim',
+        appointment_time: new Date(Date.now() - 24*60*60*1000), // Yesterday
+        status: 'completed',
+        notes: 'Paid cash',
+        service_price: 15.00
+      },
+      {
+        customer_name: 'Lisa Davis',
+        phone_number: '+1234567893',
+        service_name: 'Manicure',
+        appointment_time: new Date(Date.now() - 2*24*60*60*1000), // Two days ago
+        status: 'completed',
+        notes: 'Regular customer',
+        service_price: 30.00
+      },
+      {
+        customer_name: 'Tom Brown',
+        phone_number: '+1234567894',
+        service_name: 'Haircut',
+        appointment_time: new Date(Date.now() + 3*24*60*60*1000), // Three days from now
+        status: 'pending',
+        notes: 'Needs confirmation',
+        service_price: 25.00
+      }
+    ];
+
+    for (const appointment of sampleAppointments) {
+      await pool.query(
+        `INSERT INTO appointments (business_id, customer_name, phone_number, service_name, appointment_time, status, notes, service_price, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+         ON CONFLICT DO NOTHING`,
+        [businessId, appointment.customer_name, appointment.phone_number, appointment.service_name, 
+         appointment.appointment_time, appointment.status, appointment.notes, appointment.service_price]
+      );
+    }
+
+    res.json({ success: true, message: 'Sample appointments created' });
+  } catch (error) {
+    console.error('Error creating sample appointments:', error);
+    res.status(500).json({ error: 'Failed to create sample appointments' });
+  }
+});
+
 // OLD SARAH CODE COMMENTED OUT
 /*
     // Log the call
