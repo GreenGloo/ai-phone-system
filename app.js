@@ -1093,6 +1093,10 @@ app.post('/create-sample-appointments', async (req, res) => {
   try {
     const { businessId } = req.body;
     
+    if (!businessId) {
+      return res.status(400).json({ error: 'Business ID is required' });
+    }
+    
     // First ensure appointments table exists
     await pool.query(`
       CREATE TABLE IF NOT EXISTS appointments (
@@ -1109,6 +1113,9 @@ app.post('/create-sample-appointments', async (req, res) => {
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    
+    // Clear existing sample data first
+    await pool.query('DELETE FROM appointments WHERE business_id = $1', [businessId]);
     
     const sampleAppointments = [
       {
