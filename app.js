@@ -4569,6 +4569,61 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Create sample appointment data for mobile app testing
+app.post('/create-sample-data', async (req, res) => {
+  try {
+    const { businessId } = req.body;
+    
+    // Create sample appointments
+    const sampleAppointments = [
+      {
+        businessId,
+        customerName: 'John Smith',
+        phoneNumber: '+1234567890',
+        serviceName: 'Oil Change',
+        appointmentTime: new Date(Date.now() + 24 * 60 * 60 * 1000), // Tomorrow
+        status: 'confirmed',
+        servicePrice: 75.00,
+        notes: 'Regular oil change service'
+      },
+      {
+        businessId,
+        customerName: 'Sarah Johnson',
+        phoneNumber: '+1234567891',
+        serviceName: 'Brake Inspection',
+        appointmentTime: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // Day after tomorrow
+        status: 'pending',
+        servicePrice: 120.00,
+        notes: 'Customer reported squeaking noise'
+      },
+      {
+        businessId,
+        customerName: 'Mike Wilson',
+        phoneNumber: '+1234567892',
+        serviceName: 'Tire Rotation',
+        appointmentTime: new Date(Date.now() - 24 * 60 * 60 * 1000), // Yesterday
+        status: 'completed',
+        servicePrice: 50.00,
+        notes: 'Routine tire rotation completed'
+      }
+    ];
+
+    for (const apt of sampleAppointments) {
+      await pool.query(
+        `INSERT INTO appointments (business_id, customer_name, phone_number, service_name, appointment_time, status, service_price, notes, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+        [apt.businessId, apt.customerName, apt.phoneNumber, apt.serviceName, apt.appointmentTime, apt.status, apt.servicePrice, apt.notes]
+      );
+    }
+
+    console.log(`✅ Created ${sampleAppointments.length} sample appointments for business ${businessId}`);
+    res.json({ success: true, message: `Created ${sampleAppointments.length} sample appointments` });
+  } catch (error) {
+    console.error('Error creating sample data:', error);
+    res.status(500).json({ error: 'Failed to create sample data' });
+  }
+});
+
 // Catch-all for API routes to debug 404s
 app.use('/api/*', (req, res) => {
   console.log(`❌ 404 API Route not found: ${req.method} ${req.originalUrl}`);
