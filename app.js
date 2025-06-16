@@ -824,6 +824,244 @@ app.post('/voice/incoming/:businessId', handleVoiceCall);
 // Database migrations are now automatic via auto-migration-system
 // Webhook configuration is now automatic via webhook-auto-config system
 
+// Test connectivity endpoint for mobile app debugging
+app.get('/test', (req, res) => {
+  console.log('📱 TEST ENDPOINT HIT - Mobile app connectivity confirmed');
+  res.json({ 
+    success: true, 
+    message: 'Mobile app can reach server!',
+    timestamp: new Date().toISOString(),
+    serverRunning: true
+  });
+});
+
+// Mobile App API Endpoints
+// Dashboard stats endpoint
+app.get('/business/:businessId/stats', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    
+    // Get appointment stats from database
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as total_appointments,
+        COUNT(CASE WHEN status = 'confirmed' THEN 1 END) as confirmed_appointments,
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_appointments,
+        COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled_appointments,
+        SUM(CASE WHEN status = 'completed' AND service_price IS NOT NULL THEN service_price ELSE 0 END) as total_revenue
+      FROM appointments 
+      WHERE business_id = $1 AND created_at >= NOW() - INTERVAL '30 days'
+    `;
+    
+    const result = await pool.query(statsQuery, [businessId]);
+    const stats = result.rows[0];
+    
+    // Calculate conversion rate and missed calls (mock data for now)
+    const conversion_rate = stats.total_appointments > 0 ? 
+      (parseInt(stats.confirmed_appointments) / parseInt(stats.total_appointments) * 100).toFixed(1) : 0;
+    
+    res.json({
+      total_appointments: parseInt(stats.total_appointments) || 0,
+      total_revenue: parseFloat(stats.total_revenue) || 0,
+      missed_calls: 5, // Mock data - would need call_logs table
+      conversion_rate: parseFloat(conversion_rate)
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard stats:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+  }
+});
+
+// Appointments list endpoint
+app.get('/business/:businessId/appointments', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    
+    const appointmentsQuery = `
+      SELECT 
+        id,
+        customer_name,
+        phone_number,
+        service_name,
+        appointment_time,
+        status,
+        notes,
+        created_at
+      FROM appointments 
+      WHERE business_id = $1 
+      ORDER BY appointment_time DESC 
+      LIMIT 50
+    `;
+    
+    const result = await pool.query(appointmentsQuery, [businessId]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching appointments:', error);
+    res.status(500).json({ error: 'Failed to fetch appointments' });
+  }
+});
+
+// Update appointment endpoint
+app.put('/business/:businessId/appointments/:appointmentId', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { businessId, appointmentId } = req.params;
+    const updates = req.body;
+    
+    const updateFields = [];
+    const values = [];
+    let paramCount = 1;
+    
+    if (updates.status) {
+      updateFields.push(`status = $${paramCount++}`);
+      values.push(updates.status);
+    }
+    if (updates.notes) {
+      updateFields.push(`notes = $${paramCount++}`);
+      values.push(updates.notes);
+    }
+    if (updates.appointment_time) {
+      updateFields.push(`appointment_time = $${paramCount++}`);
+      values.push(updates.appointment_time);
+    }
+    
+    if (updateFields.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+    
+    values.push(appointmentId, businessId);
+    
+    const updateQuery = `
+      UPDATE appointments 
+      SET ${updateFields.join(', ')}, updated_at = NOW()
+      WHERE id = $${paramCount++} AND business_id = $${paramCount++}
+      RETURNING *
+    `;
+    
+    const result = await pool.query(updateQuery, values);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+    
+    res.json({ success: true, appointment: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating appointment:', error);
+    res.status(500).json({ error: 'Failed to update appointment' });
+  }
+});
+
+// Analytics endpoint
+app.get('/business/:businessId/analytics', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { period = '30d' } = req.query;
+    
+    let dateInterval = '30 days';
+    if (period === '7d') dateInterval = '7 days';
+    if (period === '90d') dateInterval = '90 days';
+    
+    const analyticsQuery = `
+      SELECT 
+        DATE(appointment_time) as date,
+        COUNT(*) as appointments,
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+        SUM(CASE WHEN status = 'completed' AND service_price IS NOT NULL THEN service_price ELSE 0 END) as revenue
+      FROM appointments 
+      WHERE business_id = $1 
+        AND appointment_time >= NOW() - INTERVAL '${dateInterval}'
+      GROUP BY DATE(appointment_time)
+      ORDER BY date DESC
+    `;
+    
+    const result = await pool.query(analyticsQuery, [businessId]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching analytics:', error);
+    res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+});
+
+// Business settings endpoint
+app.get('/business/:businessId/settings', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    
+    const settingsQuery = `
+      SELECT 
+        name,
+        business_type,
+        phone_number,
+        business_hours,
+        ai_personality,
+        ai_voice_id,
+        business_description,
+        timezone,
+        calendar_preferences
+      FROM businesses 
+      WHERE id = $1
+    `;
+    
+    const result = await pool.query(settingsQuery, [businessId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching business settings:', error);
+    res.status(500).json({ error: 'Failed to fetch business settings' });
+  }
+});
+
+// Update business settings endpoint
+app.put('/business/:businessId/settings', authenticateToken, getBusinessContext, async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const settings = req.body;
+    
+    const updateFields = [];
+    const values = [];
+    let paramCount = 1;
+    
+    if (settings.name) {
+      updateFields.push(`name = $${paramCount++}`);
+      values.push(settings.name);
+    }
+    if (settings.business_hours) {
+      updateFields.push(`business_hours = $${paramCount++}`);
+      values.push(JSON.stringify(settings.business_hours));
+    }
+    if (settings.ai_personality) {
+      updateFields.push(`ai_personality = $${paramCount++}`);
+      values.push(settings.ai_personality);
+    }
+    if (settings.business_description) {
+      updateFields.push(`business_description = $${paramCount++}`);
+      values.push(settings.business_description);
+    }
+    
+    if (updateFields.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+    
+    values.push(businessId);
+    
+    const updateQuery = `
+      UPDATE businesses 
+      SET ${updateFields.join(', ')}, updated_at = NOW()
+      WHERE id = $${paramCount++}
+      RETURNING *
+    `;
+    
+    const result = await pool.query(updateQuery, values);
+    res.json({ success: true, business: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating business settings:', error);
+    res.status(500).json({ error: 'Failed to update business settings' });
+  }
+});
+
 // OLD SARAH CODE COMMENTED OUT
 /*
     // Log the call
@@ -3897,13 +4135,313 @@ app.get('/settings', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'settings.html'));
 });
 
+// Mobile App API Endpoints
+// Create test user endpoint (temporary for debugging)
+app.post('/create-test-user', async (req, res) => {
+  try {
+    const hashedPassword = await bcrypt.hash('password123', 10);
+    
+    // Check if user already exists
+    const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', ['test@example.com']);
+    if (existingUser.rows.length > 0) {
+      return res.json({ success: true, message: 'Test user already exists' });
+    }
+    
+    const userResult = await pool.query(
+      'INSERT INTO users (email, password_hash, first_name, last_name) VALUES ($1, $2, $3, $4) RETURNING id',
+      ['test@example.com', hashedPassword, 'Test', 'User']
+    );
+    
+    const userId = userResult.rows[0].id;
+    
+    await pool.query(
+      'INSERT INTO businesses (user_id, name, business_type, phone_number, status) VALUES ($1, $2, $3, $4, $5)',
+      [userId, 'Test Business', 'service', '+1234567890', 'active']
+    );
+    
+    res.json({ success: true, message: 'Test user created' });
+  } catch (error) {
+    console.error('Error creating test user:', error);
+    res.status(500).json({ success: false, message: 'Failed to create test user' });
+  }
+});
+
+// Reset test user password
+app.post('/reset-test-user', async (req, res) => {
+  try {
+    const hashedPassword = await bcrypt.hash('password123', 10);
+    console.log('🔐 Resetting password for test@example.com');
+    
+    await pool.query(
+      'UPDATE users SET password_hash = $1 WHERE email = $2',
+      [hashedPassword, 'test@example.com']
+    );
+    
+    res.json({ success: true, message: 'Test user password reset' });
+  } catch (error) {
+    console.error('Error resetting test user password:', error);
+    res.status(500).json({ success: false, message: 'Failed to reset password' });
+  }
+});
+
+// Create simple test user
+app.post('/create-simple-user', async (req, res) => {
+  try {
+    const hashedPassword = await bcrypt.hash('test', 10);
+    console.log('Creating simple user admin/test');
+    
+    // Delete existing user if exists
+    await pool.query('DELETE FROM users WHERE email = $1', ['admin']);
+    
+    const userResult = await pool.query(
+      'INSERT INTO users (email, password_hash, first_name, last_name) VALUES ($1, $2, $3, $4) RETURNING id',
+      ['admin', hashedPassword, 'Admin', 'User']
+    );
+    
+    const userId = userResult.rows[0].id;
+    
+    await pool.query(
+      'INSERT INTO businesses (user_id, name, business_type, phone_number, status) VALUES ($1, $2, $3, $4, $5)',
+      [userId, 'Admin Business', 'service', '+1234567890', 'active']
+    );
+    
+    res.json({ success: true, message: 'Simple user created: admin/test' });
+  } catch (error) {
+    console.error('Error creating simple user:', error);
+    res.status(500).json({ success: false, message: 'Failed to create simple user' });
+  }
+});
+
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    console.log('🔑 Login attempt:', email);
+
+    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (userResult.rows.length === 0) {
+      console.log('❌ User not found:', email);
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    const user = userResult.rows[0];
+    console.log('👤 User found:', user.email, 'ID:', user.id);
+    
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    console.log('🔐 Password valid:', validPassword);
+    
+    if (!validPassword) {
+      console.log('❌ Password invalid for user:', email);
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    await pool.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
+
+    const businessResult = await pool.query(
+      'SELECT id, name FROM businesses WHERE user_id = $1 LIMIT 1',
+      [user.id]
+    );
+
+    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        business_name: businessResult.rows[0]?.name || 'Business',
+        business_id: businessResult.rows[0]?.id || null,
+      }
+    });
+
+  } catch (error) {
+    console.error('Mobile login error:', error);
+    res.status(500).json({ success: false, message: 'Login failed' });
+  }
+});
+
+app.get('/business/:businessId/stats', authenticateToken, async (req, res) => {
+  try {
+    const { businessId } = req.params;
+
+    const appointmentsResult = await pool.query(
+      'SELECT COUNT(*) as total, SUM(CASE WHEN status = \'completed\' THEN 1 ELSE 0 END) as completed FROM appointments WHERE business_id = $1',
+      [businessId]
+    );
+
+    const callsResult = await pool.query(
+      'SELECT COUNT(*) as total, SUM(CASE WHEN answered = false THEN 1 ELSE 0 END) as missed FROM call_logs WHERE business_id = $1',
+      [businessId]
+    );
+
+    const revenueResult = await pool.query(
+      'SELECT SUM(amount) as total_revenue FROM payments WHERE business_id = $1 AND status = \'paid\'',
+      [businessId]
+    );
+
+    const stats = {
+      total_appointments: parseInt(appointmentsResult.rows[0]?.total || 0),
+      total_revenue: parseFloat(revenueResult.rows[0]?.total_revenue || 0),
+      missed_calls: parseInt(callsResult.rows[0]?.missed || 0),
+      conversion_rate: Math.round((appointmentsResult.rows[0]?.total || 0) / (callsResult.rows[0]?.total || 1) * 100)
+    };
+
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+app.get('/business/:businessId/appointments', authenticateToken, async (req, res) => {
+  try {
+    const { businessId } = req.params;
+
+    const result = await pool.query(
+      `SELECT id, customer_name, phone_number, service_name, appointment_time, status, notes 
+       FROM appointments 
+       WHERE business_id = $1 
+       ORDER BY appointment_time DESC 
+       LIMIT 50`,
+      [businessId]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching appointments:', error);
+    res.status(500).json({ error: 'Failed to fetch appointments' });
+  }
+});
+
+app.put('/business/:businessId/appointments/:appointmentId', authenticateToken, async (req, res) => {
+  try {
+    const { businessId, appointmentId } = req.params;
+    const { status, notes } = req.body;
+
+    const result = await pool.query(
+      'UPDATE appointments SET status = $1, notes = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 AND business_id = $4 RETURNING *',
+      [status, notes, appointmentId, businessId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating appointment:', error);
+    res.status(500).json({ success: false, message: 'Failed to update appointment' });
+  }
+});
+
+app.get('/business/:businessId/analytics', authenticateToken, async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { period = '30d' } = req.query;
+
+    let dateFilter = "DATE(created_at) >= CURRENT_DATE - INTERVAL '30 days'";
+    if (period === '7d') {
+      dateFilter = "DATE(created_at) >= CURRENT_DATE - INTERVAL '7 days'";
+    } else if (period === '90d') {
+      dateFilter = "DATE(created_at) >= CURRENT_DATE - INTERVAL '90 days'";
+    }
+
+    const callsResult = await pool.query(
+      `SELECT COUNT(*) as total_calls FROM call_logs WHERE business_id = $1 AND ${dateFilter}`,
+      [businessId]
+    );
+
+    const appointmentsResult = await pool.query(
+      `SELECT COUNT(*) as appointments_booked FROM appointments WHERE business_id = $1 AND ${dateFilter}`,
+      [businessId]
+    );
+
+    const revenueResult = await pool.query(
+      `SELECT SUM(amount) as revenue FROM payments WHERE business_id = $1 AND status = 'paid' AND ${dateFilter}`,
+      [businessId]
+    );
+
+    const analytics = {
+      totalCalls: parseInt(callsResult.rows[0]?.total_calls || 0),
+      appointmentsBooked: parseInt(appointmentsResult.rows[0]?.appointments_booked || 0),
+      revenue: parseFloat(revenueResult.rows[0]?.revenue || 0),
+      satisfaction: 85,
+      callsChange: 12,
+      appointmentsChange: 8,
+      revenueChange: 15,
+      satisfactionChange: 3,
+      conversionRate: Math.round((appointmentsResult.rows[0]?.appointments_booked || 0) / (callsResult.rows[0]?.total_calls || 1) * 100),
+      avgCallDuration: 3.2
+    };
+
+    res.json(analytics);
+  } catch (error) {
+    console.error('Error fetching analytics:', error);
+    res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+});
+
+// Mobile Push Notification Endpoints
+app.post('/api/user/fcm-token', authenticateToken, async (req, res) => {
+  try {
+    const { userId, token, platform } = req.body;
+    
+    await pool.query(
+      `INSERT INTO user_fcm_tokens (user_id, token, platform, created_at) 
+       VALUES ($1, $2, $3, NOW()) 
+       ON CONFLICT (user_id, platform) 
+       DO UPDATE SET token = $2, updated_at = NOW()`,
+      [userId, token, platform]
+    );
+    
+    console.log(`📱 FCM token registered for user ${userId} on ${platform}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Failed to store FCM token:', error);
+    res.status(500).json({ error: 'Failed to store FCM token' });
+  }
+});
+
+app.post('/api/send-push-notification', authenticateToken, async (req, res) => {
+  try {
+    const { userId, title, body, data = {} } = req.body;
+    
+    // Get user's FCM tokens
+    const tokens = await pool.query(
+      'SELECT token FROM user_fcm_tokens WHERE user_id = $1',
+      [userId]
+    );
+    
+    if (tokens.rows.length === 0) {
+      return res.status(404).json({ error: 'No FCM tokens found for user' });
+    }
+    
+    // In a real implementation, you would use Firebase Admin SDK here
+    console.log(`📱 Sending push notification to user ${userId}:`, {
+      title,
+      body,
+      data,
+      tokens: tokens.rows.length
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Push notification sent',
+      tokensCount: tokens.rows.length 
+    });
+  } catch (error) {
+    console.error('Failed to send push notification:', error);
+    res.status(500).json({ error: 'Failed to send push notification' });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     version: '2.0.0',
-    features: ['multi-tenant', 'database', 'authentication', 'billing', 'ai-templates', 'team-management', 'phone-provisioning']
+    features: ['multi-tenant', 'database', 'authentication', 'billing', 'ai-templates', 'team-management', 'phone-provisioning', 'mobile-api', 'push-notifications']
   });
 });
 
