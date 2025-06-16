@@ -1166,13 +1166,17 @@ app.post('/create-sample-appointments', async (req, res) => {
     ];
 
     for (const appointment of sampleAppointments) {
-      await pool.query(
-        `INSERT INTO appointments (business_id, customer_name, phone_number, service_name, appointment_time, status, notes, service_price, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
-         ON CONFLICT DO NOTHING`,
-        [businessId, appointment.customer_name, appointment.phone_number, appointment.service_name, 
-         appointment.appointment_time, appointment.status, appointment.notes, appointment.service_price]
-      );
+      try {
+        await pool.query(
+          `INSERT INTO appointments (business_id, customer_name, phone_number, service_name, appointment_time, status, notes, service_price, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
+          [businessId, appointment.customer_name, appointment.phone_number, appointment.service_name, 
+           appointment.appointment_time, appointment.status, appointment.notes, appointment.service_price]
+        );
+        console.log('Inserted appointment:', appointment.customer_name);
+      } catch (insertError) {
+        console.error('Error inserting appointment:', insertError);
+      }
     }
 
     res.json({ success: true, message: 'Sample appointments created' });
