@@ -1062,10 +1062,53 @@ app.put('/business/:businessId/settings', authenticateToken, getBusinessContext,
   }
 });
 
+// Create appointments table if it doesn't exist
+app.post('/create-appointments-table', async (req, res) => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS appointments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        business_id UUID NOT NULL REFERENCES businesses(id),
+        customer_name VARCHAR(255) NOT NULL,
+        phone_number VARCHAR(20) NOT NULL,
+        service_name VARCHAR(255) NOT NULL,
+        appointment_time TIMESTAMP NOT NULL,
+        status VARCHAR(50) DEFAULT 'pending',
+        notes TEXT,
+        service_price DECIMAL(10,2),
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    
+    res.json({ success: true, message: 'Appointments table created' });
+  } catch (error) {
+    console.error('Error creating appointments table:', error);
+    res.status(500).json({ error: 'Failed to create appointments table' });
+  }
+});
+
 // Sample data endpoint for mobile app demo
 app.post('/create-sample-appointments', async (req, res) => {
   try {
     const { businessId } = req.body;
+    
+    // First ensure appointments table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS appointments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        business_id UUID NOT NULL REFERENCES businesses(id),
+        customer_name VARCHAR(255) NOT NULL,
+        phone_number VARCHAR(20) NOT NULL,
+        service_name VARCHAR(255) NOT NULL,
+        appointment_time TIMESTAMP NOT NULL,
+        status VARCHAR(50) DEFAULT 'pending',
+        notes TEXT,
+        service_price DECIMAL(10,2),
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     
     const sampleAppointments = [
       {
