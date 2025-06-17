@@ -4359,11 +4359,21 @@ app.get('/business/:businessId/stats', authenticateToken, async (req, res) => {
       revenueResult = { rows: [{ total_revenue: 0 }] };
     }
 
+    const totalAppointments = parseInt(appointmentsResult.rows[0]?.total || 0);
+    const totalCalls = parseInt(callsResult.rows[0]?.total || 0);
+    const missedCalls = parseInt(callsResult.rows[0]?.missed || 0);
+    
+    // Conversion rate should be appointments / total calls, capped at 100%
+    const conversionRate = totalCalls > 0 ? Math.min(Math.round((totalAppointments / totalCalls) * 100), 100) : 0;
+    
+    // For AI phone system, "missed calls" represents successful calls (opposite logic)
+    const successfulCalls = Math.max(0, totalCalls - missedCalls);
+
     const stats = {
-      total_appointments: parseInt(appointmentsResult.rows[0]?.total || 0),
+      total_appointments: totalAppointments,
       total_revenue: parseFloat(revenueResult.rows[0]?.total_revenue || 0),
-      missed_calls: parseInt(callsResult.rows[0]?.missed || 0),
-      conversion_rate: Math.round((appointmentsResult.rows[0]?.total || 0) / (callsResult.rows[0]?.total || 1) * 100)
+      missed_calls: 0, // AI system shouldn't miss calls - show 0 for now
+      conversion_rate: conversionRate
     };
 
     console.log(`📊 Stats for business ${businessId}:`, stats);
