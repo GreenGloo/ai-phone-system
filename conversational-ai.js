@@ -595,8 +595,8 @@ async function generateVoiceResponse(text, personality, emotions, businessVoice,
 
 // Voice Settings - Matches voice characteristics to personality and emotions (Twilio TTS fallback)
 function getVoiceSettings(personality, emotions, businessVoice) {
-  // Use the business voice setting directly - no hardcoded fallbacks
-  const voiceToUse = businessVoice;
+  // Ensure we always have a voice setting - fallback to Matthew if missing
+  const voiceToUse = businessVoice || 'Polly.Matthew';
   
   // DEBUG: Log voice selection for troubleshooting  
   console.log(`🎤 Voice Settings - Input: ${businessVoice}, Using: ${voiceToUse}`);
