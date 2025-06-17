@@ -284,7 +284,7 @@ app.use('/voice*', (req, res, next) => {
 // Authentication endpoints
 app.post('/api/signup', async (req, res) => {
   try {
-    const { businessName, ownerName, email, phone, password, businessType, plan = 'professional' } = req.body;
+    const { businessName, ownerName, email, phone, password, businessType, plan = 'starter' } = req.body;
     
     // Validate input
     if (!businessName || !ownerName || !email || !phone || !password || !businessType) {
@@ -395,14 +395,25 @@ app.post('/api/signup', async (req, res) => {
       }
     }
 
-    // Create subscription with trial
+    // Create subscription with trial - all new users start with 14-day free trial
     const trialEnd = new Date();
     trialEnd.setDate(trialEnd.getDate() + 14); // 14-day trial
+    
+    // Define call limits for each plan
+    const getCallLimit = (planName) => {
+      switch(planName) {
+        case 'starter': return 200;
+        case 'professional': return 1000; 
+        case 'enterprise': return 5000;
+        case 'enterprise_plus': return 999999;
+        default: return 50; // Trial default
+      }
+    };
 
     await pool.query(
-      `INSERT INTO subscriptions (business_id, stripe_customer_id, plan, status, trial_ends_at, monthly_call_limit)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [businessId, stripeCustomer.id, plan, 'trialing', trialEnd, plan === 'starter' ? 100 : plan === 'professional' ? 500 : 9999]
+      `INSERT INTO subscriptions (business_id, stripe_customer_id, plan, status, trial_ends_at, monthly_call_limit, current_period_calls, current_period_start)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [businessId, stripeCustomer.id, plan, 'trialing', trialEnd, getCallLimit(plan), 0, new Date()]
     );
 
     // Generate JWT token
@@ -4250,6 +4261,179 @@ Questions? Call ${business.phone_number}`;
 // Business Settings page
 app.get('/settings', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'settings.html'));
+});
+
+// Pricing and Plans API
+app.get('/api/pricing', (req, res) => {
+  const plans = {
+    starter: {
+      name: 'Starter',
+      price: 49,
+      callLimit: 200,
+      overage: 0.25,
+      features: [
+        'AI appointment booking',
+        'Basic analytics',
+        '1 phone number included',
+        'Email support',
+        'Standard voice options'
+      ],
+      popular: false
+    },
+    professional: {
+      name: 'Professional', 
+      price: 149,
+      callLimit: 1000,
+      overage: 0.15,
+      features: [
+        'Everything in Starter',
+        'Advanced analytics & reporting',
+        'ElevenLabs premium voices',
+        'SMS notifications',
+        'Priority support',
+        'Up to 3 phone numbers',
+        'Custom business hours'
+      ],
+      popular: true
+    },
+    enterprise: {
+      name: 'Enterprise',
+      price: 349,
+      callLimit: 5000,
+      overage: 0.10,
+      features: [
+        'Everything in Professional',
+        'Unlimited phone numbers',
+        'White-label mobile app',
+        'API access',
+        'Custom integrations',
+        'Dedicated account manager',
+        '24/7 phone support',
+        'Custom voice training'
+      ],
+      popular: false
+    }
+  };
+  
+  res.json({
+    plans,
+    trialDays: 14,
+    currency: 'USD',
+    billing: 'monthly'
+  });
+});
+
+// Usage tracking and limits
+app.post('/api/track-call', authenticateToken, async (req, res) => {
+  try {
+    const { businessId, callSid, duration, callType = 'inbound' } = req.body;
+    
+    // Get current subscription
+    const subResult = await pool.query(
+      'SELECT * FROM subscriptions WHERE business_id = $1',
+      [businessId]
+    );
+    
+    if (subResult.rows.length === 0) {
+      return res.status(404).json({ error: 'No subscription found' });
+    }
+    
+    const subscription = subResult.rows[0];
+    
+    // Check if we need to reset the current period
+    const now = new Date();
+    const periodStart = new Date(subscription.current_period_start);
+    const daysSincePeriodStart = Math.floor((now - periodStart) / (1000 * 60 * 60 * 24));
+    
+    if (daysSincePeriodStart >= 30) {
+      // Reset monthly usage
+      await pool.query(
+        'UPDATE subscriptions SET current_period_calls = 0, current_period_start = $1 WHERE business_id = $2',
+        [now, businessId]
+      );
+      subscription.current_period_calls = 0;
+    }
+    
+    // Track the call
+    await pool.query(
+      `INSERT INTO usage_tracking (business_id, call_sid, call_date, call_duration, call_type)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [businessId, callSid, now.toISOString().split('T')[0], duration, callType]
+    );
+    
+    // Update subscription call count
+    const newCallCount = (subscription.current_period_calls || 0) + 1;
+    await pool.query(
+      'UPDATE subscriptions SET current_period_calls = $1 WHERE business_id = $2',
+      [newCallCount, businessId]
+    );
+    
+    // Check usage limits
+    const limit = subscription.monthly_call_limit;
+    const usagePercent = Math.round((newCallCount / limit) * 100);
+    
+    const response = {
+      success: true,
+      usage: {
+        current: newCallCount,
+        limit: limit,
+        percentage: usagePercent,
+        remaining: Math.max(0, limit - newCallCount)
+      }
+    };
+    
+    // Add warnings
+    if (usagePercent >= 90) {
+      response.warning = 'You have used 90% of your monthly call limit. Consider upgrading your plan.';
+    } else if (usagePercent >= 80) {
+      response.warning = 'You have used 80% of your monthly call limit.';
+    }
+    
+    // Check if over limit
+    if (newCallCount > limit && subscription.status !== 'trialing') {
+      response.overage = true;
+      response.overageCount = newCallCount - limit;
+      response.overageCost = getOverageCost(subscription.plan, newCallCount - limit);
+    }
+    
+    res.json(response);
+    
+  } catch (error) {
+    console.error('Call tracking error:', error);
+    res.status(500).json({ error: 'Failed to track call usage' });
+  }
+});
+
+function getOverageCost(plan, overageCount) {
+  const rates = {
+    starter: 0.25,
+    professional: 0.15,
+    enterprise: 0.10,
+    enterprise_plus: 0.05
+  };
+  
+  return (rates[plan] || 0.25) * overageCount;
+}
+
+// Twilio webhook for call status tracking
+app.post('/webhook/call-status/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { CallSid, CallStatus, CallDuration } = req.body;
+    
+    console.log(`📞 Call status webhook: Business ${businessId}, Call ${CallSid}, Status: ${CallStatus}, Duration: ${CallDuration}s`);
+    
+    // Only track completed calls to avoid duplicates
+    if (CallStatus === 'completed') {
+      const { trackCallUsage } = require('./conversational-ai');
+      await trackCallUsage(businessId, CallSid, parseInt(CallDuration) || 0);
+    }
+    
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('❌ Call status webhook error:', error);
+    res.status(500).send('Error');
+  }
 });
 
 // Mobile App API Endpoints

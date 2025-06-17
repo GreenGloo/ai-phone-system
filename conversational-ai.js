@@ -413,6 +413,34 @@ async function handleVoiceCall(req, res) {
   try {
     console.log(`💬 CONVERSATION: Call ${CallSid}: "${SpeechResult || 'INITIAL'}" for business ${businessId}`);
     
+    // Check subscription limits before processing call
+    if (!SpeechResult) { // Only check on initial calls to avoid blocking ongoing conversations
+      const subscriptionResult = await pool.query(`
+        SELECT plan_type, current_period_calls,
+               CASE plan_type
+                 WHEN 'starter' THEN 200
+                 WHEN 'professional' THEN 1000  
+                 WHEN 'enterprise' THEN 5000
+                 WHEN 'enterprise_plus' THEN 999999
+                 ELSE 200
+               END as call_limit
+        FROM subscriptions 
+        WHERE business_id = $1
+      `, [businessId]);
+      
+      if (subscriptionResult.rows.length > 0) {
+        const { plan_type, current_period_calls, call_limit } = subscriptionResult.rows[0];
+        
+        if (current_period_calls >= call_limit) {
+          console.log(`🚫 Call limit exceeded: Business ${businessId} has ${current_period_calls}/${call_limit} calls`);
+          return sendTwiml(res, 'This business has reached their monthly call limit. Please contact them directly or try again next month.');
+        }
+        
+        const usagePercentage = (current_period_calls / call_limit) * 100;
+        console.log(`📊 Call usage check: Business ${businessId} at ${usagePercentage.toFixed(1)}% (${current_period_calls}/${call_limit} calls)`);
+      }
+    }
+    
     // Get business info
     const businessResult = await pool.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
     if (businessResult.rows.length === 0) {
@@ -1352,6 +1380,69 @@ function sendTwiml(res, message) {
   return res.type('text/xml').send(twiml.toString());
 }
 
+// Track call usage for billing and limits
+async function trackCallUsage(businessId, callSid, callDuration = 0) {
+  try {
+    console.log(`📊 Tracking call usage: Business ${businessId}, Call ${callSid}, Duration: ${callDuration}s`);
+    
+    // Check if call already tracked to avoid duplicates
+    const existingCall = await pool.query(
+      'SELECT id FROM usage_tracking WHERE business_id = $1 AND call_sid = $2',
+      [businessId, callSid]
+    );
+    
+    if (existingCall.rows.length > 0) {
+      console.log(`📋 Call ${callSid} already tracked - skipping duplicate`);
+      return;
+    }
+    
+    // Insert call tracking record
+    await pool.query(`
+      INSERT INTO usage_tracking (business_id, call_sid, call_duration, call_cost)
+      VALUES ($1, $2, $3, $4)
+    `, [businessId, callSid, callDuration, 0.00]); // Cost calculated elsewhere
+    
+    // Update subscription current period calls
+    await pool.query(`
+      UPDATE subscriptions 
+      SET current_period_calls = current_period_calls + 1
+      WHERE business_id = $1
+    `, [businessId]);
+    
+    console.log(`✅ Call usage tracked successfully for business ${businessId}`);
+    
+    // Check if business is approaching limits
+    const subscriptionResult = await pool.query(`
+      SELECT plan_type, current_period_calls,
+             CASE plan_type
+               WHEN 'starter' THEN 200
+               WHEN 'professional' THEN 1000  
+               WHEN 'enterprise' THEN 5000
+               WHEN 'enterprise_plus' THEN 999999
+               ELSE 200
+             END as call_limit
+      FROM subscriptions 
+      WHERE business_id = $1
+    `, [businessId]);
+    
+    if (subscriptionResult.rows.length > 0) {
+      const { plan_type, current_period_calls, call_limit } = subscriptionResult.rows[0];
+      const usagePercentage = (current_period_calls / call_limit) * 100;
+      
+      console.log(`📈 Business ${businessId} usage: ${current_period_calls}/${call_limit} calls (${usagePercentage.toFixed(1)}%)`);
+      
+      // Warn when approaching limits
+      if (usagePercentage >= 90) {
+        console.log(`⚠️ Business ${businessId} approaching call limit: ${usagePercentage.toFixed(1)}%`);
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Error tracking call usage:', error);
+    // Don't fail the call if tracking fails
+  }
+}
+
 // Enhanced Error Recovery - Graceful failure handling with personality
 function handleConversationError(error, conversation, res) {
   console.error('🚨 Conversation error with recovery:', error);
@@ -1397,4 +1488,4 @@ setInterval(async () => {
   }
 }, 5 * 60 * 1000); // Run every 5 minutes - more frequent for free tier
 
-module.exports = { handleVoiceCall };
+module.exports = { handleVoiceCall, trackCallUsage };
