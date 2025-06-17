@@ -4323,20 +4323,41 @@ app.get('/business/:businessId/stats', authenticateToken, async (req, res) => {
   try {
     const { businessId } = req.params;
 
-    const appointmentsResult = await pool.query(
-      'SELECT COUNT(*) as total, SUM(CASE WHEN status = \'completed\' THEN 1 ELSE 0 END) as completed FROM appointments WHERE business_id = $1',
-      [businessId]
-    );
+    // Get appointments stats - handle table not existing
+    let appointmentsResult;
+    try {
+      appointmentsResult = await pool.query(
+        'SELECT COUNT(*) as total, SUM(CASE WHEN status = \'completed\' THEN 1 ELSE 0 END) as completed FROM appointments WHERE business_id = $1',
+        [businessId]
+      );
+    } catch (err) {
+      console.log('Appointments table may not exist:', err.message);
+      appointmentsResult = { rows: [{ total: 0, completed: 0 }] };
+    }
 
-    const callsResult = await pool.query(
-      'SELECT COUNT(*) as total, SUM(CASE WHEN answered = false THEN 1 ELSE 0 END) as missed FROM call_logs WHERE business_id = $1',
-      [businessId]
-    );
+    // Get call logs stats - handle table not existing  
+    let callsResult;
+    try {
+      callsResult = await pool.query(
+        'SELECT COUNT(*) as total, SUM(CASE WHEN answered = false THEN 1 ELSE 0 END) as missed FROM call_logs WHERE business_id = $1',
+        [businessId]
+      );
+    } catch (err) {
+      console.log('Call logs table may not exist:', err.message);
+      callsResult = { rows: [{ total: 0, missed: 0 }] };
+    }
 
-    const revenueResult = await pool.query(
-      'SELECT SUM(amount) as total_revenue FROM payments WHERE business_id = $1 AND status = \'paid\'',
-      [businessId]
-    );
+    // Get revenue stats - handle table not existing
+    let revenueResult;
+    try {
+      revenueResult = await pool.query(
+        'SELECT SUM(amount) as total_revenue FROM payments WHERE business_id = $1 AND status = \'paid\'',
+        [businessId]
+      );
+    } catch (err) {
+      console.log('Payments table may not exist:', err.message);
+      revenueResult = { rows: [{ total_revenue: 0 }] };
+    }
 
     const stats = {
       total_appointments: parseInt(appointmentsResult.rows[0]?.total || 0),
@@ -4345,6 +4366,7 @@ app.get('/business/:businessId/stats', authenticateToken, async (req, res) => {
       conversion_rate: Math.round((appointmentsResult.rows[0]?.total || 0) / (callsResult.rows[0]?.total || 1) * 100)
     };
 
+    console.log(`📊 Stats for business ${businessId}:`, stats);
     res.json(stats);
   } catch (error) {
     console.error('Error fetching stats:', error);
@@ -4356,15 +4378,36 @@ app.get('/business/:businessId/appointments', authenticateToken, async (req, res
   try {
     const { businessId } = req.params;
 
-    const result = await pool.query(
-      `SELECT id, customer_name, phone_number, service_name, appointment_time, status, notes 
-       FROM appointments 
-       WHERE business_id = $1 
-       ORDER BY appointment_time DESC 
-       LIMIT 50`,
-      [businessId]
-    );
+    // Try new schema first (customer_phone, start_time)
+    let result;
+    try {
+      result = await pool.query(
+        `SELECT id, customer_name, customer_phone as phone_number, service_name, start_time as appointment_time, status, issue_description as notes 
+         FROM appointments 
+         WHERE business_id = $1 
+         ORDER BY start_time DESC 
+         LIMIT 50`,
+        [businessId]
+      );
+    } catch (err) {
+      console.log('New schema failed, trying old schema:', err.message);
+      // Fallback to old schema (phone_number, appointment_time)
+      try {
+        result = await pool.query(
+          `SELECT id, customer_name, phone_number, service_name, appointment_time, status, notes 
+           FROM appointments 
+           WHERE business_id = $1 
+           ORDER BY appointment_time DESC 
+           LIMIT 50`,
+          [businessId]
+        );
+      } catch (err2) {
+        console.log('Appointments table may not exist:', err2.message);
+        result = { rows: [] };
+      }
+    }
 
+    console.log(`📅 Found ${result.rows.length} appointments for business ${businessId}`);
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching appointments:', error);
