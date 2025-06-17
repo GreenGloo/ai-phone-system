@@ -4,15 +4,15 @@ const path = require('path');
 
 // ElevenLabs voice configurations
 const ELEVENLABS_VOICES = {
-  // Male voices
-  'matthew': 'pNInz6obpgDQGcFmaJgB', // Adam (male, US)
-  'daniel': 'CwhRBWXzGAHq8TQ4Fs17', // Daniel (male, UK) 
-  'sam': '2EiwWnXFnvU5JabPnv8n',    // Sam (male, US)
+  // Male voices (using actual voice IDs from your account)
+  'matthew': 'TX3LPaxmHKxFdv7VOQHJ', // Liam (male, US) 
+  'daniel': 'onwK4e9ZLuTAKqWW03F9', // Daniel (male, UK)
+  'sam': 'bIHbv24MWmeRgasZH58o',    // Will (male, US)
   
-  // Female voices  
+  // Female voices (using actual voice IDs from your account)
   'sarah': 'EXAVITQu4vr4xnSDxMaL',   // Sarah (female, US)
-  'grace': 'oWAxZDx7w5VEj9dCyTzz',   // Grace (female, US)
-  'bella': 'EXAVITQu4vr4xnSDxMaL',   // Bella (female, US)
+  'grace': 'FGY2WhTYpPnrIDTdsKH5',   // Laura (female, US)
+  'bella': 'XrExE9yKIg1WjnnlVkGX',   // Matilda (female, US)
 };
 
 // Map business voice selections to ElevenLabs voices
