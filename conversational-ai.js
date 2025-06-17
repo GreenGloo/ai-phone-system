@@ -547,33 +547,25 @@ function enhanceNaturalSpeech(response, personality, emotions) {
 }
 
 // Enhanced voice generation with ElevenLabs support and conversation consistency
-async function generateVoiceResponse(text, personality, emotions, businessVoice = 'Polly.Joanna-Neural', twiml, conversation) {
+async function generateVoiceResponse(text, personality, emotions, businessVoice, twiml, conversation) {
   const useElevenLabs = process.env.ELEVENLABS_API_KEY && process.env.USE_ELEVENLABS !== 'false';
   
   console.log(`🎤 Voice Generation - Text: "${text.substring(0, 50)}..."`);
   console.log(`🎤 Voice ID: ${businessVoice}, ElevenLabs: ${useElevenLabs ? 'YES' : 'NO'}`);
   
-  // Check if conversation has already established a voice preference
-  if (conversation && conversation.voiceMode) {
-    console.log(`🎭 Conversation voice mode established: ${conversation.voiceMode}`);
-    if (conversation.voiceMode === 'twilio') {
-      // Force Twilio TTS for consistency
-      const voiceSettings = getVoiceSettings(personality, emotions, businessVoice);
-      console.log(`🔄 Using consistent Twilio TTS: ${JSON.stringify(voiceSettings)}`);
-      twiml.say(text, voiceSettings);
-      return false;
-    } else if (conversation.voiceMode === 'elevenlabs') {
-      // Try to continue with ElevenLabs for consistency
-      console.log(`🎭 Attempting to maintain ElevenLabs consistency`);
-    }
-  }
+  // Always try ElevenLabs first if available - don't stick to previous voice modes
+  console.log(`🎭 Previous voice mode: ${conversation?.voiceMode || 'none'} - trying ElevenLabs anyway`);
+  
+  // Reset voice mode to allow ElevenLabs to be retried
+  if (conversation) conversation.voiceMode = null;
   
   if (useElevenLabs) {
     try {
       // Add longer timeout for ElevenLabs to prevent premature fallbacks
+      console.log(`🚀 Attempting ElevenLabs generation with voice: ${businessVoice}`);
       const audioResult = await Promise.race([
         generateElevenLabsAudio(text, businessVoice),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('ElevenLabs timeout')), 5000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('ElevenLabs timeout')), 10000))
       ]);
       
       if (audioResult.success) {
@@ -602,9 +594,9 @@ async function generateVoiceResponse(text, personality, emotions, businessVoice 
 }
 
 // Voice Settings - Matches voice characteristics to personality and emotions (Twilio TTS fallback)
-function getVoiceSettings(personality, emotions, businessVoice = 'Polly.Joanna-Neural') {
-  // Ensure we have a valid voice, fallback to default if not
-  const voiceToUse = businessVoice || 'Polly.Joanna-Neural';
+function getVoiceSettings(personality, emotions, businessVoice) {
+  // Use the business voice setting directly - no hardcoded fallbacks
+  const voiceToUse = businessVoice;
   
   // DEBUG: Log voice selection for troubleshooting  
   console.log(`🎤 Voice Settings - Input: ${businessVoice}, Using: ${voiceToUse}`);

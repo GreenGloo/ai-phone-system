@@ -97,11 +97,15 @@ async function generateElevenLabsAudio(text, voiceId, options = {}) {
     
     console.log(`🎵 Generated ElevenLabs audio: ${filename} (${audioBuffer.length} bytes)`);
     
+    // Generate full URL for Twilio to access the audio file
+    const baseUrl = process.env.BASE_URL || 'https://nodejs-production-5e30.up.railway.app';
+    const fullUrl = `${baseUrl}/temp/${filename}`;
+    
     return {
       success: true,
       filepath: filepath,
       filename: filename,
-      url: `/temp/${filename}`, // URL to serve the file
+      url: fullUrl, // Full URL for Twilio to access
       duration: Math.ceil(text.length / 10) // Rough estimate
     };
 

@@ -4178,6 +4178,64 @@ app.put('/api/businesses/:businessId/appointments/:appointmentId', authenticateT
       }
     }
     
+    // Send SMS notifications for status changes
+    if (status === 'cancelled' || status === 'confirmed') {
+      try {
+        const business = req.business;
+        const appointmentTime = new Date(appointment.appointment_time).toLocaleString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+
+        if (status === 'cancelled') {
+          // Send cancellation SMS to customer
+          const customerMessage = `❌ APPOINTMENT CANCELLED
+
+${business.name}
+📅 ${appointmentTime}
+
+Your appointment has been cancelled. We apologize for any inconvenience.
+Questions? Call ${business.phone_number}`;
+
+          if (appointment.customer_phone && business.phone_number) {
+            await twilioClient.messages.create({
+              body: customerMessage,
+              from: business.phone_number,
+              to: appointment.customer_phone
+            });
+            console.log(`📱 Cancellation SMS sent to customer: ${appointment.customer_phone}`);
+          }
+        } else if (status === 'confirmed') {
+          // Send confirmation SMS to customer
+          const customerMessage = `✅ APPOINTMENT CONFIRMED
+
+${business.name}
+📅 ${appointmentTime}
+🔧 ${appointment.service_name || 'Service'}
+
+Your appointment is confirmed!
+Questions? Call ${business.phone_number}`;
+
+          if (appointment.customer_phone && business.phone_number) {
+            await twilioClient.messages.create({
+              body: customerMessage,
+              from: business.phone_number,
+              to: appointment.customer_phone
+            });
+            console.log(`📱 Confirmation SMS sent to customer: ${appointment.customer_phone}`);
+          }
+        }
+      } catch (smsError) {
+        console.error('⚠️ Error sending SMS notification:', smsError);
+        // Don't fail the request if SMS fails
+      }
+    }
+    
     res.json({
       success: true,
       appointment: appointment
@@ -4482,7 +4540,7 @@ app.get('/business/:businessId/analytics', authenticateToken, async (req, res) =
       appointmentsChange: 8,
       revenueChange: 15,
       satisfactionChange: 3,
-      conversionRate: Math.round((appointmentsResult.rows[0]?.appointments_booked || 0) / (callsResult.rows[0]?.total_calls || 1) * 100),
+      conversionRate: Math.min(Math.round((appointmentsResult.rows[0]?.appointments_booked || 0) / (callsResult.rows[0]?.total_calls || 1) * 100), 100),
       avgCallDuration: 3.2
     };
 

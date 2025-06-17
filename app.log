@@ -1,0 +1,69 @@
+🔥 CUTTING-EDGE AI PHONE SYSTEM INITIALIZING...
+🧠 AI Provider: Claude 3.5 Sonnet (SUPERIOR)
+🔑 Claude API Key: CONFIGURED ✅
+🔑 OpenAI API Key: CONFIGURED ✅
+🎭 ElevenLabs API Key: CONFIGURED ✅
+🚀 Ready to provide the most human-like AI assistant experience!
+
+📊 Running automatic database migrations...
+🚀 STARTING AUTOMATIC DATABASE MIGRATIONS
+============================================================
+🔧 Initializing automatic migration system...
+🚀 BookIt Technologies running on port 3000
+🏠 Landing page: /
+📋 Onboarding: /onboarding
+📊 Dashboard: /dashboard
+⚙️ Settings: /settings
+💾 Database: Connected
+✅ Migration tracking table ready
+🔄 Running migration: add_service_keywords_table
+   Description: Add service_keywords table for AI-generated keywords
+✅ Migration add_service_keywords_table already applied with same checksum - skipping
+🔄 Running migration: add_calendar_preferences_column
+   Description: Add calendar_preferences column to businesses table
+✅ Migration add_calendar_preferences_column already applied with same checksum - skipping
+🔄 Running migration: create_calendar_slots_table
+   Description: Create calendar_slots table for appointment scheduling
+✅ Migration create_calendar_slots_table already applied with same checksum - skipping
+🔄 Running migration: create_conversations_table
+   Description: Create conversations table for AI call storage
+✅ Migration create_conversations_table already applied with same checksum - skipping
+🔄 Running migration: add_webhook_auto_config_columns
+   Description: Add columns for automatic webhook configuration tracking
+✅ Migration add_webhook_auto_config_columns already applied with same checksum - skipping
+🔄 Running migration: add_auto_repair_tracking
+   Description: Add columns for automatic business data repair tracking
+✅ Migration add_auto_repair_tracking already applied with same checksum - skipping
+
+============================================================
+🎯 AUTO-MIGRATION RESULTS
+============================================================
+✅ New migrations applied: 0
+⏭️ Migrations skipped (already applied): 6
+❌ Migrations failed: 0
+
+🚀 ALL DATABASE MIGRATIONS COMPLETE - SYSTEM READY!
+
+🔗 Running automatic webhook configuration...
+🚀 STARTING AUTOMATIC WEBHOOK CONFIGURATION
+============================================================
+📋 Found 0 businesses with phone numbers
+
+============================================================
+🎯 WEBHOOK AUTO-CONFIGURATION RESULTS
+============================================================
+✅ Webhooks configured: 0
+✅ Webhooks verified: 0
+❌ Webhooks failed: 0
+
+🚀 ALL WEBHOOKS CONFIGURED SUCCESSFULLY!
+
+🩺 Starting webhook health monitoring...
+🔄 Starting webhook health check system...
+✅ Webhook health check scheduled every 6 hours
+
+🩺 Starting business data health monitoring...
+🔄 Starting business health monitoring system...
+✅ Business health monitoring scheduled every 12 hours
+✅ System initialization complete
+📊 DB Pool - Total: 1, Idle: 1, Waiting: 0
