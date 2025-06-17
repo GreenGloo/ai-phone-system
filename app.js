@@ -841,6 +841,23 @@ app.get('/business/:businessId/stats', authenticateToken, getBusinessContext, as
   try {
     const { businessId } = req.params;
     
+    // First ensure appointments table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS appointments (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+        customer_name VARCHAR(255) NOT NULL,
+        phone_number VARCHAR(20) NOT NULL,
+        service_name VARCHAR(255) NOT NULL,
+        appointment_time TIMESTAMP NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        service_price DECIMAL(10,2),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
     // Get appointment stats from database
     const statsQuery = `
       SELECT 
@@ -876,6 +893,23 @@ app.get('/business/:businessId/stats', authenticateToken, getBusinessContext, as
 app.get('/business/:businessId/appointments', authenticateToken, getBusinessContext, async (req, res) => {
   try {
     const { businessId } = req.params;
+    
+    // First ensure appointments table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS appointments (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+        customer_name VARCHAR(255) NOT NULL,
+        phone_number VARCHAR(20) NOT NULL,
+        service_name VARCHAR(255) NOT NULL,
+        appointment_time TIMESTAMP NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        service_price DECIMAL(10,2),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
     
     const appointmentsQuery = `
       SELECT 
@@ -4573,6 +4607,23 @@ app.get('/health', (req, res) => {
 app.post('/create-sample-data', async (req, res) => {
   try {
     const { businessId } = req.body;
+    
+    // First ensure appointments table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS appointments (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+        customer_name VARCHAR(255) NOT NULL,
+        phone_number VARCHAR(20) NOT NULL,
+        service_name VARCHAR(255) NOT NULL,
+        appointment_time TIMESTAMP NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        service_price DECIMAL(10,2),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
     
     // Create sample appointments
     const sampleAppointments = [
