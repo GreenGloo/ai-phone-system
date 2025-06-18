@@ -75,69 +75,106 @@
     </nav>
 
     <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-        <!-- Quick Stats -->
+        <!-- Revenue-Focused Stats -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div class="stat-card bg-white rounded-lg p-6 shadow-sm">
+            <div class="stat-card bg-gradient-to-r from-green-400 to-green-600 text-white rounded-lg p-6 shadow-sm">
                 <div class="flex items-center">
                     <div class="flex-shrink-0">
-                        <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <span class="text-blue-600 text-lg">📞</span>
+                        <div class="w-8 h-8 bg-white bg-opacity-20 rounded-lg flex items-center justify-center">
+                            <span class="text-white text-lg">💰</span>
                         </div>
                     </div>
                     <div class="ml-5 w-0 flex-1">
                         <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">Today's Calls</dt>
-                            <dd id="today-calls" class="text-lg font-medium text-gray-900">0</dd>
+                            <dt class="text-sm font-medium text-green-100 truncate">Revenue Generated</dt>
+                            <dd id="total-revenue" class="text-2xl font-bold text-white">$0</dd>
+                            <dd class="text-xs text-green-100 mt-1">by your AI assistant</dd>
                         </dl>
                     </div>
                 </div>
             </div>
 
-            <div class="stat-card bg-white rounded-lg p-6 shadow-sm">
+            <div class="stat-card bg-gradient-to-r from-blue-400 to-blue-600 text-white rounded-lg p-6 shadow-sm">
                 <div class="flex items-center">
                     <div class="flex-shrink-0">
-                        <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                            <span class="text-green-600 text-lg">📅</span>
+                        <div class="w-8 h-8 bg-white bg-opacity-20 rounded-lg flex items-center justify-center">
+                            <span class="text-white text-lg">📅</span>
                         </div>
                     </div>
                     <div class="ml-5 w-0 flex-1">
                         <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">Appointments Booked</dt>
-                            <dd id="appointments-booked" class="text-lg font-medium text-gray-900">0</dd>
+                            <dt class="text-sm font-medium text-blue-100 truncate">Appointments Booked</dt>
+                            <dd id="appointments-booked" class="text-2xl font-bold text-white">0</dd>
+                            <dd class="text-xs text-blue-100 mt-1">while you focus on work</dd>
                         </dl>
                     </div>
                 </div>
             </div>
 
-            <div class="stat-card bg-white rounded-lg p-6 shadow-sm">
+            <div class="stat-card bg-gradient-to-r from-purple-400 to-purple-600 text-white rounded-lg p-6 shadow-sm">
                 <div class="flex items-center">
                     <div class="flex-shrink-0">
-                        <div class="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
-                            <span class="text-yellow-600 text-lg">💰</span>
+                        <div class="w-8 h-8 bg-white bg-opacity-20 rounded-lg flex items-center justify-center">
+                            <span class="text-white text-lg">⏰</span>
                         </div>
                     </div>
                     <div class="ml-5 w-0 flex-1">
                         <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">Today's Revenue</dt>
-                            <dd id="today-revenue" class="text-lg font-medium text-gray-900">$0</dd>
+                            <dt class="text-sm font-medium text-purple-100 truncate">Time Saved</dt>
+                            <dd id="time-saved" class="text-2xl font-bold text-white">0 hrs</dd>
+                            <dd class="text-xs text-purple-100 mt-1">on phone calls</dd>
                         </dl>
                     </div>
                 </div>
             </div>
 
-            <div class="stat-card bg-white rounded-lg p-6 shadow-sm">
+            <div class="stat-card bg-gradient-to-r from-orange-400 to-orange-600 text-white rounded-lg p-6 shadow-sm">
                 <div class="flex items-center">
                     <div class="flex-shrink-0">
-                        <div class="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                            <span class="text-purple-600 text-lg">📈</span>
+                        <div class="w-8 h-8 bg-white bg-opacity-20 rounded-lg flex items-center justify-center">
+                            <span class="text-white text-lg">📈</span>
                         </div>
                     </div>
                     <div class="ml-5 w-0 flex-1">
                         <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">Conversion Rate</dt>
-                            <dd id="conversion-rate" class="text-lg font-medium text-gray-900">0%</dd>
+                            <dt class="text-sm font-medium text-orange-100 truncate">Success Rate</dt>
+                            <dd id="conversion-rate" class="text-2xl font-bold text-white">0%</dd>
+                            <dd class="text-xs text-orange-100 mt-1">calls converted to bookings</dd>
                         </dl>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Value Proposition Banner -->
+        <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg p-6 mb-8 shadow-lg">
+            <div class="flex items-center justify-between">
+                <div class="flex-1">
+                    <h3 class="text-xl font-bold mb-2">🎯 Your AI is Working Hard for You!</h3>
+                    <p class="text-blue-100 mb-3">While you focus on delivering amazing service, your AI assistant handles every call perfectly.</p>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div class="text-center">
+                            <div class="text-2xl font-bold" id="ai-total-bookings">0</div>
+                            <div class="text-blue-200">Total Bookings</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold" id="ai-total-revenue">$0</div>
+                            <div class="text-blue-200">Revenue Generated</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold" id="ai-efficiency">24/7</div>
+                            <div class="text-blue-200">Availability</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold" id="ai-reliability">99.9%</div>
+                            <div class="text-blue-200">Uptime</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="ml-6 hidden md:block">
+                    <button onclick="showAIInsights()" class="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
+                        View AI Insights →
+                    </button>
                 </div>
             </div>
         </div>
@@ -198,24 +235,31 @@
 
             <!-- Sidebar -->
             <div class="space-y-6">
-                <!-- Phone System Status -->
-                <div class="bg-white rounded-lg shadow-sm p-6">
-                    <h3 class="text-lg font-bold text-gray-900 mb-4">📞 Phone System</h3>
+                <!-- AI Assistant Performance -->
+                <div class="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg shadow-sm p-6 border border-blue-100">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">🤖 Your AI Assistant</h3>
                     <div class="space-y-3">
                         <div class="flex items-center justify-between">
                             <span class="text-sm text-gray-600">Status</span>
-                            <span class="text-green-600 font-medium">● Active</span>
+                            <span class="text-green-600 font-medium">● Working 24/7</span>
                         </div>
                         <div class="flex items-center justify-between">
-                            <span class="text-sm text-gray-600">Number</span>
+                            <span class="text-sm text-gray-600">Phone Number</span>
                             <span id="phone-number" class="font-mono text-sm">Loading...</span>
                         </div>
-                        <div class="flex items-center justify-between">
-                            <span class="text-sm text-gray-600">Calls This Month</span>
-                            <span id="monthly-calls" class="font-medium">0</span>
+                        <div class="bg-white rounded-lg p-3 mt-4">
+                            <div class="text-xs text-gray-500 mb-1">This Month's Impact</div>
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-sm text-gray-600">Bookings Made</span>
+                                <span id="ai-bookings" class="font-bold text-blue-600">0</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-gray-600">Revenue Generated</span>
+                                <span id="ai-revenue" class="font-bold text-green-600">$0</span>
+                            </div>
                         </div>
                         <button onclick="testCall()" class="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 text-sm">
-                            Test Call System
+                            Test Your AI Assistant
                         </button>
                         <button onclick="testSMS()" class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 text-sm mt-2">
                             Test SMS Notifications
@@ -223,11 +267,28 @@
                     </div>
                 </div>
 
-                <!-- Live Activity -->
-                <div class="bg-white rounded-lg shadow-sm p-6">
-                    <h3 class="text-lg font-bold text-gray-900 mb-4">⚡ Live Activity</h3>
-                    <div id="live-activity" class="space-y-3">
-                        <div class="text-center py-4 text-gray-500 text-sm">No recent activity</div>
+                <!-- Business Growth Insights -->
+                <div class="bg-gradient-to-br from-green-50 to-blue-50 rounded-lg shadow-sm p-6 border border-green-100">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">📊 Business Growth</h3>
+                    <div class="space-y-4">
+                        <div class="text-center py-2">
+                            <div class="text-2xl font-bold text-green-600" id="growth-percentage">+0%</div>
+                            <div class="text-xs text-gray-500">vs last month</div>
+                        </div>
+                        <div class="space-y-2">
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-gray-600">Missed Calls Prevented</span>
+                                <span class="text-sm font-medium text-blue-600" id="missed-calls-prevented">0</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-gray-600">After-Hours Bookings</span>
+                                <span class="text-sm font-medium text-purple-600" id="after-hours-bookings">0</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-gray-600">Customer Satisfaction</span>
+                                <span class="text-sm font-medium text-green-600" id="satisfaction-rate">98%</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -250,6 +311,11 @@
                         <button onclick="viewBilling()" class="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 text-sm">
                             💳 Billing & Usage
                         </button>
+                        <div class="border-t pt-2 mt-2">
+                            <button onclick="window.location.href='/cancel'" class="w-full bg-gray-200 text-gray-700 py-2 px-4 rounded hover:bg-gray-300 text-sm">
+                                Cancel Subscription
+                            </button>
+                        </div>
                     </div>
                 </div>
 

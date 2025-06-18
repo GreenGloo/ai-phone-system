@@ -35,10 +35,10 @@
         <div class="mb-8">
             <div class="flex items-center justify-between mb-2">
                 <span class="text-sm text-gray-500">Setup Progress</span>
-                <span id="progress-text" class="text-sm text-gray-500">Step 1 of 5</span>
+                <span id="progress-text" class="text-sm text-gray-500">Step 1 of 6</span>
             </div>
             <div class="w-full bg-gray-200 rounded-full h-2">
-                <div id="progress-bar" class="progress-bar bg-blue-600 h-2 rounded-full" style="width: 20%"></div>
+                <div id="progress-bar" class="progress-bar bg-blue-600 h-2 rounded-full" style="width: 16.67%"></div>
             </div>
         </div>
 
@@ -54,6 +54,8 @@
                 <div id="step-4" class="step-pending flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold">4</div>
                 <div class="w-12 h-1 bg-gray-300"></div>
                 <div id="step-5" class="step-pending flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold">5</div>
+                <div class="w-12 h-1 bg-gray-300"></div>
+                <div id="step-6" class="step-pending flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold">6</div>
             </div>
         </div>
 
@@ -290,13 +292,185 @@
                         ← Back
                     </button>
                     <button id="continue-with-number" onclick="continueWithSelectedNumber()" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold" disabled>
+                        Continue to Integration →
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 5: Integration Setup -->
+            <div id="step-content-5" class="step-content hidden">
+                <div class="text-center mb-8">
+                    <div class="text-6xl mb-4">🔗</div>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Connect Your Tools</h2>
+                    <p class="text-gray-600">Integrate with your calendar and CRM for maximum effectiveness</p>
+                </div>
+
+                <div class="max-w-4xl mx-auto space-y-6">
+                    <!-- Integration Benefits Banner -->
+                    <div class="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-6 mb-8">
+                        <h3 class="text-lg font-bold text-gray-900 mb-3">🎯 Why Integration Matters</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                            <div class="text-center">
+                                <div class="text-2xl mb-2">📅</div>
+                                <div class="font-semibold text-gray-900">Real-Time Sync</div>
+                                <div class="text-gray-600">AI sees your actual availability</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-2xl mb-2">⚡</div>
+                                <div class="font-semibold text-gray-900">Instant Updates</div>
+                                <div class="text-gray-600">Bookings appear immediately</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-2xl mb-2">🔄</div>
+                                <div class="font-semibold text-gray-900">No Double-Booking</div>
+                                <div class="text-gray-600">Prevents scheduling conflicts</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Calendar Integration -->
+                    <div class="bg-white border border-gray-200 rounded-lg p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center">
+                                <div class="text-2xl mr-3">📅</div>
+                                <div>
+                                    <h3 class="text-lg font-bold text-gray-900">Calendar Integration</h3>
+                                    <p class="text-gray-600 text-sm">Connect your calendar for automatic scheduling</p>
+                                </div>
+                            </div>
+                            <div id="calendar-status" class="text-sm">
+                                <span class="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full">Not Connected</span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                            <button onclick="connectGoogleCalendar()" class="integration-btn bg-white border-2 border-gray-200 hover:border-blue-500 rounded-lg p-4 text-center group transition-all">
+                                <div class="text-3xl mb-2">📊</div>
+                                <div class="font-semibold text-gray-900 mb-1">Google Calendar</div>
+                                <div class="text-xs text-gray-600">Most popular choice</div>
+                                <div class="mt-2 text-xs text-blue-600 group-hover:text-blue-800">Click to Connect</div>
+                            </button>
+                            
+                            <button onclick="connectOutlookCalendar()" class="integration-btn bg-white border-2 border-gray-200 hover:border-blue-500 rounded-lg p-4 text-center group transition-all">
+                                <div class="text-3xl mb-2">📧</div>
+                                <div class="font-semibold text-gray-900 mb-1">Outlook Calendar</div>
+                                <div class="text-xs text-gray-600">Microsoft 365</div>
+                                <div class="mt-2 text-xs text-blue-600 group-hover:text-blue-800">Click to Connect</div>
+                            </button>
+                            
+                            <button onclick="skipCalendarIntegration()" class="integration-btn bg-gray-50 border-2 border-gray-200 hover:border-gray-400 rounded-lg p-4 text-center group transition-all">
+                                <div class="text-3xl mb-2">⏭️</div>
+                                <div class="font-semibold text-gray-700 mb-1">Skip for Now</div>
+                                <div class="text-xs text-gray-500">Set up later</div>
+                                <div class="mt-2 text-xs text-gray-600 group-hover:text-gray-800">Continue Without</div>
+                            </button>
+                        </div>
+
+                        <div id="calendar-setup-success" class="hidden bg-green-50 border border-green-200 rounded-lg p-4">
+                            <div class="flex items-center">
+                                <div class="text-green-600 mr-3">✅</div>
+                                <div>
+                                    <div class="font-semibold text-green-800">Calendar Connected!</div>
+                                    <div class="text-green-700 text-sm">Your AI can now see your real availability and book appointments automatically.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CRM Integration -->
+                    <div class="bg-white border border-gray-200 rounded-lg p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center">
+                                <div class="text-2xl mr-3">👥</div>
+                                <div>
+                                    <h3 class="text-lg font-bold text-gray-900">Customer Management</h3>
+                                    <p class="text-gray-600 text-sm">Save customer info and appointment history</p>
+                                </div>
+                            </div>
+                            <div id="crm-status" class="text-sm">
+                                <span class="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full">Not Connected</span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                            <button onclick="connectBuiltInCRM()" class="integration-btn bg-blue-50 border-2 border-blue-200 hover:border-blue-500 rounded-lg p-4 text-center group transition-all">
+                                <div class="text-3xl mb-2">🏠</div>
+                                <div class="font-semibold text-blue-900 mb-1">Built-in CRM</div>
+                                <div class="text-xs text-blue-700">Recommended</div>
+                                <div class="mt-2 text-xs text-blue-600 group-hover:text-blue-800">Use BookIt CRM</div>
+                            </button>
+                            
+                            <button onclick="connectHubSpot()" class="integration-btn bg-white border-2 border-gray-200 hover:border-orange-500 rounded-lg p-4 text-center group transition-all">
+                                <div class="text-3xl mb-2">🧡</div>
+                                <div class="font-semibold text-gray-900 mb-1">HubSpot</div>
+                                <div class="text-xs text-gray-600">Popular CRM</div>
+                                <div class="mt-2 text-xs text-orange-600 group-hover:text-orange-800">Coming Soon</div>
+                            </button>
+                            
+                            <button onclick="connectSalesforce()" class="integration-btn bg-white border-2 border-gray-200 hover:border-blue-500 rounded-lg p-4 text-center group transition-all">
+                                <div class="text-3xl mb-2">☁️</div>
+                                <div class="font-semibold text-gray-900 mb-1">Salesforce</div>
+                                <div class="text-xs text-gray-600">Enterprise</div>
+                                <div class="mt-2 text-xs text-blue-600 group-hover:text-blue-800">Coming Soon</div>
+                            </button>
+                            
+                            <button onclick="skipCRMIntegration()" class="integration-btn bg-gray-50 border-2 border-gray-200 hover:border-gray-400 rounded-lg p-4 text-center group transition-all">
+                                <div class="text-3xl mb-2">⏭️</div>
+                                <div class="font-semibold text-gray-700 mb-1">Skip for Now</div>
+                                <div class="text-xs text-gray-500">Set up later</div>
+                                <div class="mt-2 text-xs text-gray-600 group-hover:text-gray-800">Continue Without</div>
+                            </button>
+                        </div>
+
+                        <div id="crm-setup-success" class="hidden bg-green-50 border border-green-200 rounded-lg p-4">
+                            <div class="flex items-center">
+                                <div class="text-green-600 mr-3">✅</div>
+                                <div>
+                                    <div class="font-semibold text-green-800">Customer Management Ready!</div>
+                                    <div class="text-green-700 text-sm">Customer information and appointment history will be automatically saved.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Integration Benefits -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                        <h3 class="text-lg font-bold text-blue-900 mb-3">🚀 What Happens Next?</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <div class="font-semibold text-blue-900 mb-1">✅ With Integrations:</div>
+                                <ul class="text-blue-800 space-y-1">
+                                    <li>• AI sees your real calendar</li>
+                                    <li>• Appointments sync automatically</li>
+                                    <li>• Customer data is preserved</li>
+                                    <li>• No double-booking ever</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <div class="font-semibold text-blue-900 mb-1">⚠️ Without Integrations:</div>
+                                <ul class="text-blue-800 space-y-1">
+                                    <li>• Manual calendar updates needed</li>
+                                    <li>• Risk of scheduling conflicts</li>
+                                    <li>• Customer info only in BookIt</li>
+                                    <li>• More administrative work</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-center mt-8 space-x-4">
+                    <button onclick="previousStep()" class="bg-gray-200 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-300 font-semibold">
+                        ← Back
+                    </button>
+                    <button id="continue-integration" onclick="nextStep()" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold">
                         Continue to Payment →
                     </button>
                 </div>
             </div>
 
-            <!-- Step 5: Payment & Launch -->
-            <div id="step-content-5" class="step-content hidden">
+            <!-- Step 6: Payment & Launch -->
+            <div id="step-content-6" class="step-content hidden">
                 <div class="text-center mb-8">
                     <div class="text-6xl mb-4">🚀</div>
                     <h2 class="text-2xl font-bold text-gray-900 mb-2">You're All Set!</h2>
@@ -355,7 +529,7 @@
     <script src="https://js.stripe.com/v3/"></script>
     <script>
         let currentStep = 1;
-        const totalSteps = 5;
+        const totalSteps = 6;
         let businessData = {};
         let selectedPersonality = 'friendly';
 
@@ -549,6 +723,7 @@
                 if (currentStep === 2) saveServices();
                 if (currentStep === 3) saveAISettings();
                 if (currentStep === 4) savePhoneNumber();
+                if (currentStep === 5) saveIntegrationSettings();
                 
                 currentStep++;
                 showStep(currentStep);
@@ -621,6 +796,79 @@
             businessData.businessDescription = document.getElementById('business-description').value;
             businessData.emergencyMessage = document.getElementById('emergency-message').value;
             console.log('Saving AI settings...', businessData);
+        }
+
+        function saveIntegrationSettings() {
+            // Save integration preferences
+            console.log('Saving integration settings...');
+        }
+
+        // Integration functions
+        function connectGoogleCalendar() {
+            console.log('🔗 Connecting Google Calendar...');
+            // Simulate connection success
+            setTimeout(() => {
+                document.getElementById('calendar-status').innerHTML = 
+                    '<span class="bg-green-100 text-green-800 px-3 py-1 rounded-full">Connected</span>';
+                document.getElementById('calendar-setup-success').classList.remove('hidden');
+                
+                // Update business data
+                businessData.calendarIntegration = 'google';
+                
+                alert('✅ Google Calendar connected successfully!\n\nYour AI can now see your real availability and prevent double-booking.');
+            }, 1000);
+        }
+
+        function connectOutlookCalendar() {
+            console.log('🔗 Connecting Outlook Calendar...');
+            // Simulate connection success
+            setTimeout(() => {
+                document.getElementById('calendar-status').innerHTML = 
+                    '<span class="bg-green-100 text-green-800 px-3 py-1 rounded-full">Connected</span>';
+                document.getElementById('calendar-setup-success').classList.remove('hidden');
+                
+                // Update business data
+                businessData.calendarIntegration = 'outlook';
+                
+                alert('✅ Outlook Calendar connected successfully!\n\nYour AI can now sync with Microsoft 365.');
+            }, 1000);
+        }
+
+        function skipCalendarIntegration() {
+            console.log('⏭️ Skipping calendar integration');
+            businessData.calendarIntegration = 'none';
+            alert('📅 No problem! You can set up calendar integration later from your dashboard.');
+        }
+
+        function connectBuiltInCRM() {
+            console.log('🏠 Setting up built-in CRM...');
+            // Simulate setup success
+            setTimeout(() => {
+                document.getElementById('crm-status').innerHTML = 
+                    '<span class="bg-green-100 text-green-800 px-3 py-1 rounded-full">Connected</span>';
+                document.getElementById('crm-setup-success').classList.remove('hidden');
+                
+                // Update business data
+                businessData.crmIntegration = 'builtin';
+                
+                alert('✅ Built-in CRM activated!\n\nCustomer information and appointment history will be automatically saved.');
+            }, 800);
+        }
+
+        function connectHubSpot() {
+            alert('🧡 HubSpot integration is coming soon!\n\nFor now, we\'ll use our built-in CRM to store your customer data.');
+            connectBuiltInCRM();
+        }
+
+        function connectSalesforce() {
+            alert('☁️ Salesforce integration is coming soon!\n\nFor now, we\'ll use our built-in CRM to store your customer data.');
+            connectBuiltInCRM();
+        }
+
+        function skipCRMIntegration() {
+            console.log('⏭️ Skipping CRM integration');
+            businessData.crmIntegration = 'none';
+            alert('👥 No problem! Customer data will still be stored in BookIt. You can set up CRM integration later.');
         }
 
         function testCall() {

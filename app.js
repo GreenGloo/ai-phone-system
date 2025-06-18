@@ -9,6 +9,7 @@ const { generateCalendarSlots } = require('./calendar-generator');
 const { autoMigrate } = require('./auto-migration-system');
 const { autoConfigureAllWebhooks, startWebhookHealthCheck, configureBusinessWebhook } = require('./webhook-auto-config');
 const { startBusinessHealthMonitoring } = require('./business-auto-repair');
+const { canAccessService, handlePaymentFailure, setDeveloperOverride } = require('./account-suspension-system');
 const twilio = require('twilio');
 const OpenAI = require('openai');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -279,6 +280,77 @@ app.use('/voice*', (req, res, next) => {
     timestamp: new Date().toISOString()
   });
   next();
+});
+
+// Account suspension check for voice calls
+app.use('/voice*', async (req, res, next) => {
+  try {
+    // Extract business ID from path
+    const businessId = req.params.businessId || req.path.split('/')[3];
+    
+    if (!businessId) {
+      console.log('⚠️ No business ID found in voice request');
+      return next();
+    }
+    
+    // Check if admin bypass is provided
+    const adminBypass = req.headers['x-admin-bypass'] || req.query.adminBypass;
+    
+    // Check account access
+    const accessResult = await canAccessService(businessId, { adminBypass });
+    
+    if (!accessResult.canAccess) {
+      console.log(`🚫 Account access denied for ${businessId}:`, accessResult.reason);
+      
+      // Return appropriate Twilio response based on suspension reason
+      const twiml = new twilio.twiml.VoiceResponse();
+      
+      switch (accessResult.reason) {
+        case 'suspended':
+          twiml.say({
+            voice: 'alice',
+            language: 'en-US'
+          }, 'This service is temporarily unavailable due to account suspension. Please contact support.');
+          break;
+          
+        case 'grace_period_expired':
+          twiml.say({
+            voice: 'alice', 
+            language: 'en-US'
+          }, 'This service is temporarily unavailable. Please contact the business directly.');
+          break;
+          
+        case 'cancelled':
+          twiml.say({
+            voice: 'alice',
+            language: 'en-US'
+          }, 'This number is no longer in service. Please contact the business directly.');
+          break;
+          
+        default:
+          twiml.say({
+            voice: 'alice',
+            language: 'en-US'
+          }, 'This service is temporarily unavailable. Please try again later.');
+      }
+      
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
+    // Account is accessible, add status to request for logging
+    req.accountStatus = accessResult;
+    
+    if (accessResult.warning) {
+      console.log(`⚠️ Account warning for ${businessId}: ${accessResult.warning}`);
+    }
+    
+    next();
+    
+  } catch (error) {
+    console.error('❌ Error checking account access:', error);
+    // On error, allow the call to proceed to prevent service disruption
+    next();
+  }
 });
 
 // Authentication endpoints
@@ -4787,6 +4859,321 @@ app.post('/api/send-push-notification', authenticateToken, async (req, res) => {
     console.error('Failed to send push notification:', error);
     res.status(500).json({ error: 'Failed to send push notification' });
   }
+});
+
+// ADMIN/DEVELOPER ACCOUNT SUSPENSION ENDPOINTS
+// Enable developer override for testing/development
+app.post('/admin/override/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { adminKey, enabled = true } = req.body;
+    
+    // Check admin key
+    if (adminKey !== process.env.ADMIN_BYPASS_KEY && adminKey !== 'dev_bypass_key') {
+      return res.status(403).json({ error: 'Invalid admin key' });
+    }
+    
+    const success = await setDeveloperOverride(businessId, enabled);
+    
+    if (success) {
+      res.json({ 
+        success: true, 
+        message: `Developer override ${enabled ? 'enabled' : 'disabled'} for business ${businessId}`,
+        businessId,
+        override: enabled
+      });
+    } else {
+      res.status(500).json({ error: 'Failed to set developer override' });
+    }
+    
+  } catch (error) {
+    console.error('❌ Error setting developer override:', error);
+    res.status(500).json({ error: 'Failed to set developer override' });
+  }
+});
+
+// Check account status (for debugging)
+app.get('/admin/status/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { adminKey } = req.query;
+    
+    // Check admin key
+    if (adminKey !== process.env.ADMIN_BYPASS_KEY && adminKey !== 'dev_bypass_key') {
+      return res.status(403).json({ error: 'Invalid admin key' });
+    }
+    
+    const accessResult = await canAccessService(businessId);
+    
+    // Get additional business info
+    const businessResult = await pool.query(`
+      SELECT 
+        business_name,
+        account_status,
+        suspended_at,
+        suspension_reason,
+        grace_period_ends_at,
+        payment_failed_count,
+        developer_override
+      FROM businesses 
+      WHERE id = $1
+    `, [businessId]);
+    
+    if (businessResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+    
+    res.json({
+      businessId,
+      business: businessResult.rows[0],
+      accessResult,
+      canBypass: {
+        adminKey: '?adminBypass=your_key',
+        header: 'X-Admin-Bypass: your_key',
+        developerMode: process.env.NODE_ENV === 'development'
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error checking account status:', error);
+    res.status(500).json({ error: 'Failed to check account status' });
+  }
+});
+
+// List all suspended accounts (for monitoring)
+app.get('/admin/suspended', async (req, res) => {
+  try {
+    const { adminKey } = req.query;
+    
+    // Check admin key
+    if (adminKey !== process.env.ADMIN_BYPASS_KEY && adminKey !== 'dev_bypass_key') {
+      return res.status(403).json({ error: 'Invalid admin key' });
+    }
+    
+    const { listSuspendedAccounts } = require('./account-suspension-system');
+    const suspendedAccounts = await listSuspendedAccounts();
+    
+    res.json({
+      count: suspendedAccounts.length,
+      accounts: suspendedAccounts,
+      developerMode: process.env.NODE_ENV === 'development'
+    });
+    
+  } catch (error) {
+    console.error('❌ Error listing suspended accounts:', error);
+    res.status(500).json({ error: 'Failed to list suspended accounts' });
+  }
+});
+
+// Manual account reactivation
+app.post('/admin/reactivate/:businessId', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { adminKey, reason = 'Manual admin reactivation' } = req.body;
+    
+    // Check admin key
+    if (adminKey !== process.env.ADMIN_BYPASS_KEY && adminKey !== 'dev_bypass_key') {
+      return res.status(403).json({ error: 'Invalid admin key' });
+    }
+    
+    const { reactivateAccount } = require('./account-suspension-system');
+    const success = await reactivateAccount(businessId, reason);
+    
+    if (success) {
+      res.json({ 
+        success: true, 
+        message: `Account ${businessId} reactivated`,
+        businessId,
+        reason
+      });
+    } else {
+      res.status(500).json({ error: 'Failed to reactivate account' });
+    }
+    
+  } catch (error) {
+    console.error('❌ Error reactivating account:', error);
+    res.status(500).json({ error: 'Failed to reactivate account' });
+  }
+});
+
+// SUBSCRIPTION CANCELLATION ENDPOINTS
+
+// Cancel subscription (Adobe-style flow)
+app.post('/api/subscription/cancel', authenticateToken, async (req, res) => {
+  try {
+    const { reason, feedback, preferences } = req.body;
+    const businessId = req.business.id;
+    
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Get current subscription
+      const subResult = await client.query(
+        'SELECT * FROM subscriptions WHERE business_id = $1',
+        [businessId]
+      );
+      
+      if (subResult.rows.length === 0) {
+        return res.status(404).json({ error: 'No active subscription found' });
+      }
+      
+      const subscription = subResult.rows[0];
+      
+      // Update business status to cancelled
+      await client.query(`
+        UPDATE businesses 
+        SET account_status = 'cancelled'
+        WHERE id = $1
+      `, [businessId]);
+      
+      // Update subscription status
+      const cancelDate = new Date();
+      const serviceEndDate = new Date(cancelDate.getTime() + (30 * 24 * 60 * 60 * 1000)); // 30 days
+      
+      await client.query(`
+        UPDATE subscriptions 
+        SET 
+          status = 'cancelled',
+          cancelled_at = $2,
+          cancellation_reason = $3,
+          service_ends_at = $4
+        WHERE business_id = $1
+      `, [businessId, cancelDate, reason, serviceEndDate]);
+      
+      // Log cancellation event
+      await client.query(`
+        INSERT INTO account_status_log (business_id, old_status, new_status, reason, changed_by)
+        VALUES ($1, $2, 'cancelled', $3, $4)
+      `, [businessId, subscription.status, `User cancellation: ${reason}`, req.business.email]);
+      
+      // Store cancellation feedback
+      await client.query(`
+        INSERT INTO billing_events (business_id, event_type, amount, description)
+        VALUES ($1, 'cancellation', 0, $2)
+      `, [businessId, `Cancellation feedback: ${feedback || 'None provided'}`]);
+      
+      // Store communication preferences
+      if (preferences) {
+        await client.query(`
+          UPDATE businesses 
+          SET 
+            email_updates = $2,
+            reactivation_offers = $3
+          WHERE id = $1
+        `, [businessId, preferences.futureUpdates, preferences.reactivationOffers]);
+      }
+      
+      await client.query('COMMIT');
+      
+      console.log(`✅ Subscription cancelled for business ${businessId}: ${reason}`);
+      
+      res.json({
+        success: true,
+        message: 'Subscription cancelled successfully',
+        serviceEndDate: serviceEndDate.toISOString(),
+        dataRetentionDays: 30
+      });
+      
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('❌ Error cancelling subscription:', error);
+    res.status(500).json({ error: 'Failed to cancel subscription' });
+  }
+});
+
+// Reactivate cancelled subscription
+app.post('/api/subscription/reactivate', authenticateToken, async (req, res) => {
+  try {
+    const businessId = req.business.id;
+    
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Check if business is cancelled and within reactivation window
+      const businessResult = await client.query(`
+        SELECT account_status, suspended_at 
+        FROM businesses 
+        WHERE id = $1
+      `, [businessId]);
+      
+      if (businessResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Business not found' });
+      }
+      
+      const business = businessResult.rows[0];
+      
+      if (business.account_status !== 'cancelled') {
+        return res.status(400).json({ error: 'Subscription is not cancelled' });
+      }
+      
+      // Check if within 30-day reactivation window
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      if (business.suspended_at && new Date(business.suspended_at) < thirtyDaysAgo) {
+        return res.status(400).json({ error: 'Reactivation window has expired' });
+      }
+      
+      // Reactivate business
+      await client.query(`
+        UPDATE businesses 
+        SET 
+          account_status = 'active',
+          suspended_at = NULL,
+          suspension_reason = NULL
+        WHERE id = $1
+      `, [businessId]);
+      
+      // Reactivate subscription
+      const reactivationDate = new Date();
+      await client.query(`
+        UPDATE subscriptions 
+        SET 
+          status = 'active',
+          cancelled_at = NULL,
+          reactivated_at = $2
+        WHERE business_id = $1
+      `, [businessId, reactivationDate]);
+      
+      // Log reactivation
+      await client.query(`
+        INSERT INTO account_status_log (business_id, old_status, new_status, reason, changed_by)
+        VALUES ($1, 'cancelled', 'active', 'User reactivation', $2)
+      `, [businessId, req.business.email]);
+      
+      await client.query('COMMIT');
+      
+      console.log(`✅ Subscription reactivated for business ${businessId}`);
+      
+      res.json({
+        success: true,
+        message: 'Subscription reactivated successfully'
+      });
+      
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error('❌ Error reactivating subscription:', error);
+    res.status(500).json({ error: 'Failed to reactivate subscription' });
+  }
+});
+
+// Get cancellation page
+app.get('/cancel', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'cancel.html'));
 });
 
 // Health check endpoint

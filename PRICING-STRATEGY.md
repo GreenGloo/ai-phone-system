@@ -2,13 +2,12 @@
 
 ## 🎯 PRICING TIERS
 
-### FREE TRIAL (14 Days)
-- **Duration**: 14 days
-- **Call Limit**: 50 calls  
-- **Features**: Full access to all features
-- **Phone Number**: Free Twilio number included
-- **Support**: Email support
-- **Conversion Goal**: Get businesses hooked on the value
+### NO FREE TRIAL - MONEY BACK GUARANTEE
+- **Duration**: 30-day money-back guarantee
+- **Approach**: Full commitment with safety net
+- **Phone Number**: Dedicated number included from day 1
+- **Reasoning**: Businesses need consistency, not temporary disruption
+- **Conversion Goal**: Confident businesses that commit to success
 
 ### STARTER PLAN - $49/month
 - **Call Limit**: 200 calls/month
@@ -58,19 +57,27 @@
   - Custom contracts
 - **Target**: Very large enterprises
 
-## 💡 VALUE PROPOSITION BY TIER
+## 💰 TOTAL COST BREAKDOWN FOR BUSINESSES
 
-### Why businesses will pay:
-1. **Never miss a call** = More revenue
-2. **24/7 availability** = Competitive advantage  
-3. **Professional image** = Customer trust
-4. **Time savings** = Reduced labor costs
-5. **Analytics** = Business insights
+### STARTER PLAN ($49/month) - True Cost Analysis:
+- **Our Service**: $49/month
+- **Opportunity Cost**: $0 (replaces missed calls)
+- **Setup Time**: 2-3 hours one-time
+- **Training Staff**: Minimal (AI handles calls)
+- **Phone Costs**: Use existing number
+- **Total Monthly Cost**: $49 + minimal setup time
+
+### Cost vs. Traditional Alternatives:
+- **Hiring Receptionist**: $2,500-4,000/month + benefits
+- **Call Answering Service**: $200-800/month + per-call fees
+- **Missed Call Revenue Loss**: $500-2,000/month
+- **Our AI Solution**: $49-349/month (95% savings)
 
 ### ROI Calculation:
 - Average service call value: $150-300
-- If AI books just 2 extra appointments/month = $300-600
-- Professional plan pays for itself with 1 extra booking
+- If AI books just 1 extra appointment/month = $150-300
+- Starter plan pays for itself with 1/3 of one extra booking
+- Professional plan ROI = 300-600% annually
 
 ## 🚀 IMPLEMENTATION PLAN
 

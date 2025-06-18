@@ -85,7 +85,7 @@ async function addBillingSystem() {
     console.log('  - Starter: $49/month (200 calls)');
     console.log('  - Professional: $149/month (1,000 calls)'); 
     console.log('  - Enterprise: $349/month (5,000 calls)');
-    console.log('  - All plans include 14-day free trial');
+    console.log('  - All plans include 3-day free trial');
     
   } catch (error) {
     console.error('❌ Error setting up billing system:', error);
