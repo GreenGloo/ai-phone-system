@@ -507,7 +507,7 @@ async function handleInitialCall(res, business, callSid, from, businessId) {
   const twiml = new twilio.twiml.VoiceResponse();
   await generateVoiceResponse(greeting, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
   
-  twiml.gather({
+  const gather = twiml.gather({
     input: 'speech',
     timeout: 30,
     speechTimeout: 'auto',
@@ -515,6 +515,7 @@ async function handleInitialCall(res, business, callSid, from, businessId) {
     method: 'POST'
   });
   
+  // Timeout message should be after gather, not inside it
   await generateVoiceResponse('I\'m having trouble hearing you clearly. Please try speaking a bit louder or closer to your phone, or I can have someone call you back.', conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
   twiml.hangup();
   
@@ -1039,7 +1040,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
       gatherParams.timeout = 20; // Shorter timeout for extended conversations
     }
     
-    twiml.gather(gatherParams);
+    const gather = twiml.gather(gatherParams);
     
     // Natural timeout messages based on emotional state and personality
     let timeoutMessage = 'I\'m having trouble hearing you. Could you please speak up, or I can have someone call you back to help?';
