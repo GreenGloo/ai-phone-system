@@ -461,7 +461,13 @@ async function handleVoiceCall(req, res) {
     
   } catch (error) {
     console.error(`🚨 Conversation error:`, error);
-    const conversation = conversations.get(CallSid);
+    // Get conversation from database if possible, otherwise use null
+    let conversation = null;
+    try {
+      conversation = await getConversation(CallSid, businessId);
+    } catch (getError) {
+      console.error(`Failed to get conversation: ${getError.message}`);
+    }
     return handleConversationError(error, conversation, res);
   }
 }
