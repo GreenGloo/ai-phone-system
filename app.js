@@ -5227,13 +5227,15 @@ app.use('/api/*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 BookIt Technologies running on port ${PORT}`);
   console.log(`🏠 Landing page: /`);
   console.log(`📋 Onboarding: /onboarding`);
   console.log(`📊 Dashboard: /dashboard`);
   console.log(`⚙️ Settings: /settings`);
   console.log(`💾 Database: ${process.env.DATABASE_URL ? 'Connected' : 'Not configured'}`);
+  console.log(`🌐 Server bound to 0.0.0.0:${PORT}`);
+  console.log(`🎯 BASE_URL: ${process.env.BASE_URL || 'Not set'}`);
 });
 // Force redeploy Fri Jun 20 16:16:19 EDT 2025
 console.log('✅ Domain fix deployed');
