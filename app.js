@@ -5235,3 +5235,4 @@ app.listen(PORT, () => {
   console.log(`⚙️ Settings: /settings`);
   console.log(`💾 Database: ${process.env.DATABASE_URL ? 'Connected' : 'Not configured'}`);
 });
+// Force redeploy Fri Jun 20 16:16:19 EDT 2025
