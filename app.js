@@ -3754,6 +3754,22 @@ app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, g
       friendlyName: `${req.business.name} - BookIt AI`
     });
     
+    // 📱 MESSAGING SERVICE INTEGRATION: Add phone number to A2P messaging service
+    console.log(`📱 Adding ${phoneNumberToPurchase} to messaging service for A2P compliance`);
+    try {
+      if (process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        await twilioClient.messaging.v1.services(process.env.TWILIO_MESSAGING_SERVICE_SID)
+          .phoneNumbers
+          .create({phoneNumberSid: purchasedNumber.sid});
+        console.log(`✅ Phone number ${phoneNumberToPurchase} added to messaging service`);
+      } else {
+        console.log(`⚠️ TWILIO_MESSAGING_SERVICE_SID not configured - skipping messaging service integration`);
+      }
+    } catch (messagingError) {
+      console.error(`❌ Failed to add phone number to messaging service:`, messagingError);
+      // Don't fail the entire onboarding if messaging service fails
+    }
+    
     // Update business with new phone number and mark onboarding complete
     await pool.query(
       'UPDATE businesses SET phone_number = $1, twilio_phone_sid = $2, onboarding_completed = true WHERE id = $3',
@@ -4029,6 +4045,22 @@ app.post('/api/businesses/:businessId/purchase-phone-number', authenticateToken,
       smsMethod: 'POST',
       friendlyName: `${req.business.name} - BookIt AI`
     });
+    
+    // 📱 MESSAGING SERVICE INTEGRATION: Add phone number to A2P messaging service
+    console.log(`📱 Adding ${phoneNumber} to messaging service for A2P compliance`);
+    try {
+      if (process.env.TWILIO_MESSAGING_SERVICE_SID) {
+        await twilioClient.messaging.v1.services(process.env.TWILIO_MESSAGING_SERVICE_SID)
+          .phoneNumbers
+          .create({phoneNumberSid: purchasedNumber.sid});
+        console.log(`✅ Phone number ${phoneNumber} added to messaging service`);
+      } else {
+        console.log(`⚠️ TWILIO_MESSAGING_SERVICE_SID not configured - skipping messaging service integration`);
+      }
+    } catch (messagingError) {
+      console.error(`❌ Failed to add phone number to messaging service:`, messagingError);
+      // Don't fail the entire purchase if messaging service fails
+    }
     
     // Update business with new phone number
     await pool.query(
