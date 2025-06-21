@@ -5572,6 +5572,61 @@ app.get('/admin/check-business-voice', async (req, res) => {
   }
 });
 
+// TEMPORARY ADMIN ENDPOINT: Check business configuration for debugging
+app.get('/admin/check-business-config/:businessId', async (req, res) => {
+  try {
+    const { adminKey } = req.query;
+    const { businessId } = req.params;
+    
+    // Check admin key
+    if (adminKey !== process.env.ADMIN_BYPASS_KEY && adminKey !== 'dev_bypass_key') {
+      return res.status(403).json({ error: 'Invalid admin key' });
+    }
+    
+    console.log(`🔧 ADMIN: Checking configuration for business ${businessId}...`);
+    
+    // Get business details
+    const business = await pool.query(`
+      SELECT name, business_hours, calendar_preferences, subscription_status, created_at, onboarding_completed
+      FROM businesses 
+      WHERE id = $1
+    `, [businessId]);
+    
+    // Get service types
+    const services = await pool.query(`
+      SELECT name, duration_minutes, base_rate, is_active
+      FROM service_types 
+      WHERE business_id = $1
+    `, [businessId]);
+    
+    // Get calendar slots
+    const slots = await pool.query(`
+      SELECT COUNT(*) as slot_count,
+             MIN(slot_start) as earliest_slot,
+             MAX(slot_start) as latest_slot
+      FROM calendar_slots 
+      WHERE business_id = $1 AND is_available = true
+    `, [businessId]);
+    
+    res.json({
+      message: 'Business configuration check',
+      business: business.rows[0] || 'Not found',
+      services: {
+        count: services.rows.length,
+        services: services.rows
+      },
+      calendar: {
+        slots_available: slots.rows[0]?.slot_count || 0,
+        date_range: `${slots.rows[0]?.earliest_slot} to ${slots.rows[0]?.latest_slot}`
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Admin config check failed:', error);
+    res.status(500).json({ error: 'Failed to check business configuration' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 BookIt Technologies running on port ${PORT}`);
