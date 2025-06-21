@@ -859,7 +859,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
       interactionCount: 0,
       startTime: new Date(),
       context: {
-        hasGreeted: false,
+        hasGreeted: true, // FIXED: Already greeted in initial call - don't greet again
         needsService: null,
         preferredTime: null,
         urgencyLevel: 'normal'
@@ -1262,8 +1262,10 @@ Return ONLY valid JSON. No extra text or explanations.`;
         // Remove any escaped JSON patterns like "response: text" that shouldn't be spoken
         response.response = response.response
           .replace(/^response:\s*/i, '') // Remove "response: " prefix
+          .replace(/\bresponse\b\s*:?\s*/gi, '') // Remove standalone "response" word
           .replace(/\\"/g, '"') // Unescape quotes
           .replace(/\\\\/g, '\\') // Unescape backslashes
+          .replace(/^\s*["']|["']\s*$/g, '') // Remove surrounding quotes
           .trim();
         
         console.log(`🧹 Cleaned response: "${response.response}"`);
