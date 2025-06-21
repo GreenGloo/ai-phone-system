@@ -226,6 +226,15 @@ async function getAvailableSlots(businessId, requestedTimeframe = 'soon') {
   try {
     console.log(`📅 Getting calendar slots for business ${businessId} (${requestedTimeframe})`);
     
+    // Get business timezone first
+    const businessResult = await pool.query('SELECT timezone FROM businesses WHERE id = $1', [businessId]);
+    if (businessResult.rows.length === 0) {
+      console.error('📅 Business not found for timezone lookup');
+      return [];
+    }
+    const businessTimezone = businessResult.rows[0].timezone || 'America/New_York';
+    console.log(`📅 Using business timezone: ${businessTimezone}`);
+    
     // Check if calendar_slots table exists
     const tableCheck = await pool.query(`
       SELECT EXISTS (
@@ -325,14 +334,14 @@ async function getAvailableSlots(businessId, requestedTimeframe = 'soon') {
           weekday: 'long', 
           month: 'short', 
           day: 'numeric',
-          timeZone: 'America/New_York'  // Tom's Garage timezone
+          timeZone: businessTimezone
         });
         
         const timeStr = slotStart.toLocaleTimeString('en-US', { 
           hour: 'numeric', 
           minute: '2-digit',
           hour12: true,
-          timeZone: 'America/New_York'  // Tom's Garage timezone
+          timeZone: businessTimezone
         });
         
         return {
@@ -380,13 +389,13 @@ async function getAvailableSlots(businessId, requestedTimeframe = 'soon') {
               month: 'long', 
               day: 'numeric',
               year: slotDate.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined,
-              timeZone: 'America/New_York'  // Tom's Garage timezone
+              timeZone: businessTimezone
             }),
             time: slotDate.toLocaleTimeString('en-US', { 
               hour: 'numeric', 
               minute: '2-digit', 
               hour12: true,
-              timeZone: 'America/New_York'  // Tom's Garage timezone
+              timeZone: businessTimezone
             }),
             datetime: slot.slot_start
           };
@@ -1342,8 +1351,12 @@ async function bookAppointment(conversation, businessId, service, data) {
     const appointmentTime = new Date(data.appointmentDatetime);
     console.log(`📅 AI provided datetime: "${data.appointmentDatetime}"`);
     console.log(`📅 Parsed as: ${appointmentTime.toISOString()}`);
-    console.log(`📅 Eastern display: ${appointmentTime.toLocaleTimeString('en-US', { 
-      hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/New_York' 
+    // Get business timezone for proper display
+    const businessResult = await pool.query('SELECT timezone FROM businesses WHERE id = $1', [businessId]);
+    const businessTimezone = businessResult.rows[0]?.timezone || 'America/New_York';
+    
+    console.log(`📅 Business timezone display: ${appointmentTime.toLocaleTimeString('en-US', { 
+      hour: 'numeric', minute: '2-digit', hour12: true, timeZone: businessTimezone 
     })}`);
     
     // Validate that this slot is actually available

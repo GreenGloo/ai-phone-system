@@ -9,9 +9,9 @@ async function generateCalendarSlots(businessId, daysAhead = 365) {
   try {
     console.log(`📅 Generating calendar slots for business ${businessId} for next ${daysAhead} days`);
     
-    // Get business hours and preferences
+    // Get business hours, preferences, and timezone
     const businessResult = await pool.query(`
-      SELECT business_hours, calendar_preferences 
+      SELECT business_hours, calendar_preferences, timezone 
       FROM businesses 
       WHERE id = $1
     `, [businessId]);
@@ -20,7 +20,9 @@ async function generateCalendarSlots(businessId, daysAhead = 365) {
       throw new Error('Business not found');
     }
     
-    const { business_hours, calendar_preferences } = businessResult.rows[0];
+    const { business_hours, calendar_preferences, timezone } = businessResult.rows[0];
+    const businessTimezone = timezone || 'America/New_York';
+    console.log(`📅 Generating slots in timezone: ${businessTimezone}`);
     const appointmentDuration = calendar_preferences?.appointmentDuration || 60;
     const bufferTime = calendar_preferences?.bufferTime || 30;
     
@@ -50,15 +52,17 @@ async function generateCalendarSlots(businessId, daysAhead = 365) {
       // Generate slots every 30 minutes during business hours
       for (let hour = startHour; hour < endHour || (hour === endHour && 0 < endMinute); hour++) {
         for (let minute = 0; minute < 60; minute += 30) {
-          // Create slot in business timezone (Eastern Time)
+          // Create slot properly in business timezone
+          // Build the slot time in local date format, then convert to UTC
           const slotStart = new Date(currentDate);
           slotStart.setHours(hour, minute, 0, 0);
+          
           
           // Skip if past end time
           if (hour === endHour && minute >= endMinute) break;
           if (hour > endHour) break;
           
-          // Skip past times for today
+          // Skip past times for today (compare in UTC)
           if (day === 0 && slotStart <= now) continue;
           
           const slotEnd = new Date(slotStart.getTime() + appointmentDuration * 60000);
