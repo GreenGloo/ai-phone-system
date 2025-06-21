@@ -3697,6 +3697,50 @@ app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, g
   try {
     const { areaCode, selectedPhoneNumber } = req.body;
     
+    // 🔒 SECURITY CHECK: Validate account access and subscription status
+    console.log(`🔒 Validating account access for business ${req.business.id}`);
+    const accessResult = await canAccessService(req.business.id);
+    if (!accessResult.canAccess) {
+      console.log(`🚫 Access denied for business ${req.business.id}: ${accessResult.reason}`);
+      return res.status(403).json({
+        error: 'Account access denied',
+        reason: accessResult.reason,
+        details: accessResult.details || 'Account suspended, cancelled, or payment required'
+      });
+    }
+    
+    // 💳 PAYMENT VALIDATION: Check for valid subscription
+    console.log(`💳 Validating subscription for business ${req.business.id}`);
+    const subscriptionResult = await pool.query(`
+      SELECT s.*, s.stripe_customer_id, s.payment_status, s.trial_ends_at,
+             (s.trial_ends_at > NOW()) as in_trial
+      FROM subscriptions s 
+      WHERE s.business_id = $1 
+      ORDER BY s.created_at DESC 
+      LIMIT 1
+    `, [req.business.id]);
+    
+    if (subscriptionResult.rows.length === 0) {
+      return res.status(402).json({
+        error: 'No subscription found',
+        message: 'Please set up billing before completing onboarding',
+        action_required: 'setup_billing'
+      });
+    }
+    
+    const subscription = subscriptionResult.rows[0];
+    
+    // Check if trial period has ended and no valid payment method
+    if (!subscription.in_trial && (!subscription.stripe_customer_id || subscription.payment_status !== 'active')) {
+      return res.status(402).json({
+        error: 'Payment required',
+        message: 'Your trial period has ended. Please add a payment method to continue.',
+        trial_ended: true,
+        trial_ended_at: subscription.trial_ends_at,
+        action_required: 'add_payment_method'
+      });
+    }
+    
     // Check if business already has a phone number
     if (req.business.phone_number) {
       return res.json({
