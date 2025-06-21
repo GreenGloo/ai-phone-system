@@ -323,9 +323,14 @@ app.use('/voice*', (req, res, next) => {
   next();
 });
 
-// Account suspension check for voice calls
+// Account suspension check for voice calls (exclude root voice handler)
 app.use('/voice*', async (req, res, next) => {
   try {
+    // Skip middleware for root voice handler (it handles business lookup internally)
+    if (req.path === '/') {
+      return next();
+    }
+    
     // Extract business ID from path
     const businessId = req.params.businessId || req.path.split('/')[3];
     
