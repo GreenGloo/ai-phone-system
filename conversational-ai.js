@@ -1161,14 +1161,22 @@ RULES:
 • Collect name if missing
 • CRITICAL: If PREVIOUS SERVICE exists, KEEP using it - don't ask for service again
 • "CID"/"old change" = oil change
-• Service mentioned = offer specific times from slots
+• CRITICAL: When offering times, list SPECIFIC times from SLOTS - NOT ranges like "between 8:00 and 2:30"
+• MUST offer individual appointment times like "8:00 AM, 9:00 AM, 10:30 AM" from the SLOTS list
 • When customer confirms time ("yes"/"okay"/"that works") = use action "book_appointment"
 • CRITICAL: Use EXACT appointmentDatetime from SLOTS list - copy the UTC datetime exactly (e.g. "2025-06-23T12:00:00.000Z")
 • NEVER create your own dates/times - only use the provided slot datetimes
+• NEVER say "between X and Y" - always list specific available appointment times
 
 EXAMPLES:
-Customer needs service → action: "continue", offer times
+Customer needs service → "I can schedule that for you. I have these times available: Monday 9:00 AM, Monday 11:30 AM, Tuesday 2:00 PM. Which works best?"
 Customer confirms time → action: "book_appointment", book it immediately
+
+WRONG WAY (DO NOT DO THIS):
+"I have slots available between 8:00 AM and 2:30 PM tomorrow"
+
+RIGHT WAY (DO THIS):
+"I have these specific times available: Tomorrow 8:00 AM, Tomorrow 9:30 AM, Tomorrow 11:00 AM, Tomorrow 2:30 PM"
 
 RESPONSE FORMAT - MUST BE VALID JSON ONLY:
 {
@@ -1199,12 +1207,13 @@ ${availability.map((slot, index) => `${slot.day} ${slot.time} = ${slot.datetime}
 BOOKING RULES:
 1. Always collect customer name early if not already collected
 2. CRITICAL: If previous service exists, keep using it - don't change services
-3. If customer mentions ANY clear service need -> offer specific times and book immediately
-4. If customer says "yes", "sounds good", "okay" -> book the appointment  
-5. Assume unclear speech like "CID" means "oil change" 
-6. Be conversational but drive toward booking
-7. CRITICAL: Use EXACT appointmentDatetime from technical reference above - copy the UTC datetime exactly
-8. NEVER create your own dates/times - only use the provided slot datetimes
+3. If customer mentions ANY clear service need -> offer SPECIFIC INDIVIDUAL times, NOT ranges
+4. NEVER say "between X and Y" - always list specific appointment times like "Monday 9:00 AM, Tuesday 2:30 PM"
+5. If customer says "yes", "sounds good", "okay" -> book the appointment  
+6. Assume unclear speech like "CID" means "oil change" 
+7. Be conversational but drive toward booking
+8. CRITICAL: Use EXACT appointmentDatetime from technical reference above - copy the UTC datetime exactly
+9. NEVER create your own dates/times - only use the provided slot datetimes
 9. When speaking to customer, only mention day and time (e.g. "tomorrow at 2 PM") - never mention UTC or technical strings
 
 Your response should:
