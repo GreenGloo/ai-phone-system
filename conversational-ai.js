@@ -79,17 +79,31 @@ async function getAvailableTimes(businessId, requestedDate = null) {
   try {
     let dateFilter = '';
     if (requestedDate) {
-      // Handle specific date requests
-      const targetDate = new Date(requestedDate);
-      if (!isNaN(targetDate)) {
-        // If it's a month request (like "July"), get the whole month
-        if (requestedDate.includes('-01')) {
-          const endOfMonth = new Date(targetDate);
-          endOfMonth.setMonth(endOfMonth.getMonth() + 1);
-          dateFilter = `AND slot_start >= '${targetDate.toISOString()}' AND slot_start < '${endOfMonth.toISOString()}'`;
-        } else {
-          // Specific date
-          dateFilter = `AND DATE(slot_start) = DATE('${targetDate.toISOString()}')`;
+      console.log(`📅 Searching for slots on requested date: ${requestedDate}`);
+      
+      // Parse YYYY-MM-DD format properly without timezone shift
+      const dateParts = requestedDate.split('-');
+      if (dateParts.length === 3) {
+        const year = parseInt(dateParts[0]);
+        const month = parseInt(dateParts[1]) - 1; // Month is 0-based in Date constructor
+        const day = parseInt(dateParts[2]);
+        
+        // Create date in local timezone to avoid shifts
+        const targetDate = new Date(year, month, day);
+        console.log(`📅 Parsed target date: ${targetDate.toDateString()}`);
+        
+        if (!isNaN(targetDate.getTime())) {
+          // If it's the first day of month, get the whole month
+          if (day === 1) {
+            const endOfMonth = new Date(year, month + 1, 1); // First day of next month
+            dateFilter = `AND slot_start >= '${targetDate.toISOString()}' AND slot_start < '${endOfMonth.toISOString()}'`;
+            console.log(`📅 Month range filter: ${targetDate.toISOString()} to ${endOfMonth.toISOString()}`);
+          } else {
+            // Specific date - use DATE() function to compare just the date part
+            const targetDateStr = targetDate.toISOString().split('T')[0];
+            dateFilter = `AND DATE(slot_start) = DATE('${targetDateStr}')`;
+            console.log(`📅 Specific date filter: DATE(slot_start) = DATE('${targetDateStr}')`);
+          }
         }
       }
     } else {
@@ -245,25 +259,50 @@ function extractDateFromSpeech(speech) {
   const months = ['january', 'february', 'march', 'april', 'may', 'june', 
                   'july', 'august', 'september', 'october', 'november', 'december'];
   
+  // First try to extract full date with year (e.g., "July 6th, 2026" or "July 6 2026")
+  const fullDateMatch = speech.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i);
+  if (fullDateMatch) {
+    const monthName = fullDateMatch[1].toLowerCase();
+    const day = parseInt(fullDateMatch[2]);
+    const year = parseInt(fullDateMatch[3]);
+    const monthIndex = months.indexOf(monthName);
+    
+    // Use Date constructor to avoid timezone issues
+    const targetDate = new Date(year, monthIndex, day);
+    return targetDate.toISOString().split('T')[0]; // Return YYYY-MM-DD format
+  }
+  
+  // Then try month and day without year
   for (const month of months) {
     if (speech.toLowerCase().includes(month)) {
-      // Try to extract full date first
       const dateMatch = speech.match(new RegExp(`${month}\\s+(\\d{1,2})`, 'i'));
       if (dateMatch) {
-        const day = dateMatch[1];
-        const year = new Date().getFullYear();
-        return `${month} ${day}, ${year}`;
-      } else {
-        // Just month mentioned - return first day of that month
-        const year = new Date().getFullYear();
+        const day = parseInt(dateMatch[1]);
+        let year = new Date().getFullYear();
         const monthIndex = months.indexOf(month.toLowerCase());
-        const targetDate = new Date(year, monthIndex, 1);
         
-        // If the month is in the past this year, use next year
-        if (targetDate < new Date()) {
-          targetDate.setFullYear(year + 1);
+        // Create test date for this year
+        const testDate = new Date(year, monthIndex, day);
+        
+        // If the date is in the past, use next year
+        if (testDate < new Date()) {
+          year++;
         }
         
+        const targetDate = new Date(year, monthIndex, day);
+        return targetDate.toISOString().split('T')[0]; // Return YYYY-MM-DD format
+      } else {
+        // Just month mentioned - return first day of that month
+        let year = new Date().getFullYear();
+        const monthIndex = months.indexOf(month.toLowerCase());
+        const testDate = new Date(year, monthIndex, 1);
+        
+        // If the month is in the past this year, use next year
+        if (testDate < new Date()) {
+          year++;
+        }
+        
+        const targetDate = new Date(year, monthIndex, 1);
         return targetDate.toISOString().split('T')[0]; // Return YYYY-MM-DD format
       }
     }
