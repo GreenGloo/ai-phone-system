@@ -221,8 +221,14 @@ async function handleConversation(req, res) {
     
     // Handle booking
     if (aiResponse.action === 'book' && aiResponse.data.service && aiResponse.data.time) {
-      await bookAppointment(businessId, conversation.customerName, From, aiResponse.data.service, aiResponse.data.time);
-      return sendResponse(res, cleanMessage, conversation.voiceId, false, businessId, conversation); // End call
+      try {
+        await bookAppointment(businessId, conversation.customerName, From, aiResponse.data.service, aiResponse.data.time);
+        return sendResponse(res, cleanMessage, conversation.voiceId, false, businessId, conversation); // End call
+      } catch (bookingError) {
+        console.error('Booking failed:', bookingError);
+        const errorMsg = `I'm sorry, I couldn't book that appointment. ${bookingError.message.includes('No available slots') ? 'That date is not available.' : 'There was a technical issue.'} Let me have someone call you back to help.`;
+        return sendResponse(res, errorMsg, conversation.voiceId, false, businessId, conversation);
+      }
     }
     
     // Continue conversation
@@ -280,33 +286,69 @@ async function bookAppointment(businessId, customerName, customerPhone, service,
     
     const serviceRecord = serviceResult.rows[0];
     
-    // Parse time - look for specific time slot from available slots
-    const slotsResult = await pool.query(`
+    // Parse the time string to find matching slot
+    console.log(`📅 Booking appointment for timeString: "${timeString}"`);
+    
+    // Extract date components from timeString
+    let targetDate = null;
+    
+    // Try to parse "January 2" or "Jan 2" format
+    const monthDayMatch = timeString.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})/i);
+    if (monthDayMatch) {
+      const monthName = monthDayMatch[1].toLowerCase();
+      const day = parseInt(monthDayMatch[2]);
+      const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+      const monthIndex = months.indexOf(monthName);
+      
+      // Determine year - if month is in past, use next year
+      let year = new Date().getFullYear();
+      const testDate = new Date(year, monthIndex, day);
+      if (testDate < new Date()) {
+        year++;
+      }
+      
+      targetDate = new Date(year, monthIndex, day);
+      console.log(`📅 Parsed date: ${targetDate.toDateString()}`);
+    }
+    
+    // Find slots for the target date
+    let slotsQuery = `
       SELECT slot_start 
       FROM calendar_slots 
       WHERE business_id = $1 AND is_available = true
-      ORDER BY slot_start 
-      LIMIT 50
-    `, [businessId]);
+    `;
+    let queryParams = [businessId];
     
-    // Find matching time slot (simplified matching)
-    let appointmentTime = new Date();
-    for (const slot of slotsResult.rows) {
-      const slotDate = new Date(slot.slot_start);
-      const slotStr = slotDate.toLocaleString('en-US', {
-        weekday: 'long',
-        month: 'short',
-        day: 'numeric', 
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      });
+    if (targetDate) {
+      // Get slots for specific date
+      const startOfDay = new Date(targetDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(targetDate);
+      endOfDay.setHours(23, 59, 59, 999);
       
-      if (timeString.toLowerCase().includes(slotStr.toLowerCase().slice(0, 10))) {
-        appointmentTime = slotDate;
-        break;
-      }
+      slotsQuery += ` AND slot_start >= $2 AND slot_start <= $3`;
+      queryParams.push(startOfDay.toISOString(), endOfDay.toISOString());
     }
+    
+    slotsQuery += ` ORDER BY slot_start LIMIT 50`;
+    
+    const slotsResult = await pool.query(slotsQuery, queryParams);
+    console.log(`📅 Found ${slotsResult.rows.length} available slots`);
+    
+    if (slotsResult.rows.length === 0) {
+      throw new Error(`No available slots found for ${targetDate ? targetDate.toDateString() : 'requested time'}`);
+    }
+    
+    // Use first available slot for the requested date
+    const appointmentTime = new Date(slotsResult.rows[0].slot_start);
+    console.log(`📅 Selected appointment time: ${appointmentTime.toLocaleString()}`);
+    
+    // Mark slot as unavailable
+    await pool.query(`
+      UPDATE calendar_slots 
+      SET is_available = false 
+      WHERE business_id = $1 AND slot_start = $2
+    `, [businessId, appointmentTime.toISOString()]);
     
     await pool.query(`
       INSERT INTO appointments (
