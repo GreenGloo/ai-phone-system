@@ -22,20 +22,27 @@ Customer just said: "${context.customerMessage}"
 Customer name: ${context.customerName || 'Not provided yet'}
 Previous context: ${context.previousContext || 'First interaction'}
 
-Your job:
+CONVERSATION RULES:
 1. Be natural and conversational - like a real person
-2. If no name, ask for it naturally 
-3. If they need a service, offer specific morning/afternoon times
-4. If they confirm a time, book it
-5. Keep responses short and human
+2. NEVER ask "what do you need again" - you're a booking assistant, always assume they need an appointment
+3. If they mention a date (like "July", "July 28th", "tomorrow"), offer available times for that date
+4. If they mention a service, offer times for that service
+5. If they just say a month/date without service, ask what service they need AND show available times
+6. Keep responses short and human
+7. Always move the conversation forward toward booking
 
 Available services: ${context.services.join(', ')}
-Available times: ${context.availableTimes}
+Available times for requested date: ${context.availableTimes}
+
+EXAMPLES:
+Customer says "July" → "What service do you need for July? I have morning slots at 8 AM, 9:30 AM and afternoon slots at 1 PM, 2:30 PM available."
+Customer says "game delivery" → "Perfect! I can schedule that. I have morning slots at 8 AM, 9:30 AM and afternoon slots at 1 PM, 2:30 PM. Which works better?"
+Customer says "tomorrow at 2" → Book it immediately
 
 Respond with JSON:
 {
   "message": "Your natural response",
-  "action": "continue" or "book",
+  "action": "continue" or "book", 
   "data": {"customerName": "John", "service": "repair", "time": "Monday 9 AM"}
 }`;
 
@@ -74,7 +81,15 @@ async function getAvailableTimes(businessId, requestedDate = null) {
       // Handle specific date requests
       const targetDate = new Date(requestedDate);
       if (!isNaN(targetDate)) {
-        dateFilter = `AND DATE(slot_start) = DATE('${targetDate.toISOString()}')`;
+        // If it's a month request (like "July"), get the whole month
+        if (requestedDate.includes('-01')) {
+          const endOfMonth = new Date(targetDate);
+          endOfMonth.setMonth(endOfMonth.getMonth() + 1);
+          dateFilter = `AND slot_start >= '${targetDate.toISOString()}' AND slot_start < '${endOfMonth.toISOString()}'`;
+        } else {
+          // Specific date
+          dateFilter = `AND DATE(slot_start) = DATE('${targetDate.toISOString()}')`;
+        }
       }
     } else {
       // Default: next 7 days
@@ -225,12 +240,24 @@ function extractDateFromSpeech(speech) {
   
   for (const month of months) {
     if (speech.toLowerCase().includes(month)) {
-      // Try to extract full date
+      // Try to extract full date first
       const dateMatch = speech.match(new RegExp(`${month}\\s+(\\d{1,2})`, 'i'));
       if (dateMatch) {
         const day = dateMatch[1];
         const year = new Date().getFullYear();
         return `${month} ${day}, ${year}`;
+      } else {
+        // Just month mentioned - return first day of that month
+        const year = new Date().getFullYear();
+        const monthIndex = months.indexOf(month.toLowerCase());
+        const targetDate = new Date(year, monthIndex, 1);
+        
+        // If the month is in the past this year, use next year
+        if (targetDate < new Date()) {
+          targetDate.setFullYear(year + 1);
+        }
+        
+        return targetDate.toISOString().split('T')[0]; // Return YYYY-MM-DD format
       }
     }
   }
