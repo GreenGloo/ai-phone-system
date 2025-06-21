@@ -58,6 +58,7 @@ async function generateCalendarSlots(businessId, daysAhead = 365) {
           slotStart.setHours(hour, minute, 0, 0);
           
           
+          
           // Skip if past end time
           if (hour === endHour && minute >= endMinute) break;
           if (hour > endHour) break;
