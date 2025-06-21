@@ -1099,10 +1099,13 @@ async function getHumanLikeResponse(speech, conversation, business, services, av
     `${h.speaker}: ${h.message}`
   ).join('\n');
   
-  // Show ALL available slots - full calendar range
+  // Show available slots in human-friendly format (no technical UTC strings)
   const availableSlots = availability.map(slot => 
-    `${slot.day} ${slot.time} (${slot.datetime})`
+    `${slot.day} ${slot.time}`
   ).join(', ');
+  
+  // Keep technical datetimes separate for AI reference
+  const slotDatetimes = availability.map(slot => slot.datetime);
   
   // Get customer name if available
   const customerName = conversation.customerInfo?.name || null;
@@ -1175,6 +1178,9 @@ ${recentHistory}
 Available services: ${servicesList}
 Available times: ${availableSlots}
 
+TECHNICAL DATETIME REFERENCE (for booking only - do not speak these):
+${availability.map((slot, index) => `${slot.day} ${slot.time} = ${slot.datetime}`).join('\n')}
+
 BOOKING RULES:
 1. Always collect customer name early if not already collected
 2. CRITICAL: If previous service exists, keep using it - don't change services
@@ -1182,8 +1188,9 @@ BOOKING RULES:
 4. If customer says "yes", "sounds good", "okay" -> book the appointment  
 5. Assume unclear speech like "CID" means "oil change" 
 6. Be conversational but drive toward booking
-7. CRITICAL: Use EXACT appointmentDatetime from available times - copy the UTC datetime exactly
+7. CRITICAL: Use EXACT appointmentDatetime from technical reference above - copy the UTC datetime exactly
 8. NEVER create your own dates/times - only use the provided slot datetimes
+9. When speaking to customer, only mention day and time (e.g. "tomorrow at 2 PM") - never mention UTC or technical strings
 
 Your response should:
 - Collect name if needed
