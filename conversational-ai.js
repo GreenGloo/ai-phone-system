@@ -151,10 +151,11 @@ async function handleConversation(req, res) {
     
     const business = businessResult.rows[0];
     
-    // Initial call - warm greeting
+    // Initial call - warm greeting  
     if (!SpeechResult) {
       const greeting = `Hi there! Thanks for calling ${business.name}. I'm here to help you schedule an appointment. What can I do for you today?`;
-      return sendResponse(res, greeting, business.ai_voice_id, true, businessId);
+      // For initial call, no conversation object yet
+      return sendResponse(res, greeting, business.ai_voice_id, true, businessId, null);
     }
     
     // Get conversation context
@@ -162,7 +163,8 @@ async function handleConversation(req, res) {
       customerName: null,
       previousContext: '',
       requestedService: null,
-      voiceId: business.ai_voice_id // Preserve voice consistency
+      voiceId: business.ai_voice_id, // Preserve voice consistency
+      voiceMode: null // Track whether we're using ElevenLabs or Twilio
     };
     
     // Get services and times
@@ -204,15 +206,15 @@ async function handleConversation(req, res) {
     // Handle booking
     if (aiResponse.action === 'book' && aiResponse.data.service && aiResponse.data.time) {
       await bookAppointment(businessId, conversation.customerName, From, aiResponse.data.service, aiResponse.data.time);
-      return sendResponse(res, cleanMessage, conversation.voiceId, false, businessId); // End call
+      return sendResponse(res, cleanMessage, conversation.voiceId, false, businessId, conversation); // End call
     }
     
     // Continue conversation
-    return sendResponse(res, cleanMessage, conversation.voiceId, true, businessId);
+    return sendResponse(res, cleanMessage, conversation.voiceId, true, businessId, conversation);
     
   } catch (error) {
     console.error('Conversation error:', error);
-    return sendResponse(res, "I'm having some technical difficulties. Let me have someone call you back.", null, false, businessId);
+    return sendResponse(res, "I'm having some technical difficulties. Let me have someone call you back.", null, false, businessId, null);
   }
 }
 
@@ -302,29 +304,54 @@ async function bookAppointment(businessId, customerName, customerPhone, service,
 }
 
 // Send response with voice
-async function sendResponse(res, message, voiceId = null, continueCall = true, businessId = null) {
+async function sendResponse(res, message, voiceId = null, continueCall = true, businessId = null, conversation = null) {
   const twiml = new twilio.twiml.VoiceResponse();
   
-  console.log(`🎤 Voice Response - Using voice: ${voiceId}, Message: "${message.substring(0, 50)}..."`);
+  console.log(`🎤 Voice Response - Voice: ${voiceId}, Mode: ${conversation?.voiceMode || 'unset'}, Message: "${message.substring(0, 50)}..."`);
   
-  // Try ElevenLabs first, fallback to Twilio
-  if (process.env.ELEVENLABS_API_KEY) {
+  // If we already determined voice mode for this conversation, stick with it
+  if (conversation?.voiceMode === 'twilio') {
+    console.log(`🔒 Sticking with Twilio voice for consistency`);
+    twiml.say(message, { voice: voiceId || 'Polly.Matthew' });
+  } else if (conversation?.voiceMode === 'elevenlabs') {
+    console.log(`🔒 Sticking with ElevenLabs for consistency`);
     try {
       const audioResult = await generateElevenLabsAudio(message, voiceId || 'matthew');
       if (audioResult.success) {
-        console.log(`✅ ElevenLabs success - using audio file`);
         twiml.play(audioResult.url);
       } else {
-        console.log(`⚠️ ElevenLabs failed - fallback to Twilio voice: ${voiceId}`);
+        // If ElevenLabs fails after we committed to it, fallback but warn
+        console.log(`⚠️ ElevenLabs failed mid-conversation - emergency fallback to Twilio`);
         twiml.say(message, { voice: voiceId || 'Polly.Matthew' });
       }
     } catch (error) {
-      console.log(`❌ ElevenLabs error - fallback to Twilio voice: ${voiceId}, Error: ${error.message}`);
+      console.log(`❌ ElevenLabs error mid-conversation - emergency fallback: ${error.message}`);
       twiml.say(message, { voice: voiceId || 'Polly.Matthew' });
     }
   } else {
-    console.log(`🔄 Using Twilio voice directly: ${voiceId}`);
-    twiml.say(message, { voice: voiceId || 'Polly.Matthew' });
+    // First response - try ElevenLabs and remember what worked
+    if (process.env.ELEVENLABS_API_KEY) {
+      try {
+        const audioResult = await generateElevenLabsAudio(message, voiceId || 'matthew');
+        if (audioResult.success) {
+          console.log(`✅ ElevenLabs success - setting voice mode to elevenlabs`);
+          if (conversation) conversation.voiceMode = 'elevenlabs';
+          twiml.play(audioResult.url);
+        } else {
+          console.log(`⚠️ ElevenLabs failed - setting voice mode to twilio`);
+          if (conversation) conversation.voiceMode = 'twilio';
+          twiml.say(message, { voice: voiceId || 'Polly.Matthew' });
+        }
+      } catch (error) {
+        console.log(`❌ ElevenLabs error - setting voice mode to twilio: ${error.message}`);
+        if (conversation) conversation.voiceMode = 'twilio';
+        twiml.say(message, { voice: voiceId || 'Polly.Matthew' });
+      }
+    } else {
+      console.log(`🔄 Using Twilio voice - setting voice mode to twilio`);
+      if (conversation) conversation.voiceMode = 'twilio';
+      twiml.say(message, { voice: voiceId || 'Polly.Matthew' });
+    }
   }
   
   if (continueCall) {
