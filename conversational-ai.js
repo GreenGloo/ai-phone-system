@@ -1327,17 +1327,30 @@ async function bookAppointment(conversation, businessId, service, data) {
   try {
     console.log(`📅 Booking appointment with data:`, data);
     
-    let appointmentTime = new Date();
+    // AI MUST provide a specific datetime from available slots - no fallbacks allowed
+    if (!data.appointmentDatetime) {
+      console.log(`❌ No appointmentDatetime provided by AI - cannot book without customer's chosen slot`);
+      return {
+        success: false,
+        error: 'Customer must choose a specific available time slot. Please select from the available options.'
+      };
+    }
     
-    // If AI provided a specific datetime, use it
-    if (data.appointmentDatetime) {
-      appointmentTime = new Date(data.appointmentDatetime);
-      console.log(`📅 Using AI provided datetime: ${appointmentTime.toLocaleString()}`);
-    } else {
-      // Fallback: tomorrow at 2:30 PM
-      appointmentTime.setDate(appointmentTime.getDate() + 1);
-      appointmentTime.setHours(14, 30, 0, 0);
-      console.log(`📅 Using fallback time: ${appointmentTime.toLocaleString()}`);
+    const appointmentTime = new Date(data.appointmentDatetime);
+    console.log(`📅 Using customer's chosen datetime: ${appointmentTime.toLocaleString()}`);
+    
+    // Validate that this slot is actually available
+    const availableSlots = await getAvailableSlots(businessId, 'soon');
+    const chosenSlot = availableSlots.find(slot => 
+      new Date(slot.datetime).getTime() === appointmentTime.getTime()
+    );
+    
+    if (!chosenSlot) {
+      console.log(`❌ Chosen time ${appointmentTime.toLocaleString()} is not in available slots`);
+      return {
+        success: false,
+        error: 'That time slot is no longer available. Please choose from the current available times.'
+      };
     }
     
     const endTime = new Date(appointmentTime.getTime() + (service.duration_minutes || 60) * 60000);
