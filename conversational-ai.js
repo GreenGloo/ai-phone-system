@@ -1136,7 +1136,8 @@ RULES:
 • "CID"/"old change" = oil change
 • Service mentioned = offer specific times from slots
 • When customer confirms time ("yes"/"okay"/"that works") = use action "book_appointment"
-• Use exact appointmentDatetime from available slots
+• CRITICAL: Use EXACT appointmentDatetime from SLOTS list - copy the UTC datetime exactly (e.g. "2025-06-23T12:00:00.000Z")
+• NEVER create your own dates/times - only use the provided slot datetimes
 
 EXAMPLES:
 Customer needs service → action: "continue", offer times
@@ -1172,6 +1173,8 @@ BOOKING RULES:
 4. If customer says "yes", "sounds good", "okay" -> book the appointment  
 5. Assume unclear speech like "CID" means "oil change" 
 6. Be conversational but drive toward booking
+7. CRITICAL: Use EXACT appointmentDatetime from available times - copy the UTC datetime exactly
+8. NEVER create your own dates/times - only use the provided slot datetimes
 
 Your response should:
 - Collect name if needed
@@ -1325,7 +1328,7 @@ async function bookAppointmentWithConfirmation(conversation, businessId, service
 
 async function bookAppointment(conversation, businessId, service, data) {
   try {
-    console.log(`📅 Booking appointment with data:`, data);
+    console.log(`📅 Booking appointment with data:`, JSON.stringify(data, null, 2));
     
     // AI MUST provide a specific datetime from available slots - no fallbacks allowed
     if (!data.appointmentDatetime) {
@@ -1337,16 +1340,24 @@ async function bookAppointment(conversation, businessId, service, data) {
     }
     
     const appointmentTime = new Date(data.appointmentDatetime);
-    console.log(`📅 Using customer's chosen datetime: ${appointmentTime.toLocaleString()}`);
+    console.log(`📅 AI provided datetime: "${data.appointmentDatetime}"`);
+    console.log(`📅 Parsed as: ${appointmentTime.toISOString()}`);
+    console.log(`📅 Eastern display: ${appointmentTime.toLocaleTimeString('en-US', { 
+      hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/New_York' 
+    })}`);
     
     // Validate that this slot is actually available
     const availableSlots = await getAvailableSlots(businessId, 'soon');
+    console.log(`📅 Checking against ${availableSlots.length} available slots`);
+    console.log(`📅 First few available slots:`, availableSlots.slice(0, 3).map(s => s.datetime));
+    
     const chosenSlot = availableSlots.find(slot => 
       new Date(slot.datetime).getTime() === appointmentTime.getTime()
     );
     
     if (!chosenSlot) {
-      console.log(`❌ Chosen time ${appointmentTime.toLocaleString()} is not in available slots`);
+      console.log(`❌ Chosen time ${appointmentTime.toISOString()} is not in available slots`);
+      console.log(`❌ Available slot times (UTC):`, availableSlots.slice(0, 5).map(s => new Date(s.datetime).toISOString()));
       return {
         success: false,
         error: 'That time slot is no longer available. Please choose from the current available times.'
