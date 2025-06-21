@@ -2072,6 +2072,18 @@ app.put('/api/businesses/:businessId/settings', authenticateToken, getBusinessCo
     
     console.log(`✅ Business settings updated: ${name}`);
     
+    // 🚀 AUTOMATIC CALENDAR GENERATION: When business hours change, regenerate calendar slots
+    if (business_hours) {
+      console.log(`📅 Business hours updated in settings - regenerating calendar slots for business ${req.business.id}`);
+      try {
+        const slotsGenerated = await generateCalendarSlots(req.business.id, 400);
+        console.log(`✅ Auto-generated ${slotsGenerated} calendar slots for business settings update (400+ days)`);
+      } catch (calendarError) {
+        console.error('⚠️ Calendar regeneration failed in settings (non-critical):', calendarError);
+        // Don't fail the business settings update if calendar generation fails
+      }
+    }
+    
     res.json({
       success: true,
       message: 'Business settings updated successfully',
