@@ -889,8 +889,12 @@ async function holdConversation(res, business, callSid, from, speech, businessId
   if (speech.toLowerCase().includes('february') || speech.toLowerCase().includes('feb') || 
       speech.toLowerCase().includes('next year') || speech.toLowerCase().includes('2026') ||
       speech.toLowerCase().includes('march') || speech.toLowerCase().includes('april') ||
+      speech.toLowerCase().includes('may') || speech.toLowerCase().includes('june') ||
+      speech.toLowerCase().includes('july') || speech.toLowerCase().includes('august') ||
+      speech.toLowerCase().includes('september') || speech.toLowerCase().includes('october') ||
+      speech.toLowerCase().includes('november') || speech.toLowerCase().includes('december') ||
       speech.toLowerCase().includes('annual') || speech.toLowerCase().includes('yearly')) {
-    console.log('🎯 Customer mentioned far-future date - using targeted search');
+    console.log('🎯 Customer mentioned specific date - using targeted search');
     needsExtendedSearch = true;
     availabilityQuery = speech; // Pass speech for date parsing
   }
@@ -1122,13 +1126,38 @@ async function getHumanLikeResponse(speech, conversation, business, services, av
   // Keep technical datetimes separate for AI reference
   const slotDatetimes = availability.map(slot => slot.datetime);
   
-  // Get customer name if available
-  const customerName = conversation.customerInfo?.name || null;
+  // Get customer name if available - check both stored and conversation history
+  let customerName = conversation.customerInfo?.name || null;
+  const allMessages = conversation.conversationHistory || [];
+  
+  // If no stored name, check conversation history for name mentions
+  if (!customerName) {
+    for (let i = allMessages.length - 1; i >= 0; i--) {
+      const msg = allMessages[i];
+      if (msg.speaker === 'customer') {
+        // Look for patterns like "my name is John", "I'm Chris", "this is Sarah"
+        const namePattern = /(?:my name is|i'm|this is|name's)\s+([a-zA-Z]+)/i;
+        const match = msg.message.match(namePattern);
+        if (match) {
+          customerName = match[1];
+          // Save it to conversation for future use
+          conversation.customerInfo.name = customerName;
+          console.log(`👤 Found customer name in history: ${customerName}`);
+          break;
+        }
+      } else if (msg.speaker === 'assistant' && msg.data?.customerName) {
+        customerName = msg.data.customerName;
+        conversation.customerInfo.name = customerName;
+        console.log(`👤 Found customer name in AI data: ${customerName}`);
+        break;
+      }
+    }
+  }
+  
   const hasCustomerName = !!customerName;
   
   // CONTEXT PRESERVATION: Extract previously discussed service from conversation history
   let previousService = null;
-  const allMessages = conversation.conversationHistory || [];
   
   // Look for service context in recent conversation data
   for (let i = allMessages.length - 1; i >= 0; i--) {
