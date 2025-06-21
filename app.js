@@ -4037,13 +4037,13 @@ app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, g
         console.log(`📅 Setting default business hours and generating calendar slots for new business`);
         
         const defaultBusinessHours = {
-          monday: { open: '09:00', close: '17:00', enabled: true },
-          tuesday: { open: '09:00', close: '17:00', enabled: true },
-          wednesday: { open: '09:00', close: '17:00', enabled: true },
-          thursday: { open: '09:00', close: '17:00', enabled: true },
-          friday: { open: '09:00', close: '17:00', enabled: true },
-          saturday: { open: '10:00', close: '16:00', enabled: true },
-          sunday: { open: '10:00', close: '16:00', enabled: false }
+          monday: { start: '09:00', end: '17:00', enabled: true },
+          tuesday: { start: '09:00', end: '17:00', enabled: true },
+          wednesday: { start: '09:00', end: '17:00', enabled: true },
+          thursday: { start: '09:00', end: '17:00', enabled: true },
+          friday: { start: '09:00', end: '17:00', enabled: true },
+          saturday: { start: '10:00', end: '16:00', enabled: true },
+          sunday: { start: '10:00', end: '16:00', enabled: false }
         };
         
         // Set default business hours
