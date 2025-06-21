@@ -1255,6 +1255,19 @@ Return ONLY valid JSON. No extra text or explanations.`;
     let response;
     try {
       response = JSON.parse(aiContent);
+      
+      // CRITICAL FIX: Clean up the response field to remove any escaped JSON or unwanted formatting
+      if (response.response) {
+        // Remove any escaped JSON patterns like "response: text" that shouldn't be spoken
+        response.response = response.response
+          .replace(/^response:\s*/i, '') // Remove "response: " prefix
+          .replace(/\\"/g, '"') // Unescape quotes
+          .replace(/\\\\/g, '\\') // Unescape backslashes
+          .trim();
+        
+        console.log(`🧹 Cleaned response: "${response.response}"`);
+      }
+      
     } catch (parseError) {
       // Fallback if JSON parsing fails
       console.warn('JSON parse failed, trying to extract response field');
@@ -1263,11 +1276,17 @@ Return ONLY valid JSON. No extra text or explanations.`;
       // Try to extract just the response field from malformed JSON
       let cleanedResponse = aiContent.replace(/```json|```/g, '').trim();
       
-      // Look for "response": "text" pattern
-      const responseMatch = cleanedResponse.match(/"response":\s*"([^"]+)"/);
+      // Enhanced regex to handle escaped quotes and complex patterns
+      const responseMatch = cleanedResponse.match(/"response":\s*"((?:[^"\\]|\\.)*)"/);
       if (responseMatch) {
         cleanedResponse = responseMatch[1];
-        console.log('Extracted response from malformed JSON:', cleanedResponse);
+        // Clean up escaped content
+        cleanedResponse = cleanedResponse
+          .replace(/^response:\s*/i, '') // Remove "response: " prefix
+          .replace(/\\"/g, '"') // Unescape quotes
+          .replace(/\\\\/g, '\\') // Unescape backslashes
+          .trim();
+        console.log('Extracted and cleaned response from malformed JSON:', cleanedResponse);
       } else {
         // If we can't extract the response field, check if it's raw text
         if (cleanedResponse.includes('"action"') || cleanedResponse.includes('"data"') || cleanedResponse.includes('get customer name')) {
