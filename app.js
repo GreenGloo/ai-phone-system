@@ -3953,7 +3953,7 @@ app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, g
     const baseUrl = process.env.BASE_URL || 'https://nodejs-production-5e30.up.railway.app';
     const purchasedNumber = await twilioClient.incomingPhoneNumbers.create({
       phoneNumber: phoneNumberToPurchase,
-      voiceUrl: `${baseUrl}/voice/incoming/${req.business.id}`,
+      voiceUrl: `${baseUrl}/`,
       voiceMethod: 'POST',
       smsUrl: `${baseUrl}/sms/incoming/${req.business.id}`,
       smsMethod: 'POST',
@@ -4245,7 +4245,7 @@ app.post('/api/businesses/:businessId/purchase-phone-number', authenticateToken,
     // Purchase the phone number from Twilio
     const purchasedNumber = await twilioClient.incomingPhoneNumbers.create({
       phoneNumber: phoneNumber,
-      voiceUrl: `${process.env.BASE_URL || 'https://nodejs-production-5e30.up.railway.app'}/voice/incoming/${req.business.id}`,
+      voiceUrl: `${process.env.BASE_URL || 'https://nodejs-production-5e30.up.railway.app'}/`,
       voiceMethod: 'POST',
       smsUrl: `${process.env.BASE_URL || 'https://nodejs-production-5e30.up.railway.app'}/sms/incoming/${req.business.id}`,
       smsMethod: 'POST',

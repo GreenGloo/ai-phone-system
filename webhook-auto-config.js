@@ -23,7 +23,8 @@ async function configureBusinessWebhook(businessId, twilioPhoneSid) {
   console.log(`🔧 Configuring webhook for business ${businessId} (phone: ${twilioPhoneSid})`);
   
   try {
-    const voiceWebhookUrl = `${getWebhookBaseUrl()}/voice/incoming/${businessId}`;
+    // Use root endpoint for voice (routes by phone number) and specific endpoint for SMS
+    const voiceWebhookUrl = `${getWebhookBaseUrl()}/`;
     const smsWebhookUrl = `${getWebhookBaseUrl()}/sms/incoming/${businessId}`;
     
     // Update Twilio phone number webhook
