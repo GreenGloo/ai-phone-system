@@ -945,7 +945,21 @@ async function holdConversation(res, business, callSid, from, speech, businessId
   const aiResponse = await aiResponsePromise;
   console.log(`🤖 Human-like AI Response:`, JSON.stringify(aiResponse, null, 2));
   
-  // Add AI response to history
+  // CRITICAL FIX: Clean the response BEFORE adding to history to prevent contamination
+  if (aiResponse.response) {
+    aiResponse.response = aiResponse.response
+      .replace(/<[^>]*>/g, '') // Remove HTML/XML tags
+      .replace(/\{[^}]*\}/g, '') // Remove JSON objects
+      .replace(/\[[^\]]*\]/g, '') // Remove arrays
+      .replace(/[\\\/]/g, '') // Remove slashes
+      .replace(/&[a-z]+;/gi, '') // Remove HTML entities
+      .replace(/\b(xml|json|twiml|say|play|gather|hangup|response)\b/gi, '') // Remove technical words
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+    console.log(`🧹 Cleaned response before adding to history: "${aiResponse.response}"`);
+  }
+  
+  // Add cleaned AI response to history
   conversation.conversationHistory.push({
     speaker: 'assistant',
     message: aiResponse.response,
@@ -1259,16 +1273,23 @@ Return ONLY valid JSON. No extra text or explanations.`;
       
       // CRITICAL FIX: Clean up the response field to remove any escaped JSON or unwanted formatting
       if (response.response) {
-        // Remove any escaped JSON patterns like "response: text" that shouldn't be spoken
+        // AGGRESSIVE cleaning to remove ALL technical content that shouldn't be spoken
         response.response = response.response
           .replace(/^response:\s*/i, '') // Remove "response: " prefix
           .replace(/\bresponse\b\s*:?\s*/gi, '') // Remove standalone "response" word
+          .replace(/<[^>]*>/g, '') // Remove ALL HTML/XML tags (TwiML, etc.)
           .replace(/\\"/g, '"') // Unescape quotes
           .replace(/\\\\/g, '\\') // Unescape backslashes
           .replace(/^\s*["']|["']\s*$/g, '') // Remove surrounding quotes
+          .replace(/\{[^}]*\}/g, '') // Remove any JSON objects
+          .replace(/\[[^\]]*\]/g, '') // Remove any arrays
+          .replace(/[\\\/]/g, '') // Remove backslashes and forward slashes
+          .replace(/&[a-z]+;/gi, '') // Remove HTML entities like &amp;
+          .replace(/\b(xml|json|twiml|say|play|gather|hangup)\b/gi, '') // Remove technical words
+          .replace(/\s+/g, ' ') // Normalize whitespace
           .trim();
         
-        console.log(`🧹 Cleaned response: "${response.response}"`);
+        console.log(`🧹 Aggressively cleaned response: "${response.response}"`);
       }
       
     } catch (parseError) {
@@ -1283,11 +1304,19 @@ Return ONLY valid JSON. No extra text or explanations.`;
       const responseMatch = cleanedResponse.match(/"response":\s*"((?:[^"\\]|\\.)*)"/);
       if (responseMatch) {
         cleanedResponse = responseMatch[1];
-        // Clean up escaped content
+        // AGGRESSIVE cleanup for fallback responses too
         cleanedResponse = cleanedResponse
           .replace(/^response:\s*/i, '') // Remove "response: " prefix
+          .replace(/\bresponse\b\s*:?\s*/gi, '') // Remove standalone "response" word
+          .replace(/<[^>]*>/g, '') // Remove ALL HTML/XML tags
           .replace(/\\"/g, '"') // Unescape quotes
           .replace(/\\\\/g, '\\') // Unescape backslashes
+          .replace(/\{[^}]*\}/g, '') // Remove any JSON objects
+          .replace(/\[[^\]]*\]/g, '') // Remove any arrays
+          .replace(/[\\\/]/g, '') // Remove backslashes and forward slashes
+          .replace(/&[a-z]+;/gi, '') // Remove HTML entities
+          .replace(/\b(xml|json|twiml|say|play|gather|hangup)\b/gi, '') // Remove technical words
+          .replace(/\s+/g, ' ') // Normalize whitespace
           .trim();
         console.log('Extracted and cleaned response from malformed JSON:', cleanedResponse);
       } else {
