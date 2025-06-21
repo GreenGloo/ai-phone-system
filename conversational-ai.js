@@ -161,7 +161,8 @@ async function handleConversation(req, res) {
     let conversation = conversations.get(CallSid) || {
       customerName: null,
       previousContext: '',
-      requestedService: null
+      requestedService: null,
+      voiceId: business.ai_voice_id // Preserve voice consistency
     };
     
     // Get services and times
@@ -203,11 +204,11 @@ async function handleConversation(req, res) {
     // Handle booking
     if (aiResponse.action === 'book' && aiResponse.data.service && aiResponse.data.time) {
       await bookAppointment(businessId, conversation.customerName, From, aiResponse.data.service, aiResponse.data.time);
-      return sendResponse(res, cleanMessage, business.ai_voice_id, false, businessId); // End call
+      return sendResponse(res, cleanMessage, conversation.voiceId, false, businessId); // End call
     }
     
     // Continue conversation
-    return sendResponse(res, cleanMessage, business.ai_voice_id, true, businessId);
+    return sendResponse(res, cleanMessage, conversation.voiceId, true, businessId);
     
   } catch (error) {
     console.error('Conversation error:', error);
@@ -304,19 +305,25 @@ async function bookAppointment(businessId, customerName, customerPhone, service,
 async function sendResponse(res, message, voiceId = null, continueCall = true, businessId = null) {
   const twiml = new twilio.twiml.VoiceResponse();
   
+  console.log(`🎤 Voice Response - Using voice: ${voiceId}, Message: "${message.substring(0, 50)}..."`);
+  
   // Try ElevenLabs first, fallback to Twilio
   if (process.env.ELEVENLABS_API_KEY) {
     try {
       const audioResult = await generateElevenLabsAudio(message, voiceId || 'matthew');
       if (audioResult.success) {
+        console.log(`✅ ElevenLabs success - using audio file`);
         twiml.play(audioResult.url);
       } else {
+        console.log(`⚠️ ElevenLabs failed - fallback to Twilio voice: ${voiceId}`);
         twiml.say(message, { voice: voiceId || 'Polly.Matthew' });
       }
     } catch (error) {
+      console.log(`❌ ElevenLabs error - fallback to Twilio voice: ${voiceId}, Error: ${error.message}`);
       twiml.say(message, { voice: voiceId || 'Polly.Matthew' });
     }
   } else {
+    console.log(`🔄 Using Twilio voice directly: ${voiceId}`);
     twiml.say(message, { voice: voiceId || 'Polly.Matthew' });
   }
   
