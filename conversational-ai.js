@@ -24,7 +24,7 @@ async function callClaude(prompt) {
   
   const response = await axios.post('https://api.anthropic.com/v1/messages', {
     model: 'claude-3-5-sonnet-20241022',
-    max_tokens: 150, // Balanced: fast but not truncated
+    max_tokens: 100, // Reduced for faster responses - conversations should be concise
     temperature: 0.7,
     messages: [
       {
@@ -37,7 +37,8 @@ async function callClaude(prompt) {
       'Content-Type': 'application/json',
       'x-api-key': ANTHROPIC_API_KEY,
       'anthropic-version': '2023-06-01'
-    }
+    },
+    timeout: 5000 // 5 second timeout for fast responses
   });
   
   return response.data.content[0].text;
@@ -627,7 +628,7 @@ async function generateVoiceResponse(text, personality, emotions, businessVoice,
       console.log(`🚀 Attempting ElevenLabs generation with voice: ${businessVoice}`);
       const audioResult = await Promise.race([
         generateElevenLabsAudio(text, businessVoice),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('ElevenLabs timeout')), 10000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('ElevenLabs timeout')), 4000))
       ]);
       
       if (audioResult.success) {
@@ -1058,7 +1059,7 @@ async function holdConversation(res, business, callSid, from, speech, businessId
     // Intelligent gathering with enhanced parameters for natural conversation
     const gatherParams = {
       input: 'speech',
-      timeout: 20, // Faster timeout for snappier conversations
+      timeout: 15, // Even faster timeout for snappier conversations
       speechTimeout: 'auto',
       action: `/voice/incoming/${businessId}`,
       method: 'POST'
@@ -1230,7 +1231,7 @@ Return ONLY valid JSON. No extra text or explanations.`;
           model: "gpt-4o-mini",
           messages: [{ role: "user", content: prompt }],
           temperature: 0.7,
-          max_tokens: 150, // Balanced: fast but not truncated
+          max_tokens: 100, // Reduced for faster responses
           presence_penalty: 0.1,
           frequency_penalty: 0.1
         });
@@ -1243,7 +1244,7 @@ Return ONLY valid JSON. No extra text or explanations.`;
         model: "gpt-4o-mini",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
-        max_tokens: 200,
+        max_tokens: 100, // Reduced for faster responses
         presence_penalty: 0.1,
         frequency_penalty: 0.1
       });
