@@ -23,14 +23,15 @@ async function configureBusinessWebhook(businessId, twilioPhoneSid) {
   console.log(`🔧 Configuring webhook for business ${businessId} (phone: ${twilioPhoneSid})`);
   
   try {
-    const webhookUrl = `${getWebhookBaseUrl()}/voice/incoming/${businessId}`;
+    const voiceWebhookUrl = `${getWebhookBaseUrl()}/voice/incoming/${businessId}`;
+    const smsWebhookUrl = `${getWebhookBaseUrl()}/sms/incoming/${businessId}`;
     
     // Update Twilio phone number webhook
     const updatedNumber = await twilioClient.incomingPhoneNumbers(twilioPhoneSid)
       .update({
-        voiceUrl: webhookUrl,
+        voiceUrl: voiceWebhookUrl,
         voiceMethod: 'POST',
-        smsUrl: webhookUrl,
+        smsUrl: smsWebhookUrl,
         smsMethod: 'POST'
       });
     
@@ -43,8 +44,10 @@ async function configureBusinessWebhook(businessId, twilioPhoneSid) {
       WHERE id = $1
     `, [businessId]);
     
-    console.log(`✅ Webhook configured for business ${businessId}: ${webhookUrl}`);
-    return { success: true, webhookUrl, twilioResponse: updatedNumber };
+    console.log(`✅ Webhooks configured for business ${businessId}:`);
+    console.log(`   Voice: ${voiceWebhookUrl}`);
+    console.log(`   SMS: ${smsWebhookUrl}`);
+    return { success: true, voiceWebhookUrl, smsWebhookUrl, twilioResponse: updatedNumber };
     
   } catch (error) {
     console.error(`❌ Failed to configure webhook for business ${businessId}:`, error);

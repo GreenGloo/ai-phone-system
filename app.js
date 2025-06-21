@@ -251,6 +251,38 @@ const getBusinessContext = async (req, res, next) => {
   }
 };
 
+// Middleware to validate enterprise plan access
+const requireEnterprisePlan = (req, res, next) => {
+  try {
+    console.log(`🔒 Enterprise plan check for business ${req.business.id}: Plan = ${req.business.plan}`);
+    
+    if (!req.business || !req.business.plan) {
+      return res.status(400).json({ 
+        error: 'Business plan information not available' 
+      });
+    }
+    
+    // Allow enterprise and enterprise_plus plans
+    if (req.business.plan === 'enterprise' || req.business.plan === 'enterprise_plus') {
+      console.log(`✅ Enterprise plan access granted for business ${req.business.id}`);
+      return next();
+    }
+    
+    // Deny access for other plans
+    console.log(`❌ Enterprise plan required. Current plan: ${req.business.plan}`);
+    return res.status(403).json({ 
+      error: 'Enterprise plan required for this feature',
+      currentPlan: req.business.plan,
+      upgradeUrl: '/pricing',
+      feature: 'Team Management'
+    });
+    
+  } catch (error) {
+    console.error('Error checking enterprise plan:', error);
+    res.status(500).json({ error: 'Plan validation error' });
+  }
+};
+
 // Other static page routes
 app.get('/onboarding', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'onboarding.html'));
@@ -901,6 +933,115 @@ app.post('/api/businesses/:businessId/service-types/:serviceId/bulk-cancel', aut
 
 // Voice endpoint with business context - NEW SMART AI SYSTEM
 app.post('/voice/incoming/:businessId', handleVoiceCall);
+
+// SMS endpoint with business context - INBOUND SMS HANDLER
+app.post('/sms/incoming/:businessId', async (req, res) => {
+  const { businessId } = req.params;
+  const { From, To, Body, MessageSid } = req.body;
+  
+  console.log(`📱 SMS received for business ${businessId}: From ${From}, Body: "${Body}"`);
+  
+  try {
+    // Get business info
+    const businessResult = await pool.query(
+      'SELECT * FROM businesses WHERE id = $1',
+      [businessId]
+    );
+    
+    if (businessResult.rows.length === 0) {
+      console.error(`❌ Business not found: ${businessId}`);
+      return res.status(404).send('Business not found');
+    }
+    
+    const business = businessResult.rows[0];
+    
+    // Log SMS message to database
+    await pool.query(`
+      INSERT INTO sms_messages (business_id, twilio_message_sid, from_number, to_number, message_body, direction, status)
+      VALUES ($1, $2, $3, $4, $5, 'inbound', 'received')
+    `, [businessId, MessageSid, From, To, Body]);
+    
+    // Handle STOP/UNSUBSCRIBE keywords for compliance
+    const normalizedBody = Body.toLowerCase().trim();
+    if (['stop', 'unsubscribe', 'cancel', 'end', 'quit'].includes(normalizedBody)) {
+      console.log(`📱 Opt-out request from ${From}`);
+      
+      // Update customer preferences
+      await pool.query(`
+        UPDATE customers 
+        SET sms_opt_out = true, sms_opt_out_date = CURRENT_TIMESTAMP 
+        WHERE phone = $1 AND business_id = $2
+      `, [From, businessId]);
+      
+      // Send confirmation
+      const twiml = new twilio.twiml.MessagingResponse();
+      twiml.message('You have been unsubscribed from SMS messages. Reply START to resubscribe.');
+      
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
+    // Handle START keyword for re-subscription
+    if (['start', 'subscribe', 'yes'].includes(normalizedBody)) {
+      console.log(`📱 Opt-in request from ${From}`);
+      
+      await pool.query(`
+        UPDATE customers 
+        SET sms_opt_out = false, sms_opt_out_date = NULL 
+        WHERE phone = $1 AND business_id = $2
+      `, [From, businessId]);
+      
+      const twiml = new twilio.twiml.MessagingResponse();
+      twiml.message('You have been resubscribed to SMS messages. Reply STOP to unsubscribe.');
+      
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
+    // Handle general customer replies (appointment-related)
+    if (Body.length > 0) {
+      console.log(`📱 Processing customer reply: "${Body}"`);
+      
+      // Look for recent appointments from this customer
+      const appointmentResult = await pool.query(`
+        SELECT a.*, c.name as customer_name 
+        FROM appointments a
+        JOIN customers c ON a.customer_id = c.id
+        WHERE c.phone = $1 AND a.business_id = $2 
+        AND a.appointment_date >= CURRENT_DATE - INTERVAL '7 days'
+        ORDER BY a.appointment_date DESC
+        LIMIT 1
+      `, [From, businessId]);
+      
+      if (appointmentResult.rows.length > 0) {
+        const appointment = appointmentResult.rows[0];
+        
+        // Simple keyword-based responses
+        if (normalizedBody.includes('cancel') || normalizedBody.includes('reschedule')) {
+          const twiml = new twilio.twiml.MessagingResponse();
+          twiml.message(`Hi ${appointment.customer_name}! We'll help you with your appointment. Please call us at ${To} to reschedule or cancel. Thank you!`);
+          return res.type('text/xml').send(twiml.toString());
+        }
+        
+        if (normalizedBody.includes('confirm') || normalizedBody.includes('yes')) {
+          const twiml = new twilio.twiml.MessagingResponse();
+          twiml.message(`Perfect! Your appointment is confirmed. We'll see you soon, ${appointment.customer_name}!`);
+          return res.type('text/xml').send(twiml.toString());
+        }
+      }
+      
+      // Default response for unrecognized messages
+      const twiml = new twilio.twiml.MessagingResponse();
+      twiml.message(`Thanks for your message! For immediate assistance, please call us at ${To}. Reply STOP to unsubscribe.`);
+      return res.type('text/xml').send(twiml.toString());
+    }
+    
+    // Empty response for empty messages
+    res.status(200).send('');
+    
+  } catch (error) {
+    console.error(`❌ SMS processing error for business ${businessId}:`, error);
+    res.status(500).send('SMS processing error');
+  }
+});
 
 // REMOVED: Manual admin endpoints - now handled by automatic systems
 // Calendar generation is now automatic via business-auto-repair system
@@ -3420,7 +3561,7 @@ function getBasicServiceTemplate(businessType) {
 }
 
 // Team Management API Endpoints (Enterprise Feature)
-app.get('/api/businesses/:businessId/team-members', authenticateToken, getBusinessContext, async (req, res) => {
+app.get('/api/businesses/:businessId/team-members', authenticateToken, getBusinessContext, requireEnterprisePlan, async (req, res) => {
   try {
     const result = await pool.query(
       'SELECT * FROM team_members WHERE business_id = $1 ORDER BY created_at',
@@ -3433,7 +3574,7 @@ app.get('/api/businesses/:businessId/team-members', authenticateToken, getBusine
   }
 });
 
-app.post('/api/businesses/:businessId/team-members', authenticateToken, getBusinessContext, async (req, res) => {
+app.post('/api/businesses/:businessId/team-members', authenticateToken, getBusinessContext, requireEnterprisePlan, async (req, res) => {
   try {
     const { name, email, mobile_phone, role, specialties, can_receive_notifications } = req.body;
     
@@ -3454,7 +3595,7 @@ app.post('/api/businesses/:businessId/team-members', authenticateToken, getBusin
   }
 });
 
-app.put('/api/businesses/:businessId/team-members/:memberId', authenticateToken, getBusinessContext, async (req, res) => {
+app.put('/api/businesses/:businessId/team-members/:memberId', authenticateToken, getBusinessContext, requireEnterprisePlan, async (req, res) => {
   try {
     const { memberId } = req.params;
     const { name, email, mobile_phone, role, specialties, can_receive_notifications, is_active } = req.body;
@@ -3478,7 +3619,7 @@ app.put('/api/businesses/:businessId/team-members/:memberId', authenticateToken,
   }
 });
 
-app.delete('/api/businesses/:businessId/team-members/:memberId', authenticateToken, getBusinessContext, async (req, res) => {
+app.delete('/api/businesses/:businessId/team-members/:memberId', authenticateToken, getBusinessContext, requireEnterprisePlan, async (req, res) => {
   try {
     const { memberId } = req.params;
     
@@ -3498,8 +3639,8 @@ app.delete('/api/businesses/:businessId/team-members/:memberId', authenticateTok
   }
 });
 
-// Appointment Assignment API
-app.post('/api/businesses/:businessId/appointments/:appointmentId/assign', authenticateToken, getBusinessContext, async (req, res) => {
+// Appointment Assignment API (Enterprise Feature)
+app.post('/api/businesses/:businessId/appointments/:appointmentId/assign', authenticateToken, getBusinessContext, requireEnterprisePlan, async (req, res) => {
   try {
     const { appointmentId } = req.params;
     const { team_member_id, assignment_notes } = req.body;
