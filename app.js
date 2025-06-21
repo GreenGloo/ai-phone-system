@@ -968,10 +968,15 @@ app.post('/sms/incoming/:businessId', async (req, res) => {
       
       // Update customer preferences (with error handling)
       try {
+        // Insert customer if doesn't exist, then update opt-out status
         await pool.query(`
-          UPDATE customers 
-          SET sms_opt_out = true, sms_opt_out_date = CURRENT_TIMESTAMP 
-          WHERE phone = $1 AND business_id = $2
+          INSERT INTO customers (business_id, phone, sms_opt_out, sms_opt_out_date)
+          VALUES ($2, $1, true, CURRENT_TIMESTAMP)
+          ON CONFLICT (business_id, phone) 
+          DO UPDATE SET 
+            sms_opt_out = true, 
+            sms_opt_out_date = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
         `, [From, businessId]);
         console.log(`✅ Customer ${From} opted out of SMS`);
       } catch (optOutError) {
@@ -991,10 +996,15 @@ app.post('/sms/incoming/:businessId', async (req, res) => {
       console.log(`📱 Opt-in request from ${From}`);
       
       try {
+        // Insert customer if doesn't exist, then update opt-in status
         await pool.query(`
-          UPDATE customers 
-          SET sms_opt_out = false, sms_opt_out_date = NULL 
-          WHERE phone = $1 AND business_id = $2
+          INSERT INTO customers (business_id, phone, sms_opt_out, sms_opt_out_date)
+          VALUES ($2, $1, false, NULL)
+          ON CONFLICT (business_id, phone) 
+          DO UPDATE SET 
+            sms_opt_out = false, 
+            sms_opt_out_date = NULL,
+            updated_at = CURRENT_TIMESTAMP
         `, [From, businessId]);
         console.log(`✅ Customer ${From} opted back in to SMS`);
       } catch (optInError) {
@@ -1012,14 +1022,13 @@ app.post('/sms/incoming/:businessId', async (req, res) => {
     if (Body.length > 0) {
       console.log(`📱 Processing customer reply: "${Body}"`);
       
-      // Look for recent appointments from this customer
+      // Look for recent appointments from this customer (using phone number directly)
       const appointmentResult = await pool.query(`
-        SELECT a.*, c.name as customer_name 
-        FROM appointments a
-        JOIN customers c ON a.customer_id = c.id
-        WHERE c.phone = $1 AND a.business_id = $2 
-        AND a.appointment_date >= CURRENT_DATE - INTERVAL '7 days'
-        ORDER BY a.appointment_date DESC
+        SELECT *, customer_name 
+        FROM appointments 
+        WHERE customer_phone = $1 AND business_id = $2 
+        AND start_time >= CURRENT_DATE - INTERVAL '7 days'
+        ORDER BY start_time DESC
         LIMIT 1
       `, [From, businessId]);
       

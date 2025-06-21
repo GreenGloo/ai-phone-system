@@ -105,12 +105,24 @@ const MIGRATIONS = [
     `
   },
   {
-    name: 'add_sms_opt_out_columns',
-    description: 'Add SMS opt-out tracking columns to customers table',
+    name: 'create_customers_table',
+    description: 'Create customers table for SMS opt-out tracking and customer management',
     sql: `
-      ALTER TABLE customers 
-      ADD COLUMN IF NOT EXISTS sms_opt_out BOOLEAN DEFAULT false,
-      ADD COLUMN IF NOT EXISTS sms_opt_out_date TIMESTAMP;
+      CREATE TABLE IF NOT EXISTS customers (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+        name VARCHAR(255),
+        phone VARCHAR(20) NOT NULL,
+        email VARCHAR(255),
+        sms_opt_out BOOLEAN DEFAULT false,
+        sms_opt_out_date TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(business_id, phone)
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_customers_business_phone ON customers(business_id, phone);
+      CREATE INDEX IF NOT EXISTS idx_customers_sms_opt_out ON customers(business_id, sms_opt_out);
     `
   }
 ];
