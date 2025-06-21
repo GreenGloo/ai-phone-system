@@ -24,12 +24,13 @@ Previous context: ${context.previousContext || 'First interaction'}
 
 CONVERSATION RULES:
 1. Be natural and conversational - like a real person
-2. NEVER ask "what do you need again" - you're a booking assistant, always assume they need an appointment
+2. NEVER ask "what can I help you with" or "what do you need" - you already know they want an appointment
 3. If they mention a date (like "July", "July 28th", "tomorrow"), offer available times for that date
 4. If they mention a service, offer times for that service
 5. If they just say a month/date without service, ask what service they need AND show available times
-6. Keep responses short and human
+6. Keep responses short and human - max 2 sentences
 7. Always move the conversation forward toward booking
+8. If confused, offer specific available times instead of asking open questions
 
 Available services: ${context.services.join(', ')}
 Available times for requested date: ${context.availableTimes}
@@ -66,7 +67,7 @@ Respond with JSON:
   } catch (error) {
     console.error('AI Error:', error.message);
     return {
-      message: "I'd be happy to help you schedule an appointment. What service do you need?",
+      message: "Let me help you book an appointment. I have morning and afternoon slots available.",
       action: "continue",
       data: {}
     };
@@ -168,7 +169,7 @@ async function handleConversation(req, res) {
     
     // Initial call - warm greeting  
     if (!SpeechResult) {
-      const greeting = `Hi there! Thanks for calling ${business.name}. I'm here to help you schedule an appointment. What can I do for you today?`;
+      const greeting = `Hi there! Thanks for calling ${business.name}. I'm here to help you schedule an appointment. What service do you need?`;
       // For initial call, no conversation object yet
       return sendResponse(res, greeting, business.ai_voice_id, true, businessId, null);
     }
