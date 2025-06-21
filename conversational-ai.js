@@ -516,7 +516,10 @@ async function handleInitialCall(res, business, callSid, from, businessId) {
   const greeting = greetingVariations[Math.floor(Math.random() * greetingVariations.length)];
   
   const twiml = new twilio.twiml.VoiceResponse();
-  await generateVoiceResponse(greeting, conversation.personality, conversation.emotionalState, business.ai_voice_id, twiml, conversation);
+  // CRITICAL FIX: Ensure we always have a voice ID that maps to ElevenLabs
+  const voiceId = business.ai_voice_id || 'Polly.Matthew'; // This maps to ElevenLabs 'matthew' voice
+  console.log(`🎤 VOICE FIX: business.ai_voice_id = ${business.ai_voice_id}, using = ${voiceId}`);
+  await generateVoiceResponse(greeting, conversation.personality, conversation.emotionalState, voiceId, twiml, conversation);
   
   const gather = twiml.gather({
     input: 'speech',
