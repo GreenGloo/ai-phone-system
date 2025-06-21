@@ -3,7 +3,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
-const { handleVoiceCall } = require('./conversational-ai');
+const { handleVoiceCall, trackTrialUsage } = require('./conversational-ai');
 const { generateKeywordsForService } = require('./service-keyword-generator');
 const { generateCalendarSlots } = require('./calendar-generator');
 const { autoMigrate } = require('./auto-migration-system');
@@ -1479,10 +1479,23 @@ app.post('/', voiceRateLimit, async (req, res) => {
     console.log(`✅ Routing call to business: ${businessId}`);
     console.log(`🚀 Calling handleVoiceCall...`);
     
+    // Track call start time for duration estimation
+    const callStartTime = Date.now();
+    
     // Forward to the smart booking handler
     req.params = { businessId };
     const result = await handleVoiceCall(req, res);
     console.log(`✅ handleVoiceCall completed`);
+    
+    // Estimate call duration and track trial usage
+    const callDurationMs = Date.now() - callStartTime;
+    const callDurationMinutes = Math.max(1, Math.round(callDurationMs / 1000 / 60)); // Minimum 1 minute
+    
+    // Track trial usage asynchronously (don't block response)
+    trackTrialUsage(businessId, callDurationMinutes).catch(error => {
+      console.error('❌ Error tracking trial usage:', error);
+    });
+    
     return result;
     
   } catch (error) {

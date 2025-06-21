@@ -124,6 +124,18 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_customers_business_phone ON customers(business_id, phone);
       CREATE INDEX IF NOT EXISTS idx_customers_sms_opt_out ON customers(business_id, sms_opt_out);
     `
+  },
+  {
+    name: 'add_trial_usage_tracking',
+    description: 'Add trial usage tracking columns to businesses table',
+    sql: `
+      ALTER TABLE businesses 
+      ADD COLUMN IF NOT EXISTS trial_calls_today INTEGER DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS trial_calls_total INTEGER DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS trial_minutes_today DECIMAL(10,2) DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS trial_minutes_total DECIMAL(10,2) DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS trial_last_reset_date DATE DEFAULT CURRENT_DATE;
+    `
   }
 ];
 

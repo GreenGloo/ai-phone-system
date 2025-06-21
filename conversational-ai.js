@@ -413,9 +413,19 @@ async function handleVoiceCall(req, res) {
   try {
     console.log(`💬 CONVERSATION: Call ${CallSid}: "${SpeechResult || 'INITIAL'}" for business ${businessId}`);
     
-    // Check subscription limits before processing call
+    // Check trial usage limits before processing call
     if (!SpeechResult) { // Only check on initial calls to avoid blocking ongoing conversations
       try {
+        // Check if this is a trial business and enforce trial limits
+        const trialCheckResult = await checkTrialUsageLimits(businessId);
+        if (!trialCheckResult.canProceed) {
+          console.log(`🚫 Trial limit exceeded: ${trialCheckResult.reason}`);
+          return sendTwiml(res, trialCheckResult.message);
+        }
+        
+        // Reset daily counters if needed
+        await resetDailyTrialCountersIfNeeded(businessId);
+        
         const subscriptionResult = await pool.query(`
           SELECT plan, current_period_calls,
                  CASE plan
@@ -1503,4 +1513,136 @@ setInterval(async () => {
   }
 }, 5 * 60 * 1000); // Run every 5 minutes - more frequent for free tier
 
-module.exports = { handleVoiceCall, trackCallUsage };
+// TRIAL USAGE LIMITS - Prevent abuse while allowing heavy legitimate testing
+const TRIAL_LIMITS = {
+  DAILY_CALLS: 20,
+  TOTAL_CALLS: 100,
+  DAILY_MINUTES: 60,
+  TOTAL_MINUTES: 300
+};
+
+async function checkTrialUsageLimits(businessId) {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        trial_calls_today,
+        trial_calls_total,
+        trial_minutes_today,
+        trial_minutes_total,
+        subscription_status,
+        created_at
+      FROM businesses 
+      WHERE id = $1
+    `, [businessId]);
+    
+    if (result.rows.length === 0) {
+      return { canProceed: false, reason: 'Business not found', message: 'Business configuration error.' };
+    }
+    
+    const business = result.rows[0];
+    
+    // Only apply limits to trial businesses (subscription_status = 'trialing' or within 14 days of creation)
+    const isTrialBusiness = business.subscription_status === 'trialing' || 
+                           (Date.now() - new Date(business.created_at).getTime()) < (14 * 24 * 60 * 60 * 1000);
+    
+    if (!isTrialBusiness) {
+      return { canProceed: true }; // No limits for paid businesses
+    }
+    
+    console.log(`📊 Trial usage check for business ${businessId}:`);
+    console.log(`   Daily: ${business.trial_calls_today}/${TRIAL_LIMITS.DAILY_CALLS} calls, ${business.trial_minutes_today}/${TRIAL_LIMITS.DAILY_MINUTES} min`);
+    console.log(`   Total: ${business.trial_calls_total}/${TRIAL_LIMITS.TOTAL_CALLS} calls, ${business.trial_minutes_total}/${TRIAL_LIMITS.TOTAL_MINUTES} min`);
+    
+    // Check total trial limits first (hard stops)
+    if (business.trial_calls_total >= TRIAL_LIMITS.TOTAL_CALLS) {
+      return {
+        canProceed: false,
+        reason: 'Total trial calls exceeded',
+        message: `Your trial period call limit of ${TRIAL_LIMITS.TOTAL_CALLS} calls has been reached. Upgrade to continue unlimited calling with BookIt AI. Visit your dashboard to upgrade your plan.`
+      };
+    }
+    
+    if (business.trial_minutes_total >= TRIAL_LIMITS.TOTAL_MINUTES) {
+      return {
+        canProceed: false,
+        reason: 'Total trial minutes exceeded',
+        message: `Your trial period usage limit of ${TRIAL_LIMITS.TOTAL_MINUTES} minutes has been reached. Upgrade to continue unlimited calling with BookIt AI.`
+      };
+    }
+    
+    // Check daily limits (soft stops with friendly messaging)
+    if (business.trial_calls_today >= TRIAL_LIMITS.DAILY_CALLS) {
+      return {
+        canProceed: false,
+        reason: 'Daily trial calls exceeded',
+        message: `You've reached today's trial limit of ${TRIAL_LIMITS.DAILY_CALLS} calls. This resets at midnight. You're making great use of your trial! Call again tomorrow or upgrade for unlimited daily calling.`
+      };
+    }
+    
+    if (business.trial_minutes_today >= TRIAL_LIMITS.DAILY_MINUTES) {
+      return {
+        canProceed: false,
+        reason: 'Daily trial minutes exceeded',
+        message: `You've reached today's trial usage limit of ${TRIAL_LIMITS.DAILY_MINUTES} minutes. This resets at midnight. Upgrade for unlimited daily calling.`
+      };
+    }
+    
+    // Provide warnings as they approach limits
+    const callsRemaining = TRIAL_LIMITS.TOTAL_CALLS - business.trial_calls_total;
+    const dailyCallsRemaining = TRIAL_LIMITS.DAILY_CALLS - business.trial_calls_today;
+    
+    let warningMessage = null;
+    if (callsRemaining <= 10) {
+      warningMessage = `Trial usage notice: Only ${callsRemaining} calls remaining in your trial period.`;
+    } else if (dailyCallsRemaining <= 5) {
+      warningMessage = `Daily usage notice: ${dailyCallsRemaining} calls remaining today.`;
+    }
+    
+    return { 
+      canProceed: true, 
+      warningMessage,
+      callsRemaining,
+      dailyCallsRemaining
+    };
+    
+  } catch (error) {
+    console.error('❌ Error checking trial usage limits:', error);
+    return { canProceed: true }; // Allow call to proceed on error to avoid service disruption
+  }
+}
+
+async function resetDailyTrialCountersIfNeeded(businessId) {
+  try {
+    await pool.query(`
+      UPDATE businesses 
+      SET 
+        trial_calls_today = 0,
+        trial_minutes_today = 0,
+        trial_last_reset_date = CURRENT_DATE
+      WHERE id = $1 
+      AND trial_last_reset_date < CURRENT_DATE
+    `, [businessId]);
+  } catch (error) {
+    console.error('❌ Error resetting daily trial counters:', error);
+  }
+}
+
+async function trackTrialUsage(businessId, callDurationMinutes = 0) {
+  try {
+    await pool.query(`
+      UPDATE businesses 
+      SET 
+        trial_calls_today = trial_calls_today + 1,
+        trial_calls_total = trial_calls_total + 1,
+        trial_minutes_today = trial_minutes_today + $2,
+        trial_minutes_total = trial_minutes_total + $2
+      WHERE id = $1
+    `, [businessId, callDurationMinutes]);
+    
+    console.log(`📊 Trial usage tracked: +1 call, +${callDurationMinutes} minutes for business ${businessId}`);
+  } catch (error) {
+    console.error('❌ Error tracking trial usage:', error);
+  }
+}
+
+module.exports = { handleVoiceCall, trackCallUsage, trackTrialUsage };
