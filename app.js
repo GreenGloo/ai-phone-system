@@ -9,6 +9,7 @@ const { generateCalendarSlots } = require('./calendar-generator');
 const { autoMigrate } = require('./auto-migration-system');
 const { autoConfigureAllWebhooks, startWebhookHealthCheck, configureBusinessWebhook } = require('./webhook-auto-config');
 const { startBusinessHealthMonitoring } = require('./business-auto-repair');
+const { startSlotMaintenance, getMaintenanceStatus, runManualMaintenance } = require('./slot-maintenance');
 const { canAccessService, handlePaymentFailure, setDeveloperOverride } = require('./account-suspension-system');
 const twilio = require('twilio');
 const OpenAI = require('openai');
@@ -170,6 +171,14 @@ async function initializeSystem() {
       await startBusinessHealthMonitoring();
     } catch (healthError) {
       console.error('⚠️ Business health monitoring failed to start (non-critical):', healthError);
+    }
+    
+    // Start calendar slot maintenance system
+    try {
+      console.log('\n📅 Starting calendar slot maintenance system...');
+      startSlotMaintenance();
+    } catch (maintenanceError) {
+      console.error('⚠️ Slot maintenance failed to start (non-critical):', maintenanceError);
     }
     
     console.log('✅ System initialization complete');
@@ -5694,6 +5703,46 @@ app.post('/admin/generate-calendar/:businessId', async (req, res) => {
       error: 'Failed to generate calendar slots',
       details: error.message 
     });
+  }
+});
+
+// Admin: Slot maintenance status and controls
+app.get('/admin/slot-maintenance', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    const status = getMaintenanceStatus();
+    res.json({
+      status: 'success',
+      maintenance: status
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to get maintenance status:', error);
+    res.status(500).json({ error: 'Failed to get status', details: error.message });
+  }
+});
+
+// Admin: Run manual maintenance
+app.post('/admin/slot-maintenance/run', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    
+    console.log('🔧 ADMIN: Running manual slot maintenance...');
+    await runManualMaintenance();
+    
+    res.json({
+      status: 'success',
+      message: 'Manual maintenance completed'
+    });
+    
+  } catch (error) {
+    console.error('❌ Manual maintenance failed:', error);
+    res.status(500).json({ error: 'Maintenance failed', details: error.message });
   }
 });
 

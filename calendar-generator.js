@@ -5,9 +5,9 @@ const { Pool } = require('pg');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 // Generate calendar slots for a business based on their business_hours
-async function generateCalendarSlots(businessId, daysAhead = 365) {
+async function generateCalendarSlots(businessId, daysAhead = 400) {
   try {
-    console.log(`📅 Generating calendar slots for business ${businessId} for next ${daysAhead} days`);
+    console.log(`📅 Generating ${daysAhead} days of calendar slots for business ${businessId} (13+ months for annual appointments)`);
     
     // Get business hours, preferences, and timezone
     const businessResult = await pool.query(`
@@ -92,13 +92,32 @@ async function generateCalendarSlots(businessId, daysAhead = 365) {
       }
     }
     
-    // Batch insert all slots using parameterized queries
+    // OPTIMIZED: Batch insert all slots in chunks for better performance
     if (slots.length > 0) {
-      for (const slot of slots) {
+      const BATCH_SIZE = 1000; // Insert 1000 slots at a time
+      
+      for (let i = 0; i < slots.length; i += BATCH_SIZE) {
+        const batch = slots.slice(i, i + BATCH_SIZE);
+        
+        // Build multi-row INSERT for better performance
+        const values = batch.map((_, index) => {
+          const base = index * 4;
+          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`;
+        }).join(',');
+        
+        const params = batch.flatMap(slot => [
+          slot.businessId, 
+          slot.slotStart, 
+          slot.slotEnd, 
+          slot.isAvailable
+        ]);
+        
         await pool.query(
-          'INSERT INTO calendar_slots (business_id, slot_start, slot_end, is_available) VALUES ($1, $2, $3, $4)',
-          [slot.businessId, slot.slotStart, slot.slotEnd, slot.isAvailable]
+          `INSERT INTO calendar_slots (business_id, slot_start, slot_end, is_available) VALUES ${values}`,
+          params
         );
+        
+        console.log(`📊 Inserted batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(slots.length/BATCH_SIZE)} (${batch.length} slots)`);
       }
     }
     
