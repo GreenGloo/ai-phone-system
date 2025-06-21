@@ -92,10 +92,10 @@ async function getAvailableTimes(businessId, requestedDate = null) {
         }
       }
     } else {
-      // Default: next 7 days
-      const nextWeek = new Date();
-      nextWeek.setDate(nextWeek.getDate() + 7);
-      dateFilter = `AND slot_start BETWEEN NOW() AND '${nextWeek.toISOString()}'`;
+      // Default: next 13 months (400+ days)
+      const next13Months = new Date();
+      next13Months.setMonth(next13Months.getMonth() + 13);
+      dateFilter = `AND slot_start BETWEEN NOW() AND '${next13Months.toISOString()}'`;
     }
     
     const result = await pool.query(`
@@ -105,7 +105,7 @@ async function getAvailableTimes(businessId, requestedDate = null) {
       AND is_available = true 
       ${dateFilter}
       ORDER BY slot_start 
-      LIMIT 20
+      LIMIT 100
     `, [businessId]);
     
     // Group by morning/afternoon
