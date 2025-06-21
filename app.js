@@ -4027,11 +4027,34 @@ app.post('/api/businesses/:businessId/complete-onboarding', authenticateToken, g
     try {
       // Check if business has business_hours set
       const businessHoursResult = await pool.query('SELECT business_hours FROM businesses WHERE id = $1', [req.business.id]);
+      
       if (businessHoursResult.rows.length > 0 && businessHoursResult.rows[0].business_hours) {
+        // Business has custom hours - generate slots
         const slotsGenerated = await generateCalendarSlots(req.business.id, 400);
         console.log(`✅ Auto-generated ${slotsGenerated} calendar slots for new business (400+ days for annual appointments)`);
       } else {
-        console.log(`⚠️ Business hours not set yet - calendar slots will be generated when hours are configured`);
+        // Business doesn't have hours yet - set default hours and generate slots
+        console.log(`📅 Setting default business hours and generating calendar slots for new business`);
+        
+        const defaultBusinessHours = {
+          monday: { open: '09:00', close: '17:00', enabled: true },
+          tuesday: { open: '09:00', close: '17:00', enabled: true },
+          wednesday: { open: '09:00', close: '17:00', enabled: true },
+          thursday: { open: '09:00', close: '17:00', enabled: true },
+          friday: { open: '09:00', close: '17:00', enabled: true },
+          saturday: { open: '10:00', close: '16:00', enabled: true },
+          sunday: { open: '10:00', close: '16:00', enabled: false }
+        };
+        
+        // Set default business hours
+        await pool.query(
+          'UPDATE businesses SET business_hours = $1 WHERE id = $2',
+          [JSON.stringify(defaultBusinessHours), req.business.id]
+        );
+        
+        // Generate calendar slots with default hours
+        const slotsGenerated = await generateCalendarSlots(req.business.id, 400);
+        console.log(`✅ Set default hours and auto-generated ${slotsGenerated} calendar slots for new business (400+ days)`);
       }
     } catch (calendarError) {
       console.error('⚠️ Calendar generation failed for new business (non-critical):', calendarError);
