@@ -37,11 +37,17 @@ async function generateCalendarSlots(businessId, daysAhead = 365) {
     const now = new Date();
     
     for (let day = 0; day < daysAhead; day++) {
-      const currentDate = new Date(now);
-      currentDate.setDate(now.getDate() + day);
+      // Create proper business date in business timezone
+      const businessDate = new Date();
+      businessDate.setDate(businessDate.getDate() + day);
+      
+      // Convert to business timezone to get the correct day/date for business hours lookup
+      const businessDateStr = businessDate.toLocaleDateString('en-CA', { timeZone: businessTimezone }); // YYYY-MM-DD format
+      const [year, month, date] = businessDateStr.split('-').map(Number);
+      const businessLocalDate = new Date(year, month - 1, date); // Create date in local system time
       
       const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-      const dayName = dayNames[currentDate.getDay()];
+      const dayName = dayNames[businessLocalDate.getDay()];
       
       const dayHours = business_hours[dayName];
       if (!dayHours || !dayHours.enabled) continue;
@@ -52,29 +58,26 @@ async function generateCalendarSlots(businessId, daysAhead = 365) {
       // Generate slots every 30 minutes during business hours
       for (let hour = startHour; hour < endHour || (hour === endHour && 0 < endMinute); hour++) {
         for (let minute = 0; minute < 60; minute += 30) {
-          // Create slot in business timezone and properly convert to UTC
-          // For Eastern Time: 8 AM EDT = 12:00 PM UTC (8 + 4)
-          const year = currentDate.getFullYear();
-          const month = currentDate.getMonth();
-          const date = currentDate.getDate();
-          
-          // Calculate UTC hour based on business timezone
-          let utcHour = hour;
-          if (businessTimezone === 'America/New_York') {
-            // Eastern Time: EDT (UTC-4) in summer, EST (UTC-5) in winter
-            // June is EDT, so add 4 hours to convert Eastern to UTC
-            utcHour = hour + 4;
-          }
-          
-          // Create the slot in UTC
-          const slotStart = new Date(Date.UTC(year, month, date, utcHour, minute, 0, 0));
-          
-          
           // Skip if past end time
           if (hour === endHour && minute >= endMinute) break;
           if (hour > endHour) break;
           
-          // Skip past times for today (compare in UTC)
+          // FIXED: Direct UTC calculation for business timezone using correct business date
+          const isDST = businessLocalDate.getMonth() >= 2 && businessLocalDate.getMonth() <= 10; // Rough DST check
+          const utcOffset = businessTimezone === 'America/New_York' ? (isDST ? 4 : 5) : 5; // Default to 5 for other timezones
+          
+          // Create UTC time by adding the offset to business time
+          const slotStart = new Date(Date.UTC(
+            year,
+            month - 1, // Date.UTC expects 0-based month
+            date,
+            hour + utcOffset, // Add offset to convert business time to UTC
+            minute,
+            0
+          ));
+          
+          
+          // Skip past times for today
           if (day === 0 && slotStart <= now) continue;
           
           const slotEnd = new Date(slotStart.getTime() + appointmentDuration * 60000);
@@ -89,14 +92,14 @@ async function generateCalendarSlots(businessId, daysAhead = 365) {
       }
     }
     
-    // Batch insert all slots
+    // Batch insert all slots using parameterized queries
     if (slots.length > 0) {
-      const values = slots.map(slot => `('${slot.businessId}', '${slot.slotStart}', '${slot.slotEnd}', ${slot.isAvailable})`).join(',');
-      
-      await pool.query(`
-        INSERT INTO calendar_slots (business_id, slot_start, slot_end, is_available)
-        VALUES ${values}
-      `);
+      for (const slot of slots) {
+        await pool.query(
+          'INSERT INTO calendar_slots (business_id, slot_start, slot_end, is_available) VALUES ($1, $2, $3, $4)',
+          [slot.businessId, slot.slotStart, slot.slotEnd, slot.isAvailable]
+        );
+      }
     }
     
     console.log(`📅 Generated ${slots.length} calendar slots for business ${businessId}`);
