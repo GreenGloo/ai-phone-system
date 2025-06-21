@@ -415,29 +415,34 @@ async function handleVoiceCall(req, res) {
     
     // Check subscription limits before processing call
     if (!SpeechResult) { // Only check on initial calls to avoid blocking ongoing conversations
-      const subscriptionResult = await pool.query(`
-        SELECT plan_type, current_period_calls,
-               CASE plan_type
-                 WHEN 'starter' THEN 200
-                 WHEN 'professional' THEN 1000  
-                 WHEN 'enterprise' THEN 5000
-                 WHEN 'enterprise_plus' THEN 999999
-                 ELSE 200
-               END as call_limit
-        FROM subscriptions 
-        WHERE business_id = $1
-      `, [businessId]);
-      
-      if (subscriptionResult.rows.length > 0) {
-        const { plan_type, current_period_calls, call_limit } = subscriptionResult.rows[0];
+      try {
+        const subscriptionResult = await pool.query(`
+          SELECT plan, current_period_calls,
+                 CASE plan
+                   WHEN 'starter' THEN 200
+                   WHEN 'professional' THEN 1000  
+                   WHEN 'enterprise' THEN 5000
+                   WHEN 'enterprise_plus' THEN 999999
+                   ELSE 200
+                 END as call_limit
+          FROM businesses 
+          WHERE id = $1
+        `, [businessId]);
         
-        if (current_period_calls >= call_limit) {
-          console.log(`🚫 Call limit exceeded: Business ${businessId} has ${current_period_calls}/${call_limit} calls`);
-          return sendTwiml(res, 'This business has reached their monthly call limit. Please contact them directly or try again next month.');
+        if (subscriptionResult.rows.length > 0) {
+          const { plan, current_period_calls, call_limit } = subscriptionResult.rows[0];
+          
+          if (current_period_calls && current_period_calls >= call_limit) {
+            console.log(`🚫 Call limit exceeded: Business ${businessId} has ${current_period_calls}/${call_limit} calls`);
+            return sendTwiml(res, 'This business has reached their monthly call limit. Please contact them directly or try again next month.');
+          }
+          
+          const usagePercentage = current_period_calls ? (current_period_calls / call_limit) * 100 : 0;
+          console.log(`📊 Call usage check: Business ${businessId} (${plan}) at ${usagePercentage.toFixed(1)}% (${current_period_calls || 0}/${call_limit} calls)`);
         }
-        
-        const usagePercentage = (current_period_calls / call_limit) * 100;
-        console.log(`📊 Call usage check: Business ${businessId} at ${usagePercentage.toFixed(1)}% (${current_period_calls}/${call_limit} calls)`);
+      } catch (limitError) {
+        console.warn(`⚠️ Could not check call limits for business ${businessId}:`, limitError.message);
+        // Continue with call processing even if limit check fails
       }
     }
     
