@@ -5516,6 +5516,49 @@ app.post('/admin/fix-webhooks', async (req, res) => {
   }
 });
 
+// TEMPORARY ADMIN ENDPOINT: Check business voice configuration
+app.get('/admin/check-business-voice', async (req, res) => {
+  try {
+    const { adminKey } = req.query;
+    
+    // Check admin key
+    if (adminKey !== process.env.ADMIN_BYPASS_KEY && adminKey !== 'dev_bypass_key') {
+      return res.status(403).json({ error: 'Invalid admin key' });
+    }
+    
+    console.log('🔧 ADMIN: Checking business voice configurations...');
+    
+    // Get all businesses with their voice settings
+    const businesses = await pool.query(`
+      SELECT id, name, ai_voice_id, ai_personality, twilio_phone_sid
+      FROM businesses 
+      WHERE twilio_phone_sid IS NOT NULL
+    `);
+    
+    console.log(`📋 Found ${businesses.rows.length} businesses with phone numbers`);
+    
+    const results = businesses.rows.map(business => ({
+      name: business.name,
+      businessId: business.id,
+      ai_voice_id: business.ai_voice_id,
+      ai_personality: business.ai_personality,
+      has_elevenlabs_voice: business.ai_voice_id && business.ai_voice_id.length > 10,
+      twilio_phone_sid: business.twilio_phone_sid
+    }));
+    
+    res.json({
+      message: 'Business voice configuration check',
+      elevenlabs_api_key: process.env.ELEVENLABS_API_KEY ? 'SET' : 'NOT SET',
+      use_elevenlabs: process.env.USE_ELEVENLABS,
+      businesses: results
+    });
+    
+  } catch (error) {
+    console.error('❌ Admin voice check failed:', error);
+    res.status(500).json({ error: 'Failed to check voice configuration' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 BookIt Technologies running on port ${PORT}`);
