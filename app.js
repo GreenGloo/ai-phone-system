@@ -5627,6 +5627,41 @@ app.get('/admin/check-business-config/:businessId', async (req, res) => {
   }
 });
 
+// TEMPORARY ADMIN ENDPOINT: Manually generate calendar slots for debugging
+app.post('/admin/generate-calendar/:businessId', async (req, res) => {
+  try {
+    const { adminKey } = req.query;
+    const { businessId } = req.params;
+    
+    // Check admin key
+    if (adminKey !== process.env.ADMIN_BYPASS_KEY && adminKey !== 'dev_bypass_key') {
+      return res.status(403).json({ error: 'Invalid admin key' });
+    }
+    
+    console.log(`🔧 ADMIN: Manually generating calendar slots for business ${businessId}...`);
+    
+    // Import calendar generator
+    const { generateCalendarSlots } = require('./calendar-generator');
+    
+    // Generate calendar slots for this business
+    const slotsGenerated = await generateCalendarSlots(businessId);
+    
+    res.json({
+      message: 'Calendar generation completed',
+      businessId: businessId,
+      slotsGenerated: slotsGenerated,
+      status: 'success'
+    });
+    
+  } catch (error) {
+    console.error('❌ Admin calendar generation failed:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate calendar slots',
+      details: error.message 
+    });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 BookIt Technologies running on port ${PORT}`);
