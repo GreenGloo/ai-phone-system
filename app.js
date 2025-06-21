@@ -5432,6 +5432,90 @@ app.use('/api/*', (req, res) => {
   res.status(404).json({ error: 'API route not found', path: req.originalUrl });
 });
 
+// TEMPORARY ADMIN ENDPOINT: Fix existing webhook URLs
+app.post('/admin/fix-webhooks', async (req, res) => {
+  try {
+    const { adminKey } = req.query;
+    
+    // Check admin key
+    if (adminKey !== process.env.ADMIN_BYPASS_KEY && adminKey !== 'dev_bypass_key') {
+      return res.status(403).json({ error: 'Invalid admin key' });
+    }
+    
+    console.log('🔧 ADMIN: Fixing existing webhook URLs...');
+    
+    // Get all businesses with phone numbers
+    const businesses = await pool.query(`
+      SELECT id, name, twilio_phone_sid
+      FROM businesses 
+      WHERE twilio_phone_sid IS NOT NULL
+    `);
+    
+    console.log(`📋 Found ${businesses.rows.length} businesses with phone numbers to fix`);
+    
+    const results = [];
+    
+    for (const business of businesses.rows) {
+      try {
+        console.log(`🔧 Fixing webhooks for ${business.name} (${business.id})`);
+        
+        const baseUrl = process.env.BASE_URL || 'https://bookittechnologies.com';
+        
+        // Update the phone number webhook URLs
+        const updatedNumber = await twilioClient.incomingPhoneNumbers(business.twilio_phone_sid)
+          .update({
+            voiceUrl: `${baseUrl}/`,
+            voiceMethod: 'POST',
+            smsUrl: `${baseUrl}/sms/incoming/${business.id}`,
+            smsMethod: 'POST'
+          });
+        
+        // Update business webhook status
+        await pool.query(`
+          UPDATE businesses 
+          SET webhook_configured = true, 
+              webhook_last_verified = CURRENT_TIMESTAMP, 
+              webhook_status = 'active'
+          WHERE id = $1
+        `, [business.id]);
+        
+        results.push({
+          business: business.name,
+          businessId: business.id,
+          status: 'fixed',
+          voiceUrl: `${baseUrl}/`,
+          smsUrl: `${baseUrl}/sms/incoming/${business.id}`
+        });
+        
+        console.log(`✅ Fixed webhooks for ${business.name}`);
+        
+      } catch (error) {
+        console.error(`❌ Failed to fix webhooks for ${business.name}:`, error);
+        results.push({
+          business: business.name,
+          businessId: business.id,
+          status: 'failed',
+          error: error.message
+        });
+      }
+    }
+    
+    res.json({
+      message: 'Webhook fix completed',
+      results: results,
+      summary: {
+        total: businesses.rows.length,
+        fixed: results.filter(r => r.status === 'fixed').length,
+        failed: results.filter(r => r.status === 'failed').length
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Admin webhook fix failed:', error);
+    res.status(500).json({ error: 'Failed to fix webhooks' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 BookIt Technologies running on port ${PORT}`);

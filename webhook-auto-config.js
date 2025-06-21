@@ -72,7 +72,7 @@ async function verifyWebhookConfiguration(businessId, twilioPhoneSid) {
     // Get current Twilio phone number configuration
     const phoneNumber = await twilioClient.incomingPhoneNumbers(twilioPhoneSid).fetch();
     
-    const expectedWebhookUrl = `${getWebhookBaseUrl()}/voice/incoming/${businessId}`;
+    const expectedWebhookUrl = `${getWebhookBaseUrl()}/`;
     const currentVoiceUrl = phoneNumber.voiceUrl;
     
     // Check if webhook URL matches expected
