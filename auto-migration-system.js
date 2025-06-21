@@ -103,6 +103,15 @@ const MIGRATIONS = [
       ADD COLUMN IF NOT EXISTS auto_repair_status VARCHAR(50) DEFAULT 'healthy',
       ADD COLUMN IF NOT EXISTS data_integrity_score DECIMAL(3,2) DEFAULT 1.0;
     `
+  },
+  {
+    name: 'add_sms_opt_out_columns',
+    description: 'Add SMS opt-out tracking columns to customers table',
+    sql: `
+      ALTER TABLE customers 
+      ADD COLUMN IF NOT EXISTS sms_opt_out BOOLEAN DEFAULT false,
+      ADD COLUMN IF NOT EXISTS sms_opt_out_date TIMESTAMP;
+    `
   }
 ];
 

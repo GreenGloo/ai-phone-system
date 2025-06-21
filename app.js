@@ -966,12 +966,18 @@ app.post('/sms/incoming/:businessId', async (req, res) => {
     if (['stop', 'unsubscribe', 'cancel', 'end', 'quit'].includes(normalizedBody)) {
       console.log(`📱 Opt-out request from ${From}`);
       
-      // Update customer preferences
-      await pool.query(`
-        UPDATE customers 
-        SET sms_opt_out = true, sms_opt_out_date = CURRENT_TIMESTAMP 
-        WHERE phone = $1 AND business_id = $2
-      `, [From, businessId]);
+      // Update customer preferences (with error handling)
+      try {
+        await pool.query(`
+          UPDATE customers 
+          SET sms_opt_out = true, sms_opt_out_date = CURRENT_TIMESTAMP 
+          WHERE phone = $1 AND business_id = $2
+        `, [From, businessId]);
+        console.log(`✅ Customer ${From} opted out of SMS`);
+      } catch (optOutError) {
+        console.warn(`⚠️ Could not update opt-out preference for ${From}:`, optOutError.message);
+        // Continue anyway - send response even if database update fails
+      }
       
       // Send confirmation
       const twiml = new twilio.twiml.MessagingResponse();
@@ -984,11 +990,17 @@ app.post('/sms/incoming/:businessId', async (req, res) => {
     if (['start', 'subscribe', 'yes'].includes(normalizedBody)) {
       console.log(`📱 Opt-in request from ${From}`);
       
-      await pool.query(`
-        UPDATE customers 
-        SET sms_opt_out = false, sms_opt_out_date = NULL 
-        WHERE phone = $1 AND business_id = $2
-      `, [From, businessId]);
+      try {
+        await pool.query(`
+          UPDATE customers 
+          SET sms_opt_out = false, sms_opt_out_date = NULL 
+          WHERE phone = $1 AND business_id = $2
+        `, [From, businessId]);
+        console.log(`✅ Customer ${From} opted back in to SMS`);
+      } catch (optInError) {
+        console.warn(`⚠️ Could not update opt-in preference for ${From}:`, optInError.message);
+        // Continue anyway - send response even if database update fails
+      }
       
       const twiml = new twilio.twiml.MessagingResponse();
       twiml.message('You have been resubscribed to SMS messages. Reply STOP to unsubscribe.');
